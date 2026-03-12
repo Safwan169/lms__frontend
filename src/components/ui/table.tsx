@@ -1,116 +1,124 @@
-"use client"
+'use client';
+import { useState, useMemo } from 'react';
+import {
+    DataGrid,
+    GridColDef,
+    GridColumnVisibilityModel,
+} from '@mui/x-data-grid';
+import Paper from '@mui/material/Paper';
+import TextField from '@mui/material/TextField';
+import Button from '@mui/material/Button';
+import Menu from '@mui/material/Menu';
+import MenuItem from '@mui/material/MenuItem';
+import Checkbox from '@mui/material/Checkbox';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import InputAdornment from '@mui/material/InputAdornment';
+import SearchIcon from '@mui/icons-material/Search';
+import ViewColumnIcon from '@mui/icons-material/ViewColumn';
+import Box from '@mui/material/Box';
 
-import * as React from "react"
 
-import { cn } from "@/lib/utils"
 
-function Table({ className, ...props }: React.ComponentProps<"table">) {
-  return (
-    <div
-      data-slot="table-container"
-      className="relative w-full overflow-x-auto"
-    >
-      <table
-        data-slot="table"
-        className={cn("w-full caption-bottom text-sm", className)}
-        {...props}
-      />
-    </div>
-  )
-}
+const paginationModel = { page: 0, pageSize: 10 };
 
-function TableHeader({ className, ...props }: React.ComponentProps<"thead">) {
-  return (
-    <thead
-      data-slot="table-header"
-      className={cn("[&_tr]:border-b", className)}
-      {...props}
-    />
-  )
-}
+export default function DataTable({columns, rows}: {columns: GridColDef[], rows: any[]}) {
+    const [searchText, setSearchText] = useState('');
+    const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null);
+    const [columnVisibility, setColumnVisibility] = useState<GridColumnVisibilityModel>({});
 
-function TableBody({ className, ...props }: React.ComponentProps<"tbody">) {
-  return (
-    <tbody
-      data-slot="table-body"
-      className={cn("[&_tr:last-child]:border-0", className)}
-      {...props}
-    />
-  )
-}
+    const filteredRows = useMemo(() => {
+        if (!searchText.trim()) return rows;
+        const lower = searchText.toLowerCase();
+        return rows.filter((row) =>
+            Object.values(row).some((val) =>
+                String(val ?? '').toLowerCase().includes(lower)
+            )
+        );
+    }, [searchText]);
 
-function TableFooter({ className, ...props }: React.ComponentProps<"tfoot">) {
-  return (
-    <tfoot
-      data-slot="table-footer"
-      className={cn(
-        "border-t bg-muted/50 font-medium [&>tr]:last:border-b-0",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+    const handleOpenMenu = (e: React.MouseEvent<HTMLButtonElement>) => setAnchorEl(e.currentTarget);
+    const handleCloseMenu = () => setAnchorEl(null);
+    const toggleColumn = (field: string) => {
+        setColumnVisibility((prev) => ({
+            ...prev,
+            [field]: prev[field] === false ? true : false,
+        }));
+    };
 
-function TableRow({ className, ...props }: React.ComponentProps<"tr">) {
-  return (
-    <tr
-      data-slot="table-row"
-      className={cn(
-        "border-b transition-colors hover:bg-muted/50 data-[state=selected]:bg-muted",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+    return (
+        <Paper sx={{ height: '90vh', width: '100%', p: 2, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
 
-function TableHead({ className, ...props }: React.ComponentProps<"th">) {
-  return (
-    <th
-      data-slot="table-head"
-      className={cn(
-        "h-10 px-2 text-left align-middle font-medium whitespace-nowrap text-foreground [&:has([role=checkbox])]:pr-0",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+            <Box display="flex" alignItems="center" justifyContent="flex-end" mb={1} gap={2}>
+                <TextField
+                    variant="outlined"
+                    size="small"
+                    placeholder="Search..."
+                    value={searchText}
+                    onChange={(e) => setSearchText(e.target.value)}
+                    sx={{
+                        width: 280,
+                        '& .MuiOutlinedInput-root': {
+                            borderRadius: '10px',
+                            '& fieldset': { borderColor: 'text.secondary' },
+                        },
+                    }}
+                    InputProps={{
+                        startAdornment: (
+                            <InputAdornment position="start">
+                                <SearchIcon fontSize="small" />
+                            </InputAdornment>
+                        ),
+                    }}
+                />
 
-function TableCell({ className, ...props }: React.ComponentProps<"td">) {
-  return (
-    <td
-      data-slot="table-cell"
-      className={cn(
-        "p-2 align-middle whitespace-nowrap [&:has([role=checkbox])]:pr-0",
-        className
-      )}
-      {...props}
-    />
-  )
-}
+                <Button
+                    variant="outlined"
+                    startIcon={<ViewColumnIcon />}
+                    onClick={handleOpenMenu}
+                    sx={{
+                        color: 'text.secondary',
+                        borderRadius: '10px',
+                        borderColor: 'divider',
+                    }}
+                />
 
-function TableCaption({
-  className,
-  ...props
-}: React.ComponentProps<"caption">) {
-  return (
-    <caption
-      data-slot="table-caption"
-      className={cn("mt-4 text-sm text-muted-foreground", className)}
-      {...props}
-    />
-  )
-}
+                <Menu anchorEl={anchorEl} open={Boolean(anchorEl)} onClose={handleCloseMenu}>
+                    {columns.map((col) => (
+                        <MenuItem key={col.field} sx={{ py: 0 }}>
+                            <FormControlLabel
+                                control={
+                                    <Checkbox
+                                        checked={columnVisibility[col.field] !== false}
+                                        onChange={() => toggleColumn(col.field)}
+                                        size="small"
+                                    />
+                                }
+                                label={col.headerName}
+                            />
+                        </MenuItem>
+                    ))}
+                </Menu>
+            </Box>
 
-export {
-  Table,
-  TableHeader,
-  TableBody,
-  TableFooter,
-  TableHead,
-  TableRow,
-  TableCell,
-  TableCaption,
+            <Box sx={{ flexGrow: 1, width: '100%', minHeight: 0 }}>
+                <DataGrid
+                    rows={filteredRows}
+                    columns={columns}
+                    initialState={{ pagination: { paginationModel } }}
+                    pageSizeOptions={[5, 10,20]}
+                    checkboxSelection
+                    columnVisibilityModel={columnVisibility}
+                    onColumnVisibilityModelChange={(model) => setColumnVisibility(model)}
+                    sx={{
+                        border: 1,
+                        borderColor: 'grey.300',
+                        '& .MuiDataGrid-footerContainer': {
+                            borderTop: '1px solid',
+                            borderColor: 'grey.300',
+                        }
+                    }}
+                />
+            </Box>
+        </Paper>
+    );
 }
