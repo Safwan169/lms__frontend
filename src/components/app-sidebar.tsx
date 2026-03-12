@@ -55,8 +55,8 @@ const navData = [
     ],
   },
   {
-    title: "Kelas",
-    url: "/dashboard/kelas",
+    title: "User List",
+    url: "/dashboard/users",
     icon: Monitor,
     roles: ["admin", "rektor"],
   },
