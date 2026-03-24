@@ -9,9 +9,9 @@ import {
   Monitor,
   BookOpen,
   HardDrive,
-  FileText,
   LifeBuoy,
   Settings,
+  GraduationCap,
 } from "lucide-react"
 
 import {
@@ -32,10 +32,10 @@ import {
   SidebarMenuSubButton,
   SidebarMenuSubItem,
   SidebarHeader,
+  SidebarFooter,
 } from "@/components/ui/sidebar"
 import Link from "next/link"
 
-// 1. DYNAMIC NAVIGATION DATA
 const navData = [
   {
     title: "Dashboard",
@@ -72,113 +72,347 @@ const navData = [
     icon: HardDrive,
     roles: ["admin", "rektor"],
   },
-];
+]
 
 const configData = [
   { title: "Bantuan", url: "/bantuan", icon: LifeBuoy, roles: ["admin", "user", "rektor"] },
   { title: "Konfigurasi", url: "/config", icon: Settings, roles: ["admin", "rektor"] },
-];
+]
 
 export function AppSidebar({ userRole = "rektor" }) {
-  const pathname = usePathname();
+  const pathname = usePathname()
 
   return (
-    <Sidebar>
-      {/* LOGO SECTION */}
-      <SidebarHeader className="flex flex-col items-center pt-6 pb-4">
-        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-black text-white font-bold text-2xl">
-          S
-        </div>
-        <h2 className="mt-4 font-bold text-lg">Sans University</h2>
-      </SidebarHeader>
+    <>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&display=swap');
 
-      <SidebarContent>
-        {/* USER PROFILE CARD */}
-        <div className="mx-4 mb-6 flex items-center gap-3 rounded-lg border p-2">
-          <div className="h-10 w-10 overflow-hidden rounded-full bg-emerald-100">
-            {/* <img src="/avatar.png" alt="User" /> */}
-          </div>
-          <div className="flex flex-col">
-            <span className="text-sm font-bold">Nirmala Azalea</span>
-            <span className="text-xs text-muted-foreground capitalize">{userRole}</span>
-          </div>
-        </div>
+        [data-sidebar="sidebar"] {
+          font-family: 'Sora', sans-serif !important;
+          background: #ffffff !important;
+          border-right: 1px solid #f0f1f5 !important;
+          width: 256px !important;
+        }
 
-        {/* MENU UTAMA GROUP */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-4">MENU UTAMA</SidebarGroupLabel>
-          <SidebarMenu>
-            {navData
-              .filter((item) => item.roles.includes(userRole))
-              .map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  {item.items ? (
-                    <Collapsible asChild className="group/collapsible">
-                      <div>
-                        <CollapsibleTrigger asChild>
-                          <SidebarMenuButton 
-                            isActive={item.items.some(sub => pathname === sub.url)}
-                            tooltip={item.title}
-                          >
-                            <item.icon />
-                            <span>{item.title}</span>
-                            <ChevronDown className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-180" />
-                          </SidebarMenuButton>
-                        </CollapsibleTrigger>
-                        <CollapsibleContent>
-                          <SidebarMenuSub>
-                            {item.items.map((subItem) => (
-                              <SidebarMenuSubItem key={subItem.title}>
-                                <SidebarMenuSubButton 
-                                  asChild 
-                                  isActive={pathname === subItem.url}
-                                >
-                                  <Link href={subItem.url}>
-                                    <span>{subItem.title}</span>
-                                  </Link>
-                                </SidebarMenuSubButton>
-                              </SidebarMenuSubItem>
-                            ))}
-                          </SidebarMenuSub>
-                        </CollapsibleContent>
-                      </div>
-                    </Collapsible>
-                  ) : (
-                    <SidebarMenuButton 
-                      asChild 
-                      isActive={pathname === item.url} 
+        /* ── Header ── */
+        .sb-header {
+          padding: 1.5rem 1.25rem 1rem;
+          border-bottom: 1px solid #f0f1f5;
+        }
+
+        .sb-logo-row {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          margin-bottom: 1.25rem;
+        }
+
+        .sb-logo-icon {
+          width: 36px;
+          height: 36px;
+          border-radius: 10px;
+          background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          flex-shrink: 0;
+          box-shadow: 0 4px 12px rgba(99,102,241,0.3);
+        }
+
+        .sb-logo-name {
+          font-size: 0.95rem;
+          font-weight: 600;
+          color: #1a1d2e;
+          letter-spacing: -0.01em;
+          line-height: 1.2;
+        }
+
+        .sb-logo-tagline {
+          font-size: 0.68rem;
+          color: #9095a8;
+          font-weight: 400;
+        }
+
+        /* ── User card ── */
+        .sb-user-card {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          background: #f5f6fa;
+          border-radius: 10px;
+          padding: 0.65rem 0.85rem;
+        }
+
+        .sb-user-av {
+          width: 34px;
+          height: 34px;
+          border-radius: 8px;
+          background: linear-gradient(135deg, #6366f1, #8b5cf6);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          color: white;
+          font-size: 0.72rem;
+          font-weight: 600;
+          flex-shrink: 0;
+        }
+
+        .sb-user-name {
+          font-size: 0.82rem;
+          font-weight: 600;
+          color: #1a1d2e;
+          line-height: 1.2;
+        }
+
+        .sb-user-role {
+          font-size: 0.68rem;
+          color: #9095a8;
+          text-transform: capitalize;
+        }
+
+        .sb-user-dot {
+          width: 7px;
+          height: 7px;
+          border-radius: 50%;
+          background: #10b981;
+          margin-left: auto;
+          flex-shrink: 0;
+        }
+
+        /* ── Group label ── */
+        [data-sidebar="group-label"] {
+          font-size: 0.62rem !important;
+          font-weight: 700 !important;
+          letter-spacing: 0.1em !important;
+          color: #c0c3d0 !important;
+          padding: 0 1rem !important;
+          margin-bottom: 0.25rem !important;
+          font-family: 'Sora', sans-serif !important;
+        }
+
+        /* ── Menu item base ── */
+        [data-sidebar="menu-button"] {
+          font-family: 'Sora', sans-serif !important;
+          font-size: 0.82rem !important;
+          font-weight: 500 !important;
+          color: #6b7280 !important;
+          border-radius: 9px !important;
+          padding: 0.55rem 0.85rem !important;
+          margin: 1px 0.75rem !important;
+          transition: background 0.15s, color 0.15s !important;
+          display: flex !important;
+          align-items: center !important;
+          gap: 10px !important;
+        }
+
+        [data-sidebar="menu-button"]:hover {
+          background: #f5f6fa !important;
+          color: #1a1d2e !important;
+        }
+
+        [data-sidebar="menu-button"]:hover svg {
+          color: #6366f1 !important;
+        }
+
+        /* ── Active state ── */
+        [data-sidebar="menu-button"][data-active="true"] {
+          background: #eef2ff !important;
+          color: #6366f1 !important;
+          font-weight: 600 !important;
+        }
+
+        [data-sidebar="menu-button"][data-active="true"] svg {
+          color: #6366f1 !important;
+        }
+
+        /* ── Icons ── */
+        [data-sidebar="menu-button"] svg {
+          width: 16px !important;
+          height: 16px !important;
+          color: #c0c3d0 !important;
+          flex-shrink: 0 !important;
+          transition: color 0.15s !important;
+        }
+
+        /* ── Sub menu ── */
+        [data-sidebar="menu-sub"] {
+          border-left: 2px solid #f0f1f5 !important;
+          margin-left: 1.85rem !important;
+          padding-left: 0.75rem !important;
+          margin-right: 0.75rem !important;
+        }
+
+        [data-sidebar="menu-sub-button"] {
+          font-family: 'Sora', sans-serif !important;
+          font-size: 0.78rem !important;
+          font-weight: 400 !important;
+          color: #9095a8 !important;
+          border-radius: 7px !important;
+          padding: 0.4rem 0.65rem !important;
+          transition: background 0.15s, color 0.15s !important;
+        }
+
+        [data-sidebar="menu-sub-button"]:hover {
+          background: #f5f6fa !important;
+          color: #1a1d2e !important;
+        }
+
+        [data-sidebar="menu-sub-button"][data-active="true"] {
+          background: #eef2ff !important;
+          color: #6366f1 !important;
+          font-weight: 500 !important;
+        }
+
+        /* ── Chevron ── */
+        .sb-chevron {
+          width: 14px !important;
+          height: 14px !important;
+          margin-left: auto !important;
+          color: #c0c3d0 !important;
+          transition: transform 0.2s ease, color 0.15s !important;
+          flex-shrink: 0 !important;
+        }
+
+        .group-data-[state=open]\\/collapsible\\:rotate-180.sb-chevron {
+          transform: rotate(180deg) !important;
+        }
+
+        /* ── Divider ── */
+        .sb-divider {
+          height: 1px;
+          background: #f0f1f5;
+          margin: 0.5rem 1rem;
+        }
+
+        /* ── Footer ── */
+        .sb-footer {
+          padding: 1rem 1.25rem;
+          border-top: 1px solid #f0f1f5;
+        }
+
+        .sb-footer-version {
+          font-size: 0.65rem;
+          color: #d1d5db;
+          text-align: center;
+          font-family: 'Sora', sans-serif;
+        }
+      `}</style>
+
+      <Sidebar>
+        {/* ── Header ── */}
+        <SidebarHeader className="sb-header p-0">
+          <div className="sb-logo-row">
+            <div className="sb-logo-icon">
+              <GraduationCap size={18} />
+            </div>
+            <div>
+              <div className="sb-logo-name">Sans University</div>
+              <div className="sb-logo-tagline">Learning Management</div>
+            </div>
+          </div>
+
+          {/* User card */}
+          <div className="sb-user-card">
+            <div className="sb-user-av">NA</div>
+            <div>
+              <div className="sb-user-name">Nirmala Azalea</div>
+              <div className="sb-user-role">{userRole}</div>
+            </div>
+            <div className="sb-user-dot" />
+          </div>
+        </SidebarHeader>
+
+        <SidebarContent>
+          {/* ── Menu Utama ── */}
+          <SidebarGroup>
+            <SidebarGroupLabel>MENU UTAMA</SidebarGroupLabel>
+            <SidebarMenu>
+              {navData
+                .filter((item) => item.roles.includes(userRole))
+                .map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    {item.items ? (
+                      <Collapsible asChild className="group/collapsible">
+                        <div>
+                          <CollapsibleTrigger asChild>
+                            <SidebarMenuButton
+                              isActive={item.items.some((sub) => pathname === sub.url)}
+                              tooltip={item.title}
+                            >
+                              <item.icon />
+                              <span>{item.title}</span>
+                              <ChevronDown className="sb-chevron group-data-[state=open]/collapsible:rotate-180" />
+                            </SidebarMenuButton>
+                          </CollapsibleTrigger>
+                          <CollapsibleContent>
+                            <SidebarMenuSub>
+                              {item.items.map((subItem) => (
+                                <SidebarMenuSubItem key={subItem.title}>
+                                  <SidebarMenuSubButton
+                                    asChild
+                                    isActive={pathname === subItem.url}
+                                  >
+                                    <Link href={subItem.url}>
+                                      <span>{subItem.title}</span>
+                                    </Link>
+                                  </SidebarMenuSubButton>
+                                </SidebarMenuSubItem>
+                              ))}
+                            </SidebarMenuSub>
+                          </CollapsibleContent>
+                        </div>
+                      </Collapsible>
+                    ) : (
+                      <SidebarMenuButton
+                        asChild
+                        isActive={pathname === item.url}
+                        tooltip={item.title}
+                      >
+                        <Link href={item.url}>
+                          <item.icon />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    )}
+                  </SidebarMenuItem>
+                ))}
+            </SidebarMenu>
+          </SidebarGroup>
+
+          <div className="sb-divider" />
+
+          {/* ── Konfigurasi ── */}
+          <SidebarGroup>
+            <SidebarGroupLabel>KONFIGURASI</SidebarGroupLabel>
+            <SidebarMenu>
+              {configData
+                .filter((item) => item.roles.includes(userRole))
+                .map((item) => (
+                  <SidebarMenuItem key={item.title}>
+                    <SidebarMenuButton
+                      asChild
+                      isActive={pathname === item.url}
                       tooltip={item.title}
                     >
-                      <Link href={item.url}>
+                      <a href={item.url}>
                         <item.icon />
                         <span>{item.title}</span>
-                      </Link>
+                      </a>
                     </SidebarMenuButton>
-                  )}
-                </SidebarMenuItem>
-              ))}
-          </SidebarMenu>
-        </SidebarGroup>
+                  </SidebarMenuItem>
+                ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        </SidebarContent>
 
-        {/* KONFIGURASI GROUP */}
-        <SidebarGroup>
-          <SidebarGroupLabel className="px-4">KONFIGURASI</SidebarGroupLabel>
-          <SidebarMenu>
-            {configData
-              .filter((item) => item.roles.includes(userRole))
-              .map((item) => (
-                <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild isActive={pathname === item.url}>
-                    <a href={item.url}>
-                      <item.icon />
-                      <span>{item.title}</span>
-                    </a>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-          </SidebarMenu>
-        </SidebarGroup>
-      </SidebarContent>
-    </Sidebar>
+        {/* ── Footer ── */}
+        <SidebarFooter>
+          <div className="sb-footer">
+            <div className="sb-footer-version">Sans LMS · v2.4.1</div>
+          </div>
+        </SidebarFooter>
+      </Sidebar>
+    </>
   )
 }

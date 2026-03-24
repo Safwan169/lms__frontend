@@ -45,9 +45,9 @@ const handleDelete = (id: number) => {
 const columns = getColumns(handleDelete);
     return (
         
-     
+        <div>
             <DataTable columns={columns} rows={rows} />
-       
+        </div>
     );
 };
 
