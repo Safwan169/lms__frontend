@@ -5,16 +5,15 @@ import {
   GridColDef,
   GridColumnVisibilityModel,
 } from '@mui/x-data-grid';
+
 import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
-import Button from '@mui/material/Button';
 import Menu from '@mui/material/Menu';
 import MenuItem from '@mui/material/MenuItem';
 import Checkbox from '@mui/material/Checkbox';
 import FormControlLabel from '@mui/material/FormControlLabel';
 import InputAdornment from '@mui/material/InputAdornment';
 import SearchIcon from '@mui/icons-material/Search';
-import ViewColumnIcon from '@mui/icons-material/ViewColumn';
 import Box from '@mui/material/Box';
 import { Columns3Cog } from 'lucide-react';
 import Tooltip from '@mui/material/Tooltip';
