@@ -3,8 +3,54 @@ import UsersTable from './UsersTable';
 
 const page = () => {
     return (
-        <div>
-            <UsersTable />
+        <div className="adm-root">
+            {/* Top bar */}
+            <div className="adm-topbar">
+                <div className="adm-topbar-left">
+                    <h1>Users Management</h1>
+                    <p>Manage and monitor all system users — View, edit, and delete user accounts</p>
+                </div>
+            </div>
+
+            {/* Stats Cards */}
+            <div className="adm-stats">
+                <div className="adm-stat">
+                    <div className="adm-stat-icon" style={{ background: '#e0e7ff' }}>👥</div>
+                    <div className="adm-stat-val">1,234</div>
+                    <div className="adm-stat-label">Total Users</div>
+                    <div className="adm-stat-change up">↑ +45 this month</div>
+                    <div className="adm-stat-corner" style={{ background: '#6366f1' }} />
+                </div>
+                <div className="adm-stat">
+                    <div className="adm-stat-icon" style={{ background: '#dcfce7' }}>✓</div>
+                    <div className="adm-stat-val">1,089</div>
+                    <div className="adm-stat-label">Active Users</div>
+                    <div className="adm-stat-change up">↑ +32 this month</div>
+                    <div className="adm-stat-corner" style={{ background: '#10b981' }} />
+                </div>
+                <div className="adm-stat">
+                    <div className="adm-stat-icon" style={{ background: '#fef3c7' }}>⏳</div>
+                    <div className="adm-stat-val">98</div>
+                    <div className="adm-stat-label">Pending Approval</div>
+                    <div className="adm-stat-change down">↓ -8 this month</div>
+                    <div className="adm-stat-corner" style={{ background: '#f59e0b' }} />
+                </div>
+                <div className="adm-stat">
+                    <div className="adm-stat-icon" style={{ background: '#fee2e2' }}>⊗</div>
+                    <div className="adm-stat-val">47</div>
+                    <div className="adm-stat-label">Inactive Users</div>
+                    <div className="adm-stat-change up">↑ +5 this month</div>
+                    <div className="adm-stat-corner" style={{ background: '#ef4444' }} />
+                </div>
+            </div>
+
+            {/* Users Card */}
+            <div className="adm-card">
+                <div className="adm-card-header">
+                    <span className="adm-card-title">All Users</span>
+                </div>
+                <UsersTable />
+            </div>
         </div>
     );
 };
