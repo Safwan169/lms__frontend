@@ -86,6 +86,12 @@ const navData: NavItem[] = [
     roles: ["admin", "rektor"],
   },
   {
+    title: "Teacher List",
+    url: "/dashboard/teachers",
+    icon: GraduationCap,
+    roles: ["admin", "rektor"],
+  },
+  {
     title: "Employee List",
     url: "/dashboard/employees",
     icon: Monitor,
