@@ -4,10 +4,8 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
-import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { LoginFormData, loginSchema } from '@/schemas';
-import { useLoginMutation } from '@/features/user/userApi';
-import { useAuth } from '@/context/AuthContext';
 
 interface SocialButtonProps {
     icon: React.ReactNode;
@@ -54,7 +52,7 @@ const SubmitButton: React.FC<{ isLoading: boolean }> = ({ isLoading }) => (
             </>
         ) : (
             <>
-                Continue Learning
+                CONTINUE
                 <ArrowRight className="w-4 h-4" />
             </>
         )}
@@ -63,13 +61,12 @@ const SubmitButton: React.FC<{ isLoading: boolean }> = ({ isLoading }) => (
 
 const LoginForm: React.FC = () => {
     const [showPassword, setShowPassword] = useState<boolean>(false);
-    const [loginUser, { isLoading: isLoadingLogin }] = useLoginMutation();
-    const { login } = useAuth();
+    const [isLoadingLogin, setIsLoadingLogin] = useState<boolean>(false);
+    const router = useRouter();
 
     const {
         register,
         handleSubmit,
-        setError,
         formState: { errors }
     } = useForm<LoginFormData>({
         resolver: zodResolver(loginSchema),
@@ -77,37 +74,29 @@ const LoginForm: React.FC = () => {
         defaultValues: { identifier: '', password: '', rememberMe: false }
     });
 
-    const onSubmit = async (data: LoginFormData) => {
-        const isEmail = data.identifier.includes('@');
-        const payload = {
-            password: data.password,
-            ...(isEmail ? { email: data.identifier } : { phone: data.identifier })
-        };
+    const onSubmit = async (_data: LoginFormData) => {
+        setIsLoadingLogin(true);
 
-        try {
-            const response = await loginUser(payload).unwrap();
-            const token = response?.token || response?.access_token || response?.accessToken;
-            const user = response?.user;
+        // Frontend-only flow for demo: skip real API/auth integration.
+        // const isEmail = _data.identifier.includes('@');
+        // const payload = {
+        //     password: _data.password,
+        //     ...(isEmail ? { email: _data.identifier } : { phone: _data.identifier })
+        // };
+        // const response = await loginUser(payload).unwrap();
+        // const token = response?.token || response?.access_token || response?.accessToken;
+        // const user = response?.user;
+        // if (token && user) {
+        //     login({ token, user });
+        // }
 
-            if (token && user) {
-                login({ token, user });
-                return;
-            }
+        toast('Logged in successfully!', {
+            description: 'Frontend flow only. Redirecting to dashboard.',
+            position: 'top-right',
+            action: { label: 'x', onClick: () => { } },
+        });
 
-            toast('Logged in successfully!', {
-                description: 'Welcome back! Redirecting to your dashboard.',
-                position: 'top-right',
-                action: { label: 'x', onClick: () => {} },
-            });
-        } catch (error: any) {
-            const message = error?.data?.message || 'Login failed. Please check your credentials.';
-            setError('root', { message });
-            toast('Login failed', {
-                description: message,
-                position: 'top-right',
-                action: { label: 'x', onClick: () => {} },
-            });
-        }
+        router.push('/dashboard');
     };
 
     const handleSocialLogin = (provider: string) => console.log(`${provider} login clicked`);
@@ -501,22 +490,23 @@ const LoginForm: React.FC = () => {
 
                     <div className="lms-left-content">
                         <h1 className="lms-left-heading">
-                            Learn at your<br />
-                            own <em>pace.</em>
+                            Manage your<br />
+                            coaching <em>smarter.</em>
                         </h1>
                         <p className="lms-left-sub">
-                            Access thousands of courses, track your progress, and earn certifications — all in one place.
+                            Students, teachers, batches, and payments —
+                            everything in one place.
                         </p>
                     </div>
 
                     <div className="lms-stats">
                         <div>
-                            <div className="lms-stat-num">12k+</div>
-                            <div className="lms-stat-label">Courses</div>
+                            <div className="lms-stat-num">1k+</div>
+                            <div className="lms-stat-label">Students</div>
                         </div>
                         <div>
                             <div className="lms-stat-num">98%</div>
-                            <div className="lms-stat-label">Completion</div>
+                            <div className="lms-stat-label">Success Rate</div>
                         </div>
                         <div>
                             <div className="lms-stat-num">4.9★</div>
@@ -598,24 +588,24 @@ const LoginForm: React.FC = () => {
                         </form>
 
                         {/* Divider */}
-                        <div className="lms-divider">
+                        {/* <div className="lms-divider">
                             <div className="lms-divider-line" />
                             <span className="lms-divider-text">or continue with</span>
                             <div className="lms-divider-line" />
-                        </div>
+                        </div> */}
 
                         {/* Social */}
-                        <div className="lms-social-grid">
+                        {/* <div className="lms-social-grid">
                             <SocialButton icon={<GoogleIcon />} label="Google" onClick={() => handleSocialLogin('Google')} />
                             <SocialButton icon={<GitHubIcon />} label="GitHub" onClick={() => handleSocialLogin('GitHub')} />
-                        </div>
+                        </div> */}
 
-                        <p className="lms-footer-text">
+                        {/* <p className="lms-footer-text">
                             Don't have an account?{' '}
                             <Link href="/register" className="lms-footer-link">
                                 Sign up for free
                             </Link>
-                        </p>
+                        </p> */}
                     </div>
                 </div>
             </div>

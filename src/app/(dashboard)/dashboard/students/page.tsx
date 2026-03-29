@@ -435,9 +435,6 @@ export default function StudentsListPage() {
           <h1>Student Management</h1>
           <p>Manage and monitor all students with shareable filter links and quick actions</p>
         </div>
-        <div className="adm-topbar-right">
-          <Badge variant="outline">Tenant: {String(tenantId)}</Badge>
-        </div>
       </div>
 
       <div className="adm-stats">

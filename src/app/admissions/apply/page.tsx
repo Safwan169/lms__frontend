@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
+import { useRouter } from "next/navigation"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
@@ -92,6 +93,7 @@ const admissionsSchema = z.object({
 type AdmissionsFormValues = z.infer<typeof admissionsSchema>
 
 export default function AdmissionsApplyPage() {
+  const router = useRouter()
   const [classes, setClasses] = useState<ClassOption[]>([])
   const [batches, setBatches] = useState<BatchOption[]>([])
   const [isClassesLoading, setIsClassesLoading] = useState(true)
@@ -122,33 +124,23 @@ export default function AdmissionsApplyPage() {
 
     const loadClasses = async () => {
       setIsClassesLoading(true)
-      try {
-        const response = await fetch("/api/classes", { cache: "no-store" })
-        if (!response.ok) {
-          throw new Error("Failed to load classes")
-        }
-        const data = await response.json()
-        if (!isMounted) return
-
-        const normalized = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.data)
-            ? data.data
-            : []
-
-        const mapped = normalized.map((item: any) => ({
-          id: String(item.id),
-          name: String(item.name ?? item.title ?? `Class ${item.id}`),
-        }))
-
-        setClasses(mapped.length > 0 ? mapped : DUMMY_CLASSES)
-      } catch {
-        if (!isMounted) return
+      // API implementation intentionally commented for frontend-only flow.
+      // try {
+      //   const response = await fetch("/api/classes", { cache: "no-store" })
+      //   if (!response.ok) throw new Error("Failed to load classes")
+      //   const data = await response.json()
+      //   if (!isMounted) return
+      //   const normalized = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []
+      //   const mapped = normalized.map((item: any) => ({ id: String(item.id), name: String(item.name ?? item.title ?? `Class ${item.id}`) }))
+      //   setClasses(mapped.length > 0 ? mapped : DUMMY_CLASSES)
+      // } catch {
+      //   if (!isMounted) return
+      //   setClasses(DUMMY_CLASSES)
+      // }
+      await new Promise((resolve) => setTimeout(resolve, 200))
+      if (isMounted) {
         setClasses(DUMMY_CLASSES)
-      } finally {
-        if (isMounted) {
-          setIsClassesLoading(false)
-        }
+        setIsClassesLoading(false)
       }
     }
 
@@ -172,37 +164,23 @@ export default function AdmissionsApplyPage() {
       setIsBatchesLoading(true)
       form.setValue("batch_id", "")
 
-      try {
-        const response = await fetch(`/api/batches?classId=${selectedClassId}`, {
-          cache: "no-store",
-        })
-
-        if (!response.ok) {
-          throw new Error("Failed to load batches")
-        }
-
-        const data = await response.json()
-        if (!isMounted) return
-
-        const normalized = Array.isArray(data)
-          ? data
-          : Array.isArray(data?.data)
-            ? data.data
-            : []
-
-        const mapped = normalized.map((item: any) => ({
-          id: String(item.id),
-          name: String(item.name ?? item.title ?? `Batch ${item.id}`),
-        }))
-
-        setBatches(mapped.length > 0 ? mapped : getDummyBatches(selectedClassId))
-      } catch {
-        if (!isMounted) return
+      // API implementation intentionally commented for frontend-only flow.
+      // try {
+      //   const response = await fetch(`/api/batches?classId=${selectedClassId}`, { cache: "no-store" })
+      //   if (!response.ok) throw new Error("Failed to load batches")
+      //   const data = await response.json()
+      //   if (!isMounted) return
+      //   const normalized = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : []
+      //   const mapped = normalized.map((item: any) => ({ id: String(item.id), name: String(item.name ?? item.title ?? `Batch ${item.id}`) }))
+      //   setBatches(mapped.length > 0 ? mapped : getDummyBatches(selectedClassId))
+      // } catch {
+      //   if (!isMounted) return
+      //   setBatches(getDummyBatches(selectedClassId))
+      // }
+      await new Promise((resolve) => setTimeout(resolve, 150))
+      if (isMounted) {
         setBatches(getDummyBatches(selectedClassId))
-      } finally {
-        if (isMounted) {
-          setIsBatchesLoading(false)
-        }
+        setIsBatchesLoading(false)
       }
     }
 
@@ -217,41 +195,36 @@ export default function AdmissionsApplyPage() {
     setSubmitError(null)
     form.clearErrors("phone")
 
-    const payload = {
-      student_name: values.student_name,
-      phone: values.phone,
-      email: values.email || undefined,
-      class_id: values.class_id,
-      batch_id: values.batch_id,
-    }
+    // API implementation intentionally commented for frontend-only flow.
+    // const payload = {
+    //   student_name: values.student_name,
+    //   phone: values.phone,
+    //   email: values.email || undefined,
+    //   class_id: values.class_id,
+    //   batch_id: values.batch_id,
+    // }
+    // try {
+    //   const response = await fetch("/api/admissions/apply", {
+    //     method: "POST",
+    //     headers: { "Content-Type": "application/json" },
+    //     body: JSON.stringify(payload),
+    //   })
+    //   if (response.status === 409) {
+    //     form.setError("phone", { type: "server", message: "An application with this number already exists" })
+    //     return
+    //   }
+    //   if (!response.ok) {
+    //     const data = await response.json().catch(() => null)
+    //     setSubmitError(data?.message || "Submission failed. Please try again.")
+    //     return
+    //   }
+    // } catch {
+    //   setSubmitError("Submission failed. Please check your connection and try again.")
+    //   return
+    // }
 
-    try {
-      const response = await fetch("/api/admissions/apply", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(payload),
-      })
-
-      if (response.status === 409) {
-        form.setError("phone", {
-          type: "server",
-          message: "An application with this number already exists",
-        })
-        return
-      }
-
-      if (!response.ok) {
-        const data = await response.json().catch(() => null)
-        setSubmitError(data?.message || "Submission failed. Please try again.")
-        return
-      }
-
-      setSubmitted(true)
-    } catch {
-      setSubmitError("Submission failed. Please check your connection and try again.")
-    }
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    router.push("/dashboard")
   }
 
   return (

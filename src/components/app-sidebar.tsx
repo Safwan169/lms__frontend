@@ -370,7 +370,7 @@ export function AppSidebar({ userRole = "rektor" }) {
         <SidebarContent>
           {/* ── Menu Utama ── */}
           <SidebarGroup>
-            <SidebarGroupLabel>MENU UTAMA</SidebarGroupLabel>
+            <SidebarGroupLabel>MENU </SidebarGroupLabel>
             <SidebarMenu>
               {navData
                 .filter((item) => item.roles.includes(userRole))

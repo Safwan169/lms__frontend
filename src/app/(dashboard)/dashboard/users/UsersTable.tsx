@@ -88,7 +88,6 @@ export default function UsersTable() {
   const [searchQuery, setSearchQuery] = useState("")
   const [filterRole, setFilterRole] = useState("All")
   const [filterStatus, setFilterStatus] = useState("All")
-  const [filterSession, setFilterSession] = useState("All")
   const [selectedUser, setSelectedUser] = useState<EmployeeRow | null>(null)
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false)
@@ -105,7 +104,7 @@ export default function UsersTable() {
 
   useEffect(() => {
     setCurrentPage(1)
-  }, [searchQuery, filterRole, filterStatus, filterSession])
+  }, [searchQuery, filterRole, filterStatus])
 
   const filteredRows = useMemo(() => {
     const searchLower = searchQuery.trim().toLowerCase()
@@ -119,11 +118,10 @@ export default function UsersTable() {
 
       const matchesRole = filterRole === "All" || row.role === filterRole
       const matchesStatus = filterStatus === "All" || row.status === filterStatus
-      const matchesSession = filterSession === "All" || row.session === filterSession
 
-      return matchesSearch && matchesRole && matchesStatus && matchesSession
+      return matchesSearch && matchesRole && matchesStatus
     })
-  }, [rows, searchQuery, filterRole, filterStatus, filterSession])
+  }, [rows, searchQuery, filterRole, filterStatus])
 
   const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage))
   const safePage = Math.min(currentPage, totalPages)
@@ -134,11 +132,6 @@ export default function UsersTable() {
   }, [filteredRows, safePage, itemsPerPage])
 
   const allCheckedOnPage = paginatedRows.length > 0 && paginatedRows.every((row) => selectedIds.includes(row.id))
-
-  const sessionOptions = useMemo(() => {
-    const set = new Set(rows.map((item) => item.session))
-    return Array.from(set)
-  }, [rows])
 
   const handleDelete = (user: EmployeeRow) => {
     if (window.confirm(`Are you sure you want to delete employee ${user.firstName} ${user.lastName}?`)) {
@@ -180,7 +173,6 @@ export default function UsersTable() {
     setSearchQuery("")
     setFilterRole("All")
     setFilterStatus("All")
-    setFilterSession("All")
     setCurrentPage(1)
   }
 
@@ -216,15 +208,6 @@ export default function UsersTable() {
           <option value="Active">Active</option>
           <option value="Inactive">Inactive</option>
           <option value="Pending">Pending</option>
-        </Select>
-
-        <Select value={filterSession} onValueChange={setFilterSession} className="w-[170px]">
-          <option value="All">All Sessions</option>
-          {sessionOptions.map((session) => (
-            <option key={session} value={session}>
-              {session}
-            </option>
-          ))}
         </Select>
 
         <Select
@@ -272,7 +255,6 @@ export default function UsersTable() {
               <TableHead>Email</TableHead>
               <TableHead>Role</TableHead>
               <TableHead>Status</TableHead>
-              <TableHead>Session</TableHead>
               <TableHead>Join Date</TableHead>
               <TableHead className="w-[130px]">Actions</TableHead>
             </TableRow>
@@ -281,7 +263,7 @@ export default function UsersTable() {
             {loading ? (
               Array.from({ length: 8 }).map((_, index) => (
                 <TableRow key={`sk-${index}`}>
-                  {Array.from({ length: 9 }).map((__, i) => (
+                  {Array.from({ length: 8 }).map((__, i) => (
                     <TableCell key={i}>
                       <Skeleton className="h-5 w-full" />
                     </TableCell>
@@ -290,7 +272,7 @@ export default function UsersTable() {
               ))
             ) : paginatedRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
+                <TableCell colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
                   No employees found. Try adjusting filters.
                 </TableCell>
               </TableRow>
@@ -319,7 +301,6 @@ export default function UsersTable() {
                   <TableCell>
                     <Badge variant={badgeVariantForStatus(row.status)}>{row.status}</Badge>
                   </TableCell>
-                  <TableCell>{row.session}</TableCell>
                   <TableCell>{row.joinDate}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
