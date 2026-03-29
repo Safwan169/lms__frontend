@@ -1,525 +1,467 @@
-'use client'
-import { useState, useMemo } from 'react';
-import CustomTable from './CustomTable';
-import { Search, Filter, Eye, Edit2, Trash2, Plus, Download } from 'lucide-react';
+"use client"
 
-const initialRows = [
-    { id: 1, firstName: 'Jon', lastName: 'Snow', email: 'jon.snow@example.com', role: 'Employee', status: 'Active', joinDate: '2024-01-15' },
-    { id: 2, firstName: 'Cersei', lastName: 'Lannister', email: 'cersei@example.com', role: 'Instructor', status: 'Active', joinDate: '2023-11-20' },
-    { id: 3, firstName: 'Jaime', lastName: 'Lannister', email: 'jaime@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-10' },
-    { id: 4, firstName: 'Arya', lastName: 'Stark', email: 'arya.stark@example.com', role: 'Employee', status: 'Inactive', joinDate: '2023-08-05' },
-    { id: 5, firstName: 'Daenerys', lastName: 'Targaryen', email: 'daenerys@example.com', role: 'Admin', status: 'Active', joinDate: '2023-06-12' },
-    { id: 6, firstName: 'Melisandre', lastName: 'Red', email: 'melisandre@example.com', role: 'Instructor', status: 'Active', joinDate: '2024-01-08' },
-    { id: 7, firstName: 'Ferrara', lastName: 'Clifford', email: 'ferrara@example.com', role: 'Employee', status: 'Active', joinDate: '2023-12-03' },
-    { id: 8, firstName: 'Rossini', lastName: 'Frances', email: 'rossini@example.com', role: 'Instructor', status: 'Pending', joinDate: '2024-03-15' },
-    { id: 9, firstName: 'Harvey', lastName: 'Roxie', email: 'harvey@example.com', role: 'Admin', status: 'Active', joinDate: '2023-05-22' },
-    { id: 10, firstName: 'Michael', lastName: 'Davis', email: 'michael.davis@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-28' },
-    { id: 11, firstName: 'Sarah', lastName: 'Connor', email: 'sarah.connor@example.com', role: 'Instructor', status: 'Active', joinDate: '2024-01-22' },
-    { id: 12, firstName: 'John', lastName: 'Smith', email: 'john.smith@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-05' },
-    { id: 13, firstName: 'Emma', lastName: 'Watson', email: 'emma.watson@example.com', role: 'Employee', status: 'Inactive', joinDate: '2023-09-10' },
-    { id: 14, firstName: 'Robert', lastName: 'Johnson', email: 'robert.johnson@example.com', role: 'Admin', status: 'Active', joinDate: '2023-04-15' },
-    { id: 15, firstName: 'Jessica', lastName: 'Brown', email: 'jessica.brown@example.com', role: 'Instructor', status: 'Active', joinDate: '2024-01-30' },
-    { id: 16, firstName: 'David', lastName: 'Wilson', email: 'david.wilson@example.com', role: 'Employee', status: 'Pending', joinDate: '2024-03-20' },
-    { id: 17, firstName: 'Lisa', lastName: 'Anderson', email: 'lisa.anderson@example.com', role: 'Instructor', status: 'Active', joinDate: '2023-12-12' },
-    { id: 18, firstName: 'Chris', lastName: 'Taylor', email: 'chris.taylor@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-14' },
-    { id: 19, firstName: 'Maria', lastName: 'Garcia', email: 'maria.garcia@example.com', role: 'Employee', status: 'Active', joinDate: '2024-03-01' },
-    { id: 20, firstName: 'James', lastName: 'Martinez', email: 'james.martinez@example.com', role: 'Admin', status: 'Active', joinDate: '2023-07-18' },
-];
+import { useEffect, useMemo, useState } from "react"
+import { ArrowUpDown, Download, Edit2, Eye, Search, Trash2, X } from "lucide-react"
 
-const UsersTable = () => {
-    const [rows, setRows] = useState(initialRows);
-    const [searchQuery, setSearchQuery] = useState('');
-    const [filterRole, setFilterRole] = useState('All');
-    const [filterStatus, setFilterStatus] = useState('All');
-    const [selectedUser, setSelectedUser] = useState<any>(null);
-    const [currentPage, setCurrentPage] = useState(1);
-    const [itemsPerPage, setItemsPerPage] = useState(5);
+import { Button } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
+import { Badge } from "@/components/ui/badge"
+import { Skeleton } from "@/components/ui/skeleton"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  Pagination,
+  PaginationContent,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from "@/components/ui/pagination"
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table-primitive"
 
-    const filteredRows = useMemo(() => {
-        setCurrentPage(1); // Reset to first page when filter changes
-        return rows.filter(row => {
-            const matchesSearch =
-                row.firstName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                row.lastName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                row.email?.toLowerCase().includes(searchQuery.toLowerCase());
+type EmployeeRow = {
+  id: number
+  firstName: string
+  lastName: string
+  email: string
+  role: "Employee" | "Instructor" | "Admin"
+  status: "Active" | "Inactive" | "Pending"
+  joinDate: string
+  session: string
+}
 
-            const matchesRole = filterRole === 'All' || row.role === filterRole;
-            const matchesStatus = filterStatus === 'All' || row.status === filterStatus;
+const INITIAL_ROWS: EmployeeRow[] = [
+  { id: 1, firstName: "Jon", lastName: "Snow", email: "jon.snow@example.com", role: "Employee", status: "Active", joinDate: "2024-01-15", session: "2024-2025" },
+  { id: 2, firstName: "Cersei", lastName: "Lannister", email: "cersei@example.com", role: "Instructor", status: "Active", joinDate: "2023-11-20", session: "2023-2024" },
+  { id: 3, firstName: "Jaime", lastName: "Lannister", email: "jaime@example.com", role: "Employee", status: "Active", joinDate: "2024-02-10", session: "2024-2025" },
+  { id: 4, firstName: "Arya", lastName: "Stark", email: "arya.stark@example.com", role: "Employee", status: "Inactive", joinDate: "2023-08-05", session: "2023-2024" },
+  { id: 5, firstName: "Daenerys", lastName: "Targaryen", email: "daenerys@example.com", role: "Admin", status: "Active", joinDate: "2023-06-12", session: "2023-2024" },
+  { id: 6, firstName: "Melisandre", lastName: "Red", email: "melisandre@example.com", role: "Instructor", status: "Active", joinDate: "2024-01-08", session: "2024-2025" },
+  { id: 7, firstName: "Ferrara", lastName: "Clifford", email: "ferrara@example.com", role: "Employee", status: "Active", joinDate: "2023-12-03", session: "2024-2025" },
+  { id: 8, firstName: "Rossini", lastName: "Frances", email: "rossini@example.com", role: "Instructor", status: "Pending", joinDate: "2024-03-15", session: "2024-2025" },
+  { id: 9, firstName: "Harvey", lastName: "Roxie", email: "harvey@example.com", role: "Admin", status: "Active", joinDate: "2023-05-22", session: "2023-2024" },
+  { id: 10, firstName: "Michael", lastName: "Davis", email: "michael.davis@example.com", role: "Employee", status: "Active", joinDate: "2024-02-28", session: "2024-2025" },
+  { id: 11, firstName: "Sarah", lastName: "Connor", email: "sarah.connor@example.com", role: "Instructor", status: "Active", joinDate: "2024-01-22", session: "2024-2025" },
+  { id: 12, firstName: "John", lastName: "Smith", email: "john.smith@example.com", role: "Employee", status: "Active", joinDate: "2024-02-05", session: "2024-2025" },
+  { id: 13, firstName: "Emma", lastName: "Watson", email: "emma.watson@example.com", role: "Employee", status: "Inactive", joinDate: "2023-09-10", session: "2023-2024" },
+  { id: 14, firstName: "Robert", lastName: "Johnson", email: "robert.johnson@example.com", role: "Admin", status: "Active", joinDate: "2023-04-15", session: "2023-2024" },
+  { id: 15, firstName: "Jessica", lastName: "Brown", email: "jessica.brown@example.com", role: "Instructor", status: "Active", joinDate: "2024-01-30", session: "2024-2025" },
+  { id: 16, firstName: "David", lastName: "Wilson", email: "david.wilson@example.com", role: "Employee", status: "Pending", joinDate: "2024-03-20", session: "2024-2025" },
+  { id: 17, firstName: "Lisa", lastName: "Anderson", email: "lisa.anderson@example.com", role: "Instructor", status: "Active", joinDate: "2023-12-12", session: "2024-2025" },
+  { id: 18, firstName: "Chris", lastName: "Taylor", email: "chris.taylor@example.com", role: "Employee", status: "Active", joinDate: "2024-02-14", session: "2024-2025" },
+  { id: 19, firstName: "Maria", lastName: "Garcia", email: "maria.garcia@example.com", role: "Employee", status: "Active", joinDate: "2024-03-01", session: "2024-2025" },
+  { id: 20, firstName: "James", lastName: "Martinez", email: "james.martinez@example.com", role: "Admin", status: "Active", joinDate: "2023-07-18", session: "2023-2024" },
+]
 
-            return matchesSearch && matchesRole && matchesStatus;
-        });
-    }, [rows, searchQuery, filterRole, filterStatus]);
+const PAGE_SIZES = [5, 10, 15, 20, 50]
 
-    const totalPages = Math.ceil(filteredRows.length / itemsPerPage);
-    const paginatedRows = useMemo(() => {
-        const startIdx = (currentPage - 1) * itemsPerPage;
-        return filteredRows.slice(startIdx, startIdx + itemsPerPage);
-    }, [filteredRows, currentPage, itemsPerPage]);
+function badgeVariantForRole(role: EmployeeRow["role"]) {
+  if (role === "Employee") return "info"
+  if (role === "Instructor") return "warning"
+  return "muted"
+}
 
-    const handleDelete = (user: any) => {
-        if (window.confirm(`Are you sure you want to delete employee ${user.firstName} ${user.lastName}?`)) {
-            setRows(prev => prev.filter(row => row.id !== user.id));
-        }
-    };
+function badgeVariantForStatus(status: EmployeeRow["status"]) {
+  if (status === "Active") return "default"
+  if (status === "Inactive") return "destructive"
+  return "warning"
+}
 
-    const handleEdit = (user: any) => {
-        alert(`Edit functionality for employee ${user.firstName} ${user.lastName} - coming soon!`);
-    };
+export default function UsersTable() {
+  const [rows, setRows] = useState<EmployeeRow[]>(INITIAL_ROWS)
+  const [searchQuery, setSearchQuery] = useState("")
+  const [filterRole, setFilterRole] = useState("All")
+  const [filterStatus, setFilterStatus] = useState("All")
+  const [filterSession, setFilterSession] = useState("All")
+  const [selectedUser, setSelectedUser] = useState<EmployeeRow | null>(null)
+  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false)
+  const [bulkStatus, setBulkStatus] = useState<EmployeeRow["status"]>("Active")
+  const [bulkReason, setBulkReason] = useState("")
+  const [currentPage, setCurrentPage] = useState(1)
+  const [itemsPerPage, setItemsPerPage] = useState(10)
+  const [loading, setLoading] = useState(true)
 
-    const handleView = (user: any) => {
-        setSelectedUser(user);
-    };
+  useEffect(() => {
+    const timer = setTimeout(() => setLoading(false), 240)
+    return () => clearTimeout(timer)
+  }, [])
 
-    const handleExport = () => {
-        const csv = [
-            ['ID', 'First Name', 'Last Name', 'Email', 'Role', 'Status', 'Join Date'],
-            ...filteredRows.map(row => [row.id, row.firstName, row.lastName, row.email, row.role, row.status, row.joinDate])
-        ]
-            .map(row => row.join(','))
-            .join('\n');
+  useEffect(() => {
+    setCurrentPage(1)
+  }, [searchQuery, filterRole, filterStatus, filterSession])
 
-        const blob = new Blob([csv], { type: 'text/csv' });
-        const url = window.URL.createObjectURL(blob);
-        const a = document.createElement('a');
-        a.href = url;
-        a.download = 'employees.csv';
-        a.click();
-    };
+  const filteredRows = useMemo(() => {
+    const searchLower = searchQuery.trim().toLowerCase()
 
-    const columns = [
-        {
-            key: 'id',
-            label: 'ID',
-            sortable: true,
-            render: (value: any) => <span className="font-semibold text-slate-900">#{value}</span>
-        },
-        {
-            key: 'firstName',
-            label: 'First Name',
-            sortable: true,
-        },
-        {
-            key: 'lastName',
-            label: 'Last Name',
-            sortable: true,
-        },
-        {
-            key: 'email',
-            label: 'Email',
-            sortable: true,
-            render: (value: any) => <span className="text-blue-600 underline">{value}</span>
-        },
-        {
-            key: 'role',
-            label: 'Role',
-            sortable: true,
-            render: (value: any) => {
-                const colors: any = {
-                    'Employee': 'bg-blue-100 text-blue-700',
-                    'Instructor': 'bg-green-100 text-green-700',
-                    'Admin': 'bg-purple-100 text-purple-700'
-                };
-                return (
-                    <span className={`px-3 py-1 rounded-full text-xs font-semibold ${colors[value] || 'bg-slate-100 text-slate-700'}`}>
-                        {value}
-                    </span>
-                );
-            }
-        },
-        {
-            key: 'status',
-            label: 'Status',
-            sortable: true,
-            render: (value: any) => {
-                const colors: any = {
-                    'Active': 'bg-green-100 text-green-700',
-                    'Inactive': 'bg-red-100 text-red-700',
-                    'Pending': 'bg-yellow-100 text-yellow-700'
-                };
-                return (
-                    <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 rounded-full ${value === 'Active' ? 'bg-green-500' : value === 'Inactive' ? 'bg-red-500' : 'bg-yellow-500'}`} />
-                        <span className={`px-3 py-1 rounded-full text-xs font-semibold ${colors[value] || 'bg-slate-100 text-slate-700'}`}>
-                            {value}
-                        </span>
-                    </div>
-                );
-            }
-        },
-        {
-            key: 'joinDate',
-            label: 'Join Date',
-            sortable: true,
-        }
-    ];
+    return rows.filter((row) => {
+      const matchesSearch =
+        searchLower.length === 0 ||
+        row.firstName.toLowerCase().includes(searchLower) ||
+        row.lastName.toLowerCase().includes(searchLower) ||
+        row.email.toLowerCase().includes(searchLower)
 
-    const actions = [
-        {
-            label: 'View',
-            icon: <Eye size={18} />,
-            onClick: handleView,
-            className: 'text-blue-600 hover:bg-blue-50'
-        },
-        {
-            label: 'Edit',
-            icon: <Edit2 size={18} />,
-            onClick: handleEdit,
-            className: 'text-amber-600 hover:bg-amber-50'
-        },
-        {
-            label: 'Delete',
-            icon: <Trash2 size={18} />,
-            onClick: handleDelete,
-            className: 'text-red-600 hover:bg-red-50'
-        }
-    ];
+      const matchesRole = filterRole === "All" || row.role === filterRole
+      const matchesStatus = filterStatus === "All" || row.status === filterStatus
+      const matchesSession = filterSession === "All" || row.session === filterSession
 
-    return (
-        <div>
-            {/* Search and Filter Bar */}
-            <div style={{ display: 'flex', gap: '12px', marginBottom: '1.25rem', flexWrap: 'wrap', alignItems: 'center', overflow: 'visible' }}>
-                <div style={{ flex: 1, minWidth: '250px', position: 'relative' }}>
-                    <Search style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', width: '18px', height: '18px', color: '#9095a8' }} />
-                    <input
-                        type="text"
-                        placeholder="Search by name or email..."
-                        value={searchQuery}
-                        onChange={(e) => setSearchQuery(e.target.value)}
-                        style={{
-                            width: '100%',
-                            paddingLeft: '40px',
-                            paddingRight: '16px',
-                            paddingTop: '10px',
-                            paddingBottom: '10px',
-                            borderRadius: '10px',
-                            border: '1px solid #e8eaf0',
-                            fontSize: '0.82rem',
-                            fontFamily: 'Sora, sans-serif',
-                            backgroundColor: 'white',
-                            color: '#1a1d2e'
-                        }}
-                    />
-                </div>
+      return matchesSearch && matchesRole && matchesStatus && matchesSession
+    })
+  }, [rows, searchQuery, filterRole, filterStatus, filterSession])
 
-                <select
-                    value={filterRole}
-                    onChange={(e) => setFilterRole(e.target.value)}
-                    style={{
-                        padding: '10px 16px',
-                        borderRadius: '10px',
-                        border: '1px solid #e8eaf0',
-                        fontSize: '0.82rem',
-                        fontFamily: 'Sora, sans-serif',
-                        backgroundColor: 'white',
-                        color: '#1a1d2e',
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        flexShrink: 0
-                    }}
-                >
-                    <option value="All">All Roles</option>
-                    <option value="Employee">Employee</option>
-                    <option value="Instructor">Instructor</option>
-                    <option value="Admin">Admin</option>
-                </select>
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage))
+  const safePage = Math.min(currentPage, totalPages)
 
-                <select
-                    value={filterStatus}
-                    onChange={(e) => setFilterStatus(e.target.value)}
-                    style={{
-                        padding: '10px 16px',
-                        borderRadius: '10px',
-                        border: '1px solid #e8eaf0',
-                        fontSize: '0.82rem',
-                        fontFamily: 'Sora, sans-serif',
-                        backgroundColor: 'white',
-                        color: '#1a1d2e',
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        flexShrink: 0
-                    }}
-                >
-                    <option value="All">All Status</option>
-                    <option value="Active">Active</option>
-                    <option value="Inactive">Inactive</option>
-                    <option value="Pending">Pending</option>
-                </select>
+  const paginatedRows = useMemo(() => {
+    const startIdx = (safePage - 1) * itemsPerPage
+    return filteredRows.slice(startIdx, startIdx + itemsPerPage)
+  }, [filteredRows, safePage, itemsPerPage])
 
-                <select
-                    value={itemsPerPage}
-                    onChange={(e) => {
-                        setItemsPerPage(Number(e.target.value));
-                        setCurrentPage(1);
-                    }}
-                    style={{
-                        padding: '10px 16px',
-                        borderRadius: '10px',
-                        border: '1px solid #e8eaf0',
-                        fontSize: '0.82rem',
-                        fontFamily: 'Sora, sans-serif',
-                        backgroundColor: 'white',
-                        color: '#1a1d2e',
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        flexShrink: 0
-                    }}
-                    title="Rows per page"
-                >
-                    <option value="5">5 rows</option>
-                    <option value="10">10 rows</option>
-                    <option value="15">15 rows</option>
-                    <option value="20">20 rows</option>
-                    <option value="50">50 rows</option>
-                </select>
+  const allCheckedOnPage = paginatedRows.length > 0 && paginatedRows.every((row) => selectedIds.includes(row.id))
 
-                <button
-                    onClick={handleExport}
-                    style={{
-                        padding: '10px 16px',
-                        borderRadius: '10px',
-                        border: '1px solid #e8eaf0',
-                        backgroundColor: 'white',
-                        color: '#1a1d2e',
-                        cursor: 'pointer',
-                        fontWeight: '500',
-                        fontSize: '0.82rem',
-                        fontFamily: 'Sora, sans-serif',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '6px',
-                        flexShrink: 0
-                    }}
-                >
-                    <Download size={16} />
-                    Export
-                </button>
-            </div>
+  const sessionOptions = useMemo(() => {
+    const set = new Set(rows.map((item) => item.session))
+    return Array.from(set)
+  }, [rows])
 
-            {/* Custom Table */}
-            <CustomTable columns={columns} rows={paginatedRows} actions={actions} />
+  const handleDelete = (user: EmployeeRow) => {
+    if (window.confirm(`Are you sure you want to delete employee ${user.firstName} ${user.lastName}?`)) {
+      setRows((prev) => prev.filter((row) => row.id !== user.id))
+    }
+  }
 
-            {/* Pagination */}
-            {totalPages > 1 && (
-                <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    padding: '1rem 0',
-                    borderTop: '1px solid #e8eaf0',
-                    marginTop: '1.25rem',
-                    gap: '1rem',
-                    flexWrap: 'wrap'
-                }}>
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '12px',
-                        fontSize: '0.83rem',
-                        color: '#9095a8',
-                        fontFamily: 'Sora, sans-serif'
-                    }}>
-                        <span>Show</span>
-                        <select
-                            value={itemsPerPage}
-                            onChange={(e) => {
-                                setItemsPerPage(Number(e.target.value));
-                                setCurrentPage(1);
-                            }}
-                            style={{
-                                padding: '6px 10px',
-                                borderRadius: '8px',
-                                border: '1px solid #e8eaf0',
-                                fontSize: '0.82rem',
-                                fontFamily: 'Sora, sans-serif',
-                                backgroundColor: 'white',
-                                color: '#1a1d2e',
-                                cursor: 'pointer',
-                                fontWeight: '500'
-                            }}
-                        >
-                            <option value="5">5</option>
-                            <option value="10">10</option>
-                            <option value="15">15</option>
-                            <option value="20">20</option>
-                            <option value="50">50</option>
-                        </select>
-                        <span>entries</span>
-                        <span style={{ marginLeft: '8px' }}>
-                            - Showing <span style={{ fontWeight: '600', color: '#1a1d2e' }}>{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
-                            <span style={{ fontWeight: '600', color: '#1a1d2e' }}>{Math.min(currentPage * itemsPerPage, filteredRows.length)}</span> of{' '}
-                            <span style={{ fontWeight: '600', color: '#1a1d2e' }}>{filteredRows.length}</span> employees
-                        </span>
-                    </div>
+  const handleEdit = (user: EmployeeRow) => {
+    window.alert(`Edit functionality for employee ${user.firstName} ${user.lastName} - coming soon!`)
+  }
 
-                    <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                        {/* Previous Button */}
-                        <button
-                            onClick={() => setCurrentPage(prev => Math.max(1, prev - 1))}
-                            disabled={currentPage === 1}
-                            style={{
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid #e8eaf0',
-                                backgroundColor: currentPage === 1 ? '#f5f6fa' : 'white',
-                                color: currentPage === 1 ? '#9095a8' : '#1a1d2e',
-                                cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
-                                fontWeight: '500',
-                                fontSize: '0.82rem',
-                                fontFamily: 'Sora, sans-serif',
-                                transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={(e) => {
-                                if (currentPage > 1) {
-                                    (e.target as any).style.backgroundColor = '#f5f6fa';
-                                }
-                            }}
-                            onMouseLeave={(e) => {
-                                if (currentPage > 1) {
-                                    (e.target as any).style.backgroundColor = 'white';
-                                }
-                            }}
-                        >
-                            ← Previous
-                        </button>
+  const handleExport = () => {
+    const csv = [
+      ["ID", "First Name", "Last Name", "Email", "Role", "Status", "Session", "Join Date"],
+      ...filteredRows.map((row) => [
+        String(row.id),
+        row.firstName,
+        row.lastName,
+        row.email,
+        row.role,
+        row.status,
+        row.session,
+        row.joinDate,
+      ]),
+    ]
+      .map((row) => row.join(","))
+      .join("\n")
 
-                        {/* Page Numbers */}
-                        <div style={{ display: 'flex', gap: '4px' }}>
-                            {Array.from({ length: totalPages }, (_, i) => i + 1).map(page => (
-                                <button
-                                    key={page}
-                                    onClick={() => setCurrentPage(page)}
-                                    style={{
-                                        width: '36px',
-                                        height: '36px',
-                                        borderRadius: '8px',
-                                        border: currentPage === page ? '2px solid #6366f1' : '1px solid #e8eaf0',
-                                        backgroundColor: currentPage === page ? '#eef2ff' : 'white',
-                                        color: currentPage === page ? '#6366f1' : '#1a1d2e',
-                                        cursor: 'pointer',
-                                        fontWeight: currentPage === page ? '600' : '500',
-                                        fontSize: '0.82rem',
-                                        fontFamily: 'Sora, sans-serif',
-                                        transition: 'all 0.2s'
-                                    }}
-                                    onMouseEnter={(e) => {
-                                        if (currentPage !== page) {
-                                            (e.target as any).style.backgroundColor = '#f5f6fa';
-                                        }
-                                    }}
-                                    onMouseLeave={(e) => {
-                                        if (currentPage !== page) {
-                                            (e.target as any).style.backgroundColor = 'white';
-                                        }
-                                    }}
-                                >
-                                    {page}
-                                </button>
-                            ))}
-                        </div>
+    const blob = new Blob([csv], { type: "text/csv" })
+    const url = window.URL.createObjectURL(blob)
+    const a = document.createElement("a")
+    a.href = url
+    a.download = "employees.csv"
+    a.click()
+    window.URL.revokeObjectURL(url)
+  }
 
-                        {/* Next Button */}
-                        <button
-                            onClick={() => setCurrentPage(prev => Math.min(totalPages, prev + 1))}
-                            disabled={currentPage === totalPages}
-                            style={{
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid #e8eaf0',
-                                backgroundColor: currentPage === totalPages ? '#f5f6fa' : 'white',
-                                color: currentPage === totalPages ? '#9095a8' : '#1a1d2e',
-                                cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
-                                fontWeight: '500',
-                                fontSize: '0.82rem',
-                                fontFamily: 'Sora, sans-serif',
-                                transition: 'all 0.2s'
-                            }}
-                            onMouseEnter={(e) => {
-                                if (currentPage < totalPages) {
-                                    (e.target as any).style.backgroundColor = '#f5f6fa';
-                                }
-                            }}
-                            onMouseLeave={(e) => {
-                                if (currentPage < totalPages) {
-                                    (e.target as any).style.backgroundColor = 'white';
-                                }
-                            }}
-                        >
-                            Next →
-                        </button>
-                    </div>
-                </div>
-            )}
+  const handleResetFilters = () => {
+    setSearchQuery("")
+    setFilterRole("All")
+    setFilterStatus("All")
+    setFilterSession("All")
+    setCurrentPage(1)
+  }
 
-            {/* Employee Details Modal */}
-            {selectedUser && (
-                <div style={{
-                    position: 'fixed',
-                    inset: '0',
-                    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    zIndex: 50,
-                    padding: '16px'
-                }} onClick={() => setSelectedUser(null)}>
-                    <div style={{
-                        backgroundColor: 'white',
-                        borderRadius: '14px',
-                        boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)',
-                        maxWidth: '420px',
-                        width: '100%',
-                        padding: '24px',
-                        border: '1px solid #e8eaf0'
-                    }} onClick={(e) => e.stopPropagation()}>
-                        <h2 style={{
-                            fontSize: '1.5rem',
-                            fontWeight: '600',
-                            color: '#1a1d2e',
-                            marginBottom: '16px',
-                            fontFamily: 'Lora, serif'
-                        }}>
-                            {selectedUser.firstName} {selectedUser.lastName}
-                        </h2>
-                        <div style={{ marginBottom: '24px' }}>
-                            <div style={{ marginBottom: '12px' }}>
-                                <p style={{ fontSize: '0.7rem', fontWeight: '600', color: '#9095a8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Email</p>
-                                <p style={{ color: '#1a1d2e', fontSize: '0.83rem' }}>{selectedUser.email}</p>
-                            </div>
-                            <div style={{ marginBottom: '12px' }}>
-                                <p style={{ fontSize: '0.7rem', fontWeight: '600', color: '#9095a8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Role</p>
-                                <p style={{ color: '#1a1d2e', fontSize: '0.83rem' }}>{selectedUser.role}</p>
-                            </div>
-                            <div style={{ marginBottom: '12px' }}>
-                                <p style={{ fontSize: '0.7rem', fontWeight: '600', color: '#9095a8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Status</p>
-                                <p style={{ color: '#1a1d2e', fontSize: '0.83rem' }}>{selectedUser.status}</p>
-                            </div>
-                            <div>
-                                <p style={{ fontSize: '0.7rem', fontWeight: '600', color: '#9095a8', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '4px' }}>Join Date</p>
-                                <p style={{ color: '#1a1d2e', fontSize: '0.83rem' }}>{selectedUser.joinDate}</p>
-                            </div>
-                        </div>
-                        <button
-                            onClick={() => setSelectedUser(null)}
-                            style={{
-                                width: '100%',
-                                padding: '10px 16px',
-                                borderRadius: '10px',
-                                backgroundColor: '#6366f1',
-                                color: 'white',
-                                border: 'none',
-                                cursor: 'pointer',
-                                fontWeight: '500',
-                                fontSize: '0.83rem',
-                                fontFamily: 'Sora, sans-serif'
-                            }}
-                        >
-                            Close
-                        </button>
-                    </div>
-                </div>
-            )}
+  const applyBulkStatusUpdate = () => {
+    setRows((prev) => prev.map((row) => (selectedIds.includes(row.id) ? { ...row, status: bulkStatus } : row)))
+    setBulkStatusDialogOpen(false)
+    setBulkReason("")
+    setSelectedIds([])
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="relative min-w-[260px] flex-1">
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <Input
+            value={searchQuery}
+            onChange={(event) => setSearchQuery(event.target.value)}
+            placeholder="Search by name or email"
+            className="pl-9"
+          />
         </div>
-    );
-};
 
-export default UsersTable;
+        <Select value={filterRole} onValueChange={setFilterRole} className="w-[170px]">
+          <option value="All">All Roles</option>
+          <option value="Employee">Employee</option>
+          <option value="Instructor">Instructor</option>
+          <option value="Admin">Admin</option>
+        </Select>
+
+        <Select value={filterStatus} onValueChange={setFilterStatus} className="w-[170px]">
+          <option value="All">All Status</option>
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+          <option value="Pending">Pending</option>
+        </Select>
+
+        <Select value={filterSession} onValueChange={setFilterSession} className="w-[170px]">
+          <option value="All">All Sessions</option>
+          {sessionOptions.map((session) => (
+            <option key={session} value={session}>
+              {session}
+            </option>
+          ))}
+        </Select>
+
+        <Select
+          value={String(itemsPerPage)}
+          onValueChange={(value) => setItemsPerPage(Number(value))}
+          className="w-[120px]"
+        >
+          {PAGE_SIZES.map((size) => (
+            <option key={size} value={String(size)}>
+              {size} rows
+            </option>
+          ))}
+        </Select>
+
+        <Button variant="ghost" onClick={handleResetFilters}>
+          <X className="mr-1 size-4" /> Reset
+        </Button>
+
+        <Button variant="outline" onClick={handleExport}>
+          <Download className="mr-1 size-4" /> Export
+        </Button>
+      </div>
+
+      <div className="overflow-hidden rounded-lg border">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="w-10">
+                <input
+                  type="checkbox"
+                  checked={allCheckedOnPage}
+                  onChange={(event) => {
+                    if (event.target.checked) {
+                      const next = new Set(selectedIds)
+                      paginatedRows.forEach((row) => next.add(row.id))
+                      setSelectedIds(Array.from(next))
+                    } else {
+                      setSelectedIds((prev) => prev.filter((id) => !paginatedRows.some((row) => row.id === id)))
+                    }
+                  }}
+                />
+              </TableHead>
+              <TableHead>ID</TableHead>
+              <TableHead>Name</TableHead>
+              <TableHead>Email</TableHead>
+              <TableHead>Role</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Session</TableHead>
+              <TableHead>Join Date</TableHead>
+              <TableHead className="w-[130px]">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {loading ? (
+              Array.from({ length: 8 }).map((_, index) => (
+                <TableRow key={`sk-${index}`}>
+                  {Array.from({ length: 9 }).map((__, i) => (
+                    <TableCell key={i}>
+                      <Skeleton className="h-5 w-full" />
+                    </TableCell>
+                  ))}
+                </TableRow>
+              ))
+            ) : paginatedRows.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={9} className="py-12 text-center text-sm text-muted-foreground">
+                  No employees found. Try adjusting filters.
+                </TableCell>
+              </TableRow>
+            ) : (
+              paginatedRows.map((row) => (
+                <TableRow key={row.id}>
+                  <TableCell>
+                    <input
+                      type="checkbox"
+                      checked={selectedIds.includes(row.id)}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          setSelectedIds((prev) => Array.from(new Set([...prev, row.id])))
+                        } else {
+                          setSelectedIds((prev) => prev.filter((id) => id !== row.id))
+                        }
+                      }}
+                    />
+                  </TableCell>
+                  <TableCell className="font-medium">#{row.id}</TableCell>
+                  <TableCell>{row.firstName} {row.lastName}</TableCell>
+                  <TableCell>{row.email}</TableCell>
+                  <TableCell>
+                    <Badge variant={badgeVariantForRole(row.role)}>{row.role}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={badgeVariantForStatus(row.status)}>{row.status}</Badge>
+                  </TableCell>
+                  <TableCell>{row.session}</TableCell>
+                  <TableCell>{row.joinDate}</TableCell>
+                  <TableCell>
+                    <div className="flex items-center gap-1">
+                      <Button variant="ghost" size="icon-sm" onClick={() => setSelectedUser(row)}>
+                        <Eye className="size-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => handleEdit(row)}>
+                        <Edit2 className="size-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => handleDelete(row)}>
+                        <Trash2 className="size-4 text-red-600" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      <div className={`fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 backdrop-blur transition-transform duration-300 ${selectedIds.length > 0 ? "translate-y-0" : "translate-y-full"}`}>
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2">
+          <p className="text-sm">{selectedIds.length} employees selected</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setBulkStatus("Active")
+                setBulkReason("")
+                setBulkStatusDialogOpen(true)
+              }}
+            >
+              <ArrowUpDown className="mr-1 size-4" /> Change Status
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => setSelectedIds([])}>
+              Deselect All
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-sm text-muted-foreground">
+          Showing {(safePage - 1) * itemsPerPage + (paginatedRows.length > 0 ? 1 : 0)} to {Math.min(safePage * itemsPerPage, filteredRows.length)} of {filteredRows.length} employees
+        </p>
+
+        <Pagination className="mx-0 w-auto justify-end">
+          <PaginationContent>
+            <PaginationItem>
+              <PaginationPrevious
+                href="#"
+                onClick={(event) => {
+                  event.preventDefault()
+                  if (safePage > 1) setCurrentPage((prev) => prev - 1)
+                }}
+              />
+            </PaginationItem>
+
+            {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+              <PaginationItem key={page}>
+                <PaginationLink
+                  href="#"
+                  isActive={safePage === page}
+                  onClick={(event) => {
+                    event.preventDefault()
+                    setCurrentPage(page)
+                  }}
+                >
+                  {page}
+                </PaginationLink>
+              </PaginationItem>
+            ))}
+
+            <PaginationItem>
+              <PaginationNext
+                href="#"
+                onClick={(event) => {
+                  event.preventDefault()
+                  if (safePage < totalPages) setCurrentPage((prev) => prev + 1)
+                }}
+              />
+            </PaginationItem>
+          </PaginationContent>
+        </Pagination>
+      </div>
+
+      <Dialog open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {selectedUser?.firstName} {selectedUser?.lastName}
+            </DialogTitle>
+            <DialogDescription>Employee details preview</DialogDescription>
+          </DialogHeader>
+
+          {selectedUser ? (
+            <div className="space-y-2 text-sm">
+              <p><span className="text-muted-foreground">Email:</span> {selectedUser.email}</p>
+              <p><span className="text-muted-foreground">Role:</span> {selectedUser.role}</p>
+              <p><span className="text-muted-foreground">Status:</span> {selectedUser.status}</p>
+              <p><span className="text-muted-foreground">Session:</span> {selectedUser.session}</p>
+              <p><span className="text-muted-foreground">Join Date:</span> {selectedUser.joinDate}</p>
+            </div>
+          ) : null}
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setSelectedUser(null)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={bulkStatusDialogOpen} onOpenChange={setBulkStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Change Status for {selectedIds.length} Employees</DialogTitle>
+            <DialogDescription>Apply a new status to all selected employees.</DialogDescription>
+          </DialogHeader>
+
+          <RadioGroup value={bulkStatus} onValueChange={(value) => setBulkStatus(value as EmployeeRow["status"])}>
+            <RadioGroupItem id="emp-active" value="Active">Active</RadioGroupItem>
+            <RadioGroupItem id="emp-inactive" value="Inactive">Inactive</RadioGroupItem>
+            <RadioGroupItem id="emp-pending" value="Pending">Pending</RadioGroupItem>
+          </RadioGroup>
+
+          <Textarea
+            value={bulkReason}
+            onChange={(event) => setBulkReason(event.target.value)}
+            placeholder="Reason for status update (optional)"
+          />
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setBulkStatusDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={applyBulkStatusUpdate}>Update Status</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  )
+}

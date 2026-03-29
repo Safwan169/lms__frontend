@@ -80,6 +80,12 @@ const navData: NavItem[] = [
     roles: ["admin", "rektor"],
   },
   {
+    title: "Student List",
+    url: "/dashboard/students",
+    icon: BookOpen,
+    roles: ["admin", "rektor"],
+  },
+  {
     title: "Employee List",
     url: "/dashboard/employees",
     icon: Monitor,
