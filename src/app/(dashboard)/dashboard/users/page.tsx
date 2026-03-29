@@ -7,8 +7,8 @@ const page = () => {
             {/* Top bar */}
             <div className="adm-topbar">
                 <div className="adm-topbar-left">
-                    <h1>Users Management</h1>
-                    <p>Manage and monitor all system users — View, edit, and delete user accounts</p>
+                    <h1>Employee Management</h1>
+                    <p>Manage and monitor all employees — View, edit, and delete employee accounts</p>
                 </div>
             </div>
 
@@ -17,14 +17,14 @@ const page = () => {
                 <div className="adm-stat">
                     <div className="adm-stat-icon" style={{ background: '#e0e7ff' }}>👥</div>
                     <div className="adm-stat-val">1,234</div>
-                    <div className="adm-stat-label">Total Users</div>
+                    <div className="adm-stat-label">Total Employees</div>
                     <div className="adm-stat-change up">↑ +45 this month</div>
                     <div className="adm-stat-corner" style={{ background: '#6366f1' }} />
                 </div>
                 <div className="adm-stat">
                     <div className="adm-stat-icon" style={{ background: '#dcfce7' }}>✓</div>
                     <div className="adm-stat-val">1,089</div>
-                    <div className="adm-stat-label">Active Users</div>
+                    <div className="adm-stat-label">Active Employees</div>
                     <div className="adm-stat-change up">↑ +32 this month</div>
                     <div className="adm-stat-corner" style={{ background: '#10b981' }} />
                 </div>
@@ -38,16 +38,16 @@ const page = () => {
                 <div className="adm-stat">
                     <div className="adm-stat-icon" style={{ background: '#fee2e2' }}>⊗</div>
                     <div className="adm-stat-val">47</div>
-                    <div className="adm-stat-label">Inactive Users</div>
+                    <div className="adm-stat-label">Inactive Employees</div>
                     <div className="adm-stat-change up">↑ +5 this month</div>
                     <div className="adm-stat-corner" style={{ background: '#ef4444' }} />
                 </div>
             </div>
 
-            {/* Users Card */}
+            {/* Employees Card */}
             <div className="adm-card">
                 <div className="adm-card-header">
-                    <span className="adm-card-title">All Users</span>
+                    <span className="adm-card-title">All Employees</span>
                 </div>
                 <UsersTable />
             </div>

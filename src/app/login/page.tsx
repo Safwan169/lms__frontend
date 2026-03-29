@@ -2,16 +2,12 @@
 import React, { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { z } from 'zod';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, BookOpen, GraduationCap } from 'lucide-react';
-import { InputField } from '@/components/ui/Field';
-import { Divider } from '@/components/ui/Divider';
-import { AnimatedBackground } from './componants/AnimatedHeader';
-import { LoginHeader } from './componants/LoginHeader';
-import { toast, Toaster } from "sonner"
+import { Mail, Lock, Eye, EyeOff, ArrowRight, GraduationCap } from 'lucide-react';
+import { toast } from 'sonner';
 import Link from 'next/link';
 import { LoginFormData, loginSchema } from '@/schemas';
 import { useLoginMutation } from '@/features/user/userApi';
+import { useAuth } from '@/context/AuthContext';
 
 interface SocialButtonProps {
     icon: React.ReactNode;
@@ -45,9 +41,9 @@ const GitHubIcon: React.FC = () => (
     </svg>
 );
 
-const SubmitButton: React.FC<{ isLoading: boolean; onClick: () => void }> = ({ isLoading, onClick }) => (
+const SubmitButton: React.FC<{ isLoading: boolean }> = ({ isLoading }) => (
     <button
-        onClick={onClick}
+        type="submit"
         disabled={isLoading}
         className="lms-submit-btn"
     >
@@ -67,30 +63,51 @@ const SubmitButton: React.FC<{ isLoading: boolean; onClick: () => void }> = ({ i
 
 const LoginForm: React.FC = () => {
     const [showPassword, setShowPassword] = useState<boolean>(false);
-    const [isLoading, setIsLoading] = useState<boolean>(false);
-    const [focusedField, setFocusedField] = useState<string>('');
-    const [loginUser, { isLoading: isLoadingLogin, isError }] = useLoginMutation();
+    const [loginUser, { isLoading: isLoadingLogin }] = useLoginMutation();
+    const { login } = useAuth();
 
     const {
         register,
         handleSubmit,
+        setError,
         formState: { errors }
     } = useForm<LoginFormData>({
         resolver: zodResolver(loginSchema),
         mode: 'onChange',
-        defaultValues: { email: '', password: '', rememberMe: false }
+        defaultValues: { identifier: '', password: '', rememberMe: false }
     });
 
     const onSubmit = async (data: LoginFormData) => {
-        setIsLoading(true);
-        await new Promise(resolve => setTimeout(resolve, 1500));
-        console.log('Login successful:', data);
-        toast("Logged in successfully!", {
-            description: "Welcome back! Redirecting to your dashboard.",
-            position: "top-right",
-            action: { label: "x", onClick: () => {} },
-        });
-        setIsLoading(false);
+        const isEmail = data.identifier.includes('@');
+        const payload = {
+            password: data.password,
+            ...(isEmail ? { email: data.identifier } : { phone: data.identifier })
+        };
+
+        try {
+            const response = await loginUser(payload).unwrap();
+            const token = response?.token || response?.access_token || response?.accessToken;
+            const user = response?.user;
+
+            if (token && user) {
+                login({ token, user });
+                return;
+            }
+
+            toast('Logged in successfully!', {
+                description: 'Welcome back! Redirecting to your dashboard.',
+                position: 'top-right',
+                action: { label: 'x', onClick: () => {} },
+            });
+        } catch (error: any) {
+            const message = error?.data?.message || 'Login failed. Please check your credentials.';
+            setError('root', { message });
+            toast('Login failed', {
+                description: message,
+                position: 'top-right',
+                action: { label: 'x', onClick: () => {} },
+            });
+        }
     };
 
     const handleSocialLogin = (provider: string) => console.log(`${provider} login clicked`);
@@ -523,62 +540,62 @@ const LoginForm: React.FC = () => {
                         <h2 className="lms-heading">Welcome back</h2>
                         <p className="lms-subheading">Sign in to continue your learning journey</p>
 
-                        {/* Email */}
-                        <div className="lms-field">
-                            <label className="lms-label">Email</label>
-                            <div className="lms-input-wrap">
-                                <Mail className="lms-input-icon" />
-                                <input
-                                    id="email"
-                                    type="email"
-                                    placeholder="you@example.com"
-                                    className="lms-input"
-                                    {...register('email')}
-                                    onFocus={() => setFocusedField('email')}
-                                    onBlur={() => setFocusedField('')}
-                                />
+                        <form onSubmit={handleSubmit(onSubmit)}>
+                            {/* Email / Phone */}
+                            <div className="lms-field">
+                                <label className="lms-label">Email or Phone</label>
+                                <div className="lms-input-wrap">
+                                    <Mail className="lms-input-icon" />
+                                    <input
+                                        id="identifier"
+                                        type="text"
+                                        placeholder="you@example.com or +8801XXXXXXXXX"
+                                        className="lms-input"
+                                        {...register('identifier')}
+                                    />
+                                </div>
+                                {errors.identifier && <p className="lms-error">{errors.identifier.message}</p>}
                             </div>
-                            {errors.email && <p className="lms-error">{errors.email.message}</p>}
-                        </div>
 
-                        {/* Password */}
-                        <div className="lms-field">
-                            <label className="lms-label">Password</label>
-                            <div className="lms-input-wrap">
-                                <Lock className="lms-input-icon" />
-                                <input
-                                    id="password"
-                                    type={showPassword ? 'text' : 'password'}
-                                    placeholder="••••••••"
-                                    className="lms-input"
-                                    style={{ paddingRight: '2.8rem' }}
-                                    {...register('password')}
-                                    onFocus={() => setFocusedField('password')}
-                                    onBlur={() => setFocusedField('')}
-                                />
-                                <button
-                                    type="button"
-                                    className="lms-input-right"
-                                    onClick={() => setShowPassword(!showPassword)}
-                                >
-                                    {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                            {/* Password */}
+                            <div className="lms-field">
+                                <label className="lms-label">Password</label>
+                                <div className="lms-input-wrap">
+                                    <Lock className="lms-input-icon" />
+                                    <input
+                                        id="password"
+                                        type={showPassword ? 'text' : 'password'}
+                                        placeholder="••••••••"
+                                        className="lms-input"
+                                        style={{ paddingRight: '2.8rem' }}
+                                        {...register('password')}
+                                    />
+                                    <button
+                                        type="button"
+                                        className="lms-input-right"
+                                        onClick={() => setShowPassword(!showPassword)}
+                                    >
+                                        {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                                    </button>
+                                </div>
+                                {errors.password && <p className="lms-error">{errors.password.message}</p>}
+                            </div>
+
+                            {/* Remember / Forgot */}
+                            <div className="lms-row">
+                                <label className="lms-remember">
+                                    <input type="checkbox" {...register('rememberMe')} />
+                                    Remember me
+                                </label>
+                                <button type="button" className="lms-forgot" onClick={() => console.log('Forgot password')}>
+                                    Forgot password?
                                 </button>
                             </div>
-                            {errors.password && <p className="lms-error">{errors.password.message}</p>}
-                        </div>
 
-                        {/* Remember / Forgot */}
-                        <div className="lms-row">
-                            <label className="lms-remember">
-                                <input type="checkbox" {...register('rememberMe')} />
-                                Remember me
-                            </label>
-                            <button type="button" className="lms-forgot" onClick={() => console.log('Forgot password')}>
-                                Forgot password?
-                            </button>
-                        </div>
+                            {errors.root?.message && <p className="lms-error">{errors.root.message}</p>}
 
-                        <SubmitButton isLoading={isLoading} onClick={handleSubmit(onSubmit)} />
+                            <SubmitButton isLoading={isLoadingLogin} />
+                        </form>
 
                         {/* Divider */}
                         <div className="lms-divider">

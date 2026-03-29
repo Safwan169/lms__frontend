@@ -7,8 +7,8 @@ export const userApi = baseApi.injectEndpoints({
       query: () => "/auth/profile",
       providesTags: ["User"]
     }),
-    login: builder.mutation<any, { email: string; password: string }>({
-      query: (body: { email: string; password: string }) => ({ url: "/auth/login", method: "POST", body }),
+    login: builder.mutation<any, { password: string; email?: string; phone?: string }>({
+      query: (body: { password: string; email?: string; phone?: string }) => ({ url: "/auth/login", method: "POST", body }),
       invalidatesTags: ["User"]
     }),
     register:builder.mutation({

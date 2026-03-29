@@ -3,7 +3,6 @@
 import * as React from "react"
 import { usePathname } from "next/navigation"
 import {
-  Database,
   LayoutDashboard,
   ChevronDown,
   Monitor,
@@ -36,47 +35,80 @@ import {
 } from "@/components/ui/sidebar"
 import Link from "next/link"
 
-const navData = [
+type NavSubItem = {
+  title: string
+  url: string
+}
+
+type NavItem = {
+  title: string
+  url: string
+  icon: React.ComponentType<any>
+  roles: string[]
+  items?: NavSubItem[]
+}
+
+type ConfigItem = {
+  title: string
+  url: string
+  icon: React.ComponentType<any>
+  roles: string[]
+}
+
+const navData: NavItem[] = [
   {
     title: "Dashboard",
     url: "/dashboard",
     icon: LayoutDashboard,
     roles: ["admin", "user", "rektor"],
   },
+  // {
+  //   title: "Data Master",
+  //   url: "#",
+  //   icon: Database,
+  //   roles: ["admin", "rektor"],
+  //   items: [
+  //     { title: "Profil PT", url: "/profil" },
+  //     { title: "Mata Kuliah", url: "/mata-kuliah" },
+  //     { title: "Pengguna", url: "/pengguna" },
+  //   ],
+  // },
   {
-    title: "Data Master",
-    url: "#",
-    icon: Database,
+    title: "Admissions",
+    url: "/dashboard/admissions",
+    icon: GraduationCap,
     roles: ["admin", "rektor"],
-    items: [
-      { title: "Profil PT", url: "/profil" },
-      { title: "Mata Kuliah", url: "/mata-kuliah" },
-      { title: "Pengguna", url: "/pengguna" },
-    ],
   },
   {
-    title: "User List",
-    url: "/dashboard/users",
+    title: "Employee List",
+    url: "/dashboard/employees",
     icon: Monitor,
     roles: ["admin", "rektor"],
   },
-  {
-    title: "Bank Soal",
-    url: "/bank-soal",
-    icon: BookOpen,
-    roles: ["admin", "rektor"],
-  },
-  {
-    title: "Data Sistem",
-    url: "/sistem",
-    icon: HardDrive,
-    roles: ["admin", "rektor"],
-  },
+  
+  // {
+  //   title: "Settings",
+  //   url: "/admin/settings/general",
+  //   icon: Settings,
+  //   roles: ["admin", "rektor"],
+  // },
+  // {
+  //   title: "Bank Soal",
+  //   url: "/bank-soal",
+  //   icon: BookOpen,
+  //   roles: ["admin", "rektor"],
+  // },
+  // {
+  //   title: "Data Sistem",
+  //   url: "/sistem",
+  //   icon: HardDrive,
+  //   roles: ["admin", "rektor"],
+  // },
 ]
 
-const configData = [
-  { title: "Bantuan", url: "/bantuan", icon: LifeBuoy, roles: ["admin", "user", "rektor"] },
-  { title: "Konfigurasi", url: "/config", icon: Settings, roles: ["admin", "rektor"] },
+const configData: ConfigItem[] = [
+  // { title: "Bantuan", url: "/bantuan", icon: LifeBuoy, roles: ["admin", "user", "rektor"] },
+  // { title: "Konfigurasi", url: "/config", icon: Settings, roles: ["admin", "rektor"] },
 ]
 
 export function AppSidebar({ userRole = "rektor" }) {
@@ -332,12 +364,12 @@ export function AppSidebar({ userRole = "rektor" }) {
                 .filter((item) => item.roles.includes(userRole))
                 .map((item) => (
                   <SidebarMenuItem key={item.title}>
-                    {item.items ? (
+                    {item?.items ? (
                       <Collapsible asChild className="group/collapsible">
                         <div>
                           <CollapsibleTrigger asChild>
                             <SidebarMenuButton
-                              isActive={item.items.some((sub) => pathname === sub.url)}
+                              isActive={item?.items.some((sub) => pathname === sub.url)}
                               tooltip={item.title}
                             >
                               <item.icon />
@@ -347,7 +379,7 @@ export function AppSidebar({ userRole = "rektor" }) {
                           </CollapsibleTrigger>
                           <CollapsibleContent>
                             <SidebarMenuSub>
-                              {item.items.map((subItem) => (
+                              {item?.items.map((subItem) => (
                                 <SidebarMenuSubItem key={subItem.title}>
                                   <SidebarMenuSubButton
                                     asChild
@@ -384,7 +416,7 @@ export function AppSidebar({ userRole = "rektor" }) {
 
           {/* ── Konfigurasi ── */}
           <SidebarGroup>
-            <SidebarGroupLabel>KONFIGURASI</SidebarGroupLabel>
+            {/* <SidebarGroupLabel>KONFIGURASI</SidebarGroupLabel> */}
             <SidebarMenu>
               {configData
                 .filter((item) => item.roles.includes(userRole))

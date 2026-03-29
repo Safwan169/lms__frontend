@@ -59,7 +59,7 @@ export default function DashboardTopbar() {
       {/* ── Left Side ── */}
       <div className="flex items-center gap-2">
         <SidebarTrigger className="-ml-1" />
-        <div className="h-4 w-[1px] bg-border mx-2" />
+        <div className="mx-2 h-4 w-px bg-border" />
         <h1 className="text-sm font-medium">Dashboard</h1>
       </div>
 
@@ -168,7 +168,13 @@ export default function DashboardTopbar() {
             <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
             My Profile
           </MenuItem>
-          <MenuItem sx={{ gap: 1.5, fontSize: 13 }}>
+          <MenuItem
+            sx={{ gap: 1.5, fontSize: 13 }}
+            onClick={() => {
+              setProfileAnchor(null)
+              router.push('/admin/settings/general')
+            }}
+          >
             <ListItemIcon><SettingsIcon fontSize="small" /></ListItemIcon>
             Settings
           </MenuItem>

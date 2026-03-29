@@ -4,25 +4,25 @@ import CustomTable from './CustomTable';
 import { Search, Filter, Eye, Edit2, Trash2, Plus, Download } from 'lucide-react';
 
 const initialRows = [
-    { id: 1, firstName: 'Jon', lastName: 'Snow', email: 'jon.snow@example.com', role: 'Student', status: 'Active', joinDate: '2024-01-15' },
+    { id: 1, firstName: 'Jon', lastName: 'Snow', email: 'jon.snow@example.com', role: 'Employee', status: 'Active', joinDate: '2024-01-15' },
     { id: 2, firstName: 'Cersei', lastName: 'Lannister', email: 'cersei@example.com', role: 'Instructor', status: 'Active', joinDate: '2023-11-20' },
-    { id: 3, firstName: 'Jaime', lastName: 'Lannister', email: 'jaime@example.com', role: 'Student', status: 'Active', joinDate: '2024-02-10' },
-    { id: 4, firstName: 'Arya', lastName: 'Stark', email: 'arya.stark@example.com', role: 'Student', status: 'Inactive', joinDate: '2023-08-05' },
+    { id: 3, firstName: 'Jaime', lastName: 'Lannister', email: 'jaime@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-10' },
+    { id: 4, firstName: 'Arya', lastName: 'Stark', email: 'arya.stark@example.com', role: 'Employee', status: 'Inactive', joinDate: '2023-08-05' },
     { id: 5, firstName: 'Daenerys', lastName: 'Targaryen', email: 'daenerys@example.com', role: 'Admin', status: 'Active', joinDate: '2023-06-12' },
     { id: 6, firstName: 'Melisandre', lastName: 'Red', email: 'melisandre@example.com', role: 'Instructor', status: 'Active', joinDate: '2024-01-08' },
-    { id: 7, firstName: 'Ferrara', lastName: 'Clifford', email: 'ferrara@example.com', role: 'Student', status: 'Active', joinDate: '2023-12-03' },
+    { id: 7, firstName: 'Ferrara', lastName: 'Clifford', email: 'ferrara@example.com', role: 'Employee', status: 'Active', joinDate: '2023-12-03' },
     { id: 8, firstName: 'Rossini', lastName: 'Frances', email: 'rossini@example.com', role: 'Instructor', status: 'Pending', joinDate: '2024-03-15' },
     { id: 9, firstName: 'Harvey', lastName: 'Roxie', email: 'harvey@example.com', role: 'Admin', status: 'Active', joinDate: '2023-05-22' },
-    { id: 10, firstName: 'Michael', lastName: 'Davis', email: 'michael.davis@example.com', role: 'Student', status: 'Active', joinDate: '2024-02-28' },
+    { id: 10, firstName: 'Michael', lastName: 'Davis', email: 'michael.davis@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-28' },
     { id: 11, firstName: 'Sarah', lastName: 'Connor', email: 'sarah.connor@example.com', role: 'Instructor', status: 'Active', joinDate: '2024-01-22' },
-    { id: 12, firstName: 'John', lastName: 'Smith', email: 'john.smith@example.com', role: 'Student', status: 'Active', joinDate: '2024-02-05' },
-    { id: 13, firstName: 'Emma', lastName: 'Watson', email: 'emma.watson@example.com', role: 'Student', status: 'Inactive', joinDate: '2023-09-10' },
+    { id: 12, firstName: 'John', lastName: 'Smith', email: 'john.smith@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-05' },
+    { id: 13, firstName: 'Emma', lastName: 'Watson', email: 'emma.watson@example.com', role: 'Employee', status: 'Inactive', joinDate: '2023-09-10' },
     { id: 14, firstName: 'Robert', lastName: 'Johnson', email: 'robert.johnson@example.com', role: 'Admin', status: 'Active', joinDate: '2023-04-15' },
     { id: 15, firstName: 'Jessica', lastName: 'Brown', email: 'jessica.brown@example.com', role: 'Instructor', status: 'Active', joinDate: '2024-01-30' },
-    { id: 16, firstName: 'David', lastName: 'Wilson', email: 'david.wilson@example.com', role: 'Student', status: 'Pending', joinDate: '2024-03-20' },
+    { id: 16, firstName: 'David', lastName: 'Wilson', email: 'david.wilson@example.com', role: 'Employee', status: 'Pending', joinDate: '2024-03-20' },
     { id: 17, firstName: 'Lisa', lastName: 'Anderson', email: 'lisa.anderson@example.com', role: 'Instructor', status: 'Active', joinDate: '2023-12-12' },
-    { id: 18, firstName: 'Chris', lastName: 'Taylor', email: 'chris.taylor@example.com', role: 'Student', status: 'Active', joinDate: '2024-02-14' },
-    { id: 19, firstName: 'Maria', lastName: 'Garcia', email: 'maria.garcia@example.com', role: 'Student', status: 'Active', joinDate: '2024-03-01' },
+    { id: 18, firstName: 'Chris', lastName: 'Taylor', email: 'chris.taylor@example.com', role: 'Employee', status: 'Active', joinDate: '2024-02-14' },
+    { id: 19, firstName: 'Maria', lastName: 'Garcia', email: 'maria.garcia@example.com', role: 'Employee', status: 'Active', joinDate: '2024-03-01' },
     { id: 20, firstName: 'James', lastName: 'Martinez', email: 'james.martinez@example.com', role: 'Admin', status: 'Active', joinDate: '2023-07-18' },
 ];
 
@@ -57,13 +57,13 @@ const UsersTable = () => {
     }, [filteredRows, currentPage, itemsPerPage]);
 
     const handleDelete = (user: any) => {
-        if (window.confirm(`Are you sure you want to delete ${user.firstName} ${user.lastName}?`)) {
+        if (window.confirm(`Are you sure you want to delete employee ${user.firstName} ${user.lastName}?`)) {
             setRows(prev => prev.filter(row => row.id !== user.id));
         }
     };
 
     const handleEdit = (user: any) => {
-        alert(`Edit functionality for ${user.firstName} ${user.lastName} - coming soon!`);
+        alert(`Edit functionality for employee ${user.firstName} ${user.lastName} - coming soon!`);
     };
 
     const handleView = (user: any) => {
@@ -82,7 +82,7 @@ const UsersTable = () => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = 'users.csv';
+        a.download = 'employees.csv';
         a.click();
     };
 
@@ -115,7 +115,7 @@ const UsersTable = () => {
             sortable: true,
             render: (value: any) => {
                 const colors: any = {
-                    'Student': 'bg-blue-100 text-blue-700',
+                    'Employee': 'bg-blue-100 text-blue-700',
                     'Instructor': 'bg-green-100 text-green-700',
                     'Admin': 'bg-purple-100 text-purple-700'
                 };
@@ -218,7 +218,7 @@ const UsersTable = () => {
                     }}
                 >
                     <option value="All">All Roles</option>
-                    <option value="Student">Student</option>
+                    <option value="Employee">Employee</option>
                     <option value="Instructor">Instructor</option>
                     <option value="Admin">Admin</option>
                 </select>
@@ -347,7 +347,7 @@ const UsersTable = () => {
                         <span style={{ marginLeft: '8px' }}>
                             - Showing <span style={{ fontWeight: '600', color: '#1a1d2e' }}>{(currentPage - 1) * itemsPerPage + 1}</span> to{' '}
                             <span style={{ fontWeight: '600', color: '#1a1d2e' }}>{Math.min(currentPage * itemsPerPage, filteredRows.length)}</span> of{' '}
-                            <span style={{ fontWeight: '600', color: '#1a1d2e' }}>{filteredRows.length}</span> users
+                            <span style={{ fontWeight: '600', color: '#1a1d2e' }}>{filteredRows.length}</span> employees
                         </span>
                     </div>
 
@@ -450,7 +450,7 @@ const UsersTable = () => {
                 </div>
             )}
 
-            {/* User Details Modal */}
+            {/* Employee Details Modal */}
             {selectedUser && (
                 <div style={{
                     position: 'fixed',
