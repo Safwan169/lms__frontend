@@ -325,7 +325,7 @@ export default function NewManualAdmissionPage() {
             <ArrowLeft className="h-4 w-4" />
             Back to Admissions
           </Link>
-          <h1>New Manual Admission</h1>
+          <h1>New Admission</h1>
         </div>
       </div>
 

@@ -76,13 +76,12 @@ const DUMMY_CLASSES: ClassOption[] = [
 const DUMMY_ADMISSIONS: AdmissionRow[] = [
   { id: "1", student_name: "Ayesha Rahman", phone: "01711111111", class_name: "Class 6", class_id: "6", batch_name: "Batch A", applied_at: "2026-03-20T09:00:00.000Z", status: "PENDING" },
   { id: "2", student_name: "Tanvir Hasan", phone: "01822222222", class_name: "Class 8", class_id: "8", batch_name: "Batch B", applied_at: "2026-03-19T10:15:00.000Z", status: "APPROVED" },
-  { id: "3", student_name: "Nusrat Jahan", phone: "01933333333", class_name: "Class 10", class_id: "10", batch_name: "Science", applied_at: "2026-03-18T11:20:00.000Z", status: "REJECTED" },
-  { id: "4", student_name: "Shafin Ahmed", phone: "01644444444", class_name: "Class 9", class_id: "9", batch_name: "Commerce", applied_at: "2026-03-18T13:40:00.000Z", status: "EXPIRED" },
+  { id: "3", student_name: "Nusrat Jahan", phone: "01933333333", class_name: "Class 10", class_id: "10", batch_name: "Science", applied_at: "2026-03-18T11:20:00.000Z", status: "APPROVED" },
   { id: "5", student_name: "Maliha Akter", phone: "01755555555", class_name: "Class 11", class_id: "11", batch_name: "Arts", applied_at: "2026-03-17T14:05:00.000Z", status: "PENDING" },
   { id: "6", student_name: "Rakib Chowdhury", phone: "01866666666", class_name: "Class 7", class_id: "7", batch_name: "Batch A", applied_at: "2026-03-16T09:30:00.000Z", status: "PENDING" },
   { id: "7", student_name: "Farhana Islam", phone: "01977777777", class_name: "Class 12", class_id: "12", batch_name: "Science", applied_at: "2026-03-15T12:30:00.000Z", status: "APPROVED" },
   { id: "8", student_name: "Samiul Karim", phone: "01788888888", class_name: "Class 9", class_id: "9", batch_name: "Arts", applied_at: "2026-03-15T16:55:00.000Z", status: "PENDING" },
-  { id: "9", student_name: "Rafiul Alam", phone: "01899999999", class_name: "Class 6", class_id: "6", batch_name: "Batch B", applied_at: "2026-03-14T08:45:00.000Z", status: "REJECTED" },
+  { id: "9", student_name: "Rafiul Alam", phone: "01899999999", class_name: "Class 6", class_id: "6", batch_name: "Batch B", applied_at: "2026-03-14T08:45:00.000Z", status: "APPROVED" },
   { id: "10", student_name: "Adiba Noor", phone: "01712345000", class_name: "Class 10", class_id: "10", batch_name: "Science", applied_at: "2026-03-14T10:00:00.000Z", status: "PENDING" },
   { id: "11", student_name: "Ibrahim Khan", phone: "01911223344", class_name: "Class 8", class_id: "8", batch_name: "Batch A", applied_at: "2026-03-13T15:10:00.000Z", status: "EXPIRED" },
   { id: "12", student_name: "Sadia Ahmed", phone: "01855667788", class_name: "Class 11", class_id: "11", batch_name: "Commerce", applied_at: "2026-03-13T18:00:00.000Z", status: "PENDING" },
@@ -299,7 +298,7 @@ export default function AdminAdmissionsPage() {
           <h1>Admission Applications</h1>
           <p>{totalCount} total applications</p>
         </div>
-        <Button onClick={() => router.push("/admin/admissions/new")}>New Manual Admission</Button>
+        <Button onClick={() => router.push("/admin/admissions/new")}>New Admission</Button>
       </div>
 
       <div className="adm-card">

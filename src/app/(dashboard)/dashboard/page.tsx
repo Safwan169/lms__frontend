@@ -2,9 +2,8 @@ import React from 'react';
 
 const stats = [
     { label: 'Total Students', value: '4,821', change: '+143 this month', trend: 'up', color: '#6366f1', bg: '#eef2ff', icon: '👨‍🎓' },
-    { label: 'Active Courses', value: '38', change: '+4 this month', trend: 'up', color: '#0ea5e9', bg: '#e0f2fe', icon: '📚' },
-    { label: 'Revenue', value: '$24,390', change: '+12% vs last month', trend: 'up', color: '#10b981', bg: '#d1fae5', icon: '💰' },
-    { label: 'Completion Rate', value: '73%', change: '-2% vs last month', trend: 'down', color: '#f59e0b', bg: '#fef3c7', icon: '📈' },
+    { label: 'Total Teachers', value: '312', change: '+8 this month', trend: 'up', color: '#0ea5e9', bg: '#e0f2fe', icon: '👩‍🏫' },
+    { label: 'Revenue (BDT)', value: ' 24,390 BDT', change: '+12% vs last month', trend: 'up', color: '#10b981', bg: '#d1fae5', icon: '💰' },
 ];
 
 const recentStudents = [
@@ -23,11 +22,11 @@ const topCourses = [
 ];
 
 const recentActivity = [
-    { text: 'New enrollment in React Masterclass', time: '2 min ago', color: '#6366f1' },
-    { text: 'New 5★ review on Python for Data Science', time: '18 min ago', color: '#f59e0b' },
-    { text: 'Sarah Johnson completed UI/UX Design', time: '1h ago', color: '#10b981' },
-    { text: 'Refund request #1042 submitted', time: '3h ago', color: '#ef4444' },
-    { text: '5 new enrollments in System Design', time: '5h ago', color: '#6366f1' },
+    { text: '3 new admissions in Class 9 (Science) - Batch A', time: '2 min ago', color: '#6366f1' },
+    { text: 'Attendance submitted for Class 10 Mathematics', time: '18 min ago', color: '#f59e0b' },
+    { text: 'Section B timetable updated for Class 8', time: '1h ago', color: '#10b981' },
+    { text: 'Fee due reminders sent to 12 students (Class 7)', time: '3h ago', color: '#ef4444' },
+    { text: '2 transfer requests approved for Class 6 - Batch C', time: '5h ago', color: '#6366f1' },
 ];
 
 const AdminDashboard = () => {
@@ -47,7 +46,7 @@ const AdminDashboard = () => {
                 </div>
 
                 {/* Stats */}
-                <div className="adm-stats">
+                <div className="adm-stats adm-stats-3">
                     {stats.map((s) => (
                         <div className="adm-stat" key={s.label}>
                             <div className="adm-stat-icon" style={{ background: s.bg }}>{s.icon}</div>
@@ -97,7 +96,7 @@ const AdminDashboard = () => {
                         </div>
 
                         {/* Top courses */}
-                        <div className="adm-card">
+                        {/* <div className="adm-card">
                             <div className="adm-card-header">
                                 <span className="adm-card-title">Top Courses by Revenue</span>
                                 <button className="adm-view-all">Manage →</button>
@@ -115,12 +114,12 @@ const AdminDashboard = () => {
                                     <div className="adm-course-rev">{c.revenue}</div>
                                 </div>
                             ))}
-                        </div>
+                        </div> */}
                     </div>
 
                     {/* Sidebar */}
                     <div>
-                        <div className="adm-card">
+                        {/* <div className="adm-card">
                             <div className="adm-card-header">
                                 <span className="adm-card-title">Quick Actions</span>
                             </div>
@@ -137,7 +136,7 @@ const AdminDashboard = () => {
                                     </button>
                                 ))}
                             </div>
-                        </div>
+                        </div> */}
 
                         <div className="adm-card">
                             <div className="adm-card-header">
@@ -153,7 +152,7 @@ const AdminDashboard = () => {
                             ))}
                         </div>
 
-                        <div className="adm-card">
+                        {/* <div className="adm-card">
                             <div className="adm-card-header">
                                 <span className="adm-card-title">Platform Health</span>
                             </div>
@@ -172,7 +171,7 @@ const AdminDashboard = () => {
                                     <span style={{ fontWeight: 600, color: h.color }}>{h.value}</span>
                                 </div>
                             ))}
-                        </div>
+                        </div> */}
                     </div>
                 </div>
             </div>

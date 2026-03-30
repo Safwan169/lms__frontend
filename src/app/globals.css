@@ -139,12 +139,15 @@ body {
 
 
 .adm-root {
+  container-type: inline-size;
+  container-name: adm-root;
   min-height: 100vh;
   background: #f5f6fa;
   font-family: 'Sora', sans-serif;
   color: #1a1d2e;
   padding: 2rem;
-  
+  width: 100%;
+  overflow-x: hidden;
 }
 
 @media (min-width: 1024px) {
@@ -237,14 +240,23 @@ body {
 /* Stats */
 .adm-stats {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 1rem;
   margin-bottom: 1.5rem;
 }
 
-@media (min-width: 900px) {
+/*
+  Container query: fires when adm-root's content-box width >= 650px.
+  At 1024px viewport with 256px sidebar + 96px padding => content ≈ 672px > 650px → 4 cols.
+  This is immune to viewport-based false positives from the sidebar width.
+*/
+@container adm-root (min-width: 650px) {
   .adm-stats {
-    grid-template-columns: repeat(4, 1fr);
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+
+  .adm-stats.adm-stats-3 {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -255,6 +267,7 @@ body {
   border: 1px solid #e8eaf0;
   position: relative;
   overflow: hidden;
+  min-width: 0;
 }
 
 .adm-stat-icon {
