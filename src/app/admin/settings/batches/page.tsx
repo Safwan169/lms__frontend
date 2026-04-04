@@ -4,11 +4,12 @@ import { useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { Archive, Loader2, Pencil, Plus } from "lucide-react"
+import { Archive, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import toast from "react-hot-toast"
 import { z } from "zod"
 
 import { useAuth } from "@/context/AuthContext"
+import { useCreateBatchMutation, useUpdateBatchMutation, useDeleteBatchMutation } from "@/features/user/userApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -119,6 +120,9 @@ const DUMMY_BATCHES: BatchRow[] = [
 export default function SettingsBatchesPage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const [createBatchApiCall] = useCreateBatchMutation()
+  const [updateBatchApiCall] = useUpdateBatchMutation()
+  const [deleteBatchApiCall] = useDeleteBatchMutation()
 
   const [classFilter, setClassFilter] = useState<string>("All")
   const [statusFilter, setStatusFilter] = useState<string>("All")
@@ -222,56 +226,63 @@ export default function SettingsBatchesPage() {
       const selectedClass = classOptions.find((item) => item.id === values.class_id)
       if (!selectedClass) throw new Error("Selected class not found")
 
-      const payload = {
-        tenant_id: tenantId,
-        batch_name: values.batch_name,
+      const batchPayload = {
         class_id: values.class_id,
-        shift: values.shift,
+        name: values.batch_name,
+        section: values.shift,
         capacity: values.capacity,
-        start_date: values.start_date || null,
-        end_date: values.end_date || null,
+        start_date: values.start_date ? new Date(values.start_date).toISOString() : undefined,
+        end_date: values.end_date ? new Date(values.end_date).toISOString() : undefined,
         status: values.status ? "ACTIVE" : "ARCHIVED",
       }
 
       if (isEditMode && selectedRow) {
-        // API implementation intentionally commented for frontend-only flow.
-        // const response = await fetch(`/admin/settings/batches/${selectedRow.id}`, {
-        //   method: "PUT",
-        //   headers: {
-        //     "Content-Type": "application/json",
-        //     "x-tenant-id": String(tenantId),
-        //   },
-        //   body: JSON.stringify(payload),
-        // })
-        // if (!response.ok) throw new Error("Failed to update batch")
-
-        await new Promise((resolve) => setTimeout(resolve, 250))
+        try {
+          await updateBatchApiCall({
+            tenantId: tenantId || 1,
+            batchId: selectedRow.id,
+            batch: batchPayload,
+          }).unwrap()
+        } catch (error: unknown) {
+          const maybeError = error as { data?: { message?: string }; message?: string }
+          throw new Error(maybeError?.data?.message || maybeError?.message || "Failed to update batch")
+        }
         return {
           id: selectedRow.id,
-          ...payload,
+          batch_name: values.batch_name,
+          class_id: values.class_id,
+          shift: values.shift,
+          capacity: values.capacity,
+          start_date: values.start_date || null,
+          end_date: values.end_date || null,
+          status: values.status ? "ACTIVE" : "ARCHIVED",
           class_name: selectedClass.name,
           enrolled: selectedRow.enrolled,
         }
       }
 
-      // API implementation intentionally commented for frontend-only flow.
-      // const response = await fetch("/admin/settings/batches", {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //     "x-tenant-id": String(tenantId),
-      //   },
-      //   body: JSON.stringify(payload),
-      // })
-      // if (!response.ok) throw new Error("Failed to create batch")
-      // const created = await response.json()
-
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      return {
-        id: `batch-${Date.now()}`,
-        ...payload,
-        class_name: selectedClass.name,
-        enrolled: 0,
+      // Create mode: Call RTK Query mutation
+      try {
+        const result = await createBatchApiCall({ tenantId: tenantId || 1, batch: batchPayload }).unwrap()
+        return {
+          id: result?.id || `batch-${Date.now()}`,
+          batch_name: values.batch_name,
+          class_id: values.class_id,
+          shift: values.shift,
+          capacity: values.capacity,
+          start_date: values.start_date || null,
+          end_date: values.end_date || null,
+          status: values.status ? "ACTIVE" : "ARCHIVED",
+          class_name: selectedClass.name,
+          enrolled: 0,
+        }
+      } catch (error: unknown) {
+        const maybeError = error as { data?: { message?: string }; message?: string }
+        throw new Error(
+          maybeError?.data?.message ||
+            maybeError?.message ||
+            "Failed to create batch"
+        )
       }
     },
     onSuccess: (saved) => {
@@ -312,6 +323,27 @@ export default function SettingsBatchesPage() {
     },
     onError: (error: any) => {
       toast.error(error?.message || "Failed to save batch")
+    },
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: async (row: BatchRow) => {
+      if (!tenantId) throw new Error("Tenant information missing")
+      try {
+        await deleteBatchApiCall({ tenantId: tenantId || 1, batchId: row.id }).unwrap()
+      } catch (error: unknown) {
+        const maybeError = error as { data?: { message?: string }; message?: string }
+        throw new Error(maybeError?.data?.message || maybeError?.message || "Failed to delete batch")
+      }
+      return row.id
+    },
+    onSuccess: (id) => {
+      setBatchesState((prev) => prev.filter((item) => item.id !== id))
+      queryClient.invalidateQueries({ queryKey: ["settings-batches", tenantId] })
+      toast.success("Batch deleted")
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to delete batch")
     },
   })
 
@@ -473,6 +505,14 @@ export default function SettingsBatchesPage() {
                           disabled={archiveMutation.isPending}
                         >
                           <Archive className="h-4 w-4" />
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          onClick={() => deleteMutation.mutate(row)}
+                          disabled={deleteMutation.isPending}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
                         </Button>
                       </div>
                     </TableCell>

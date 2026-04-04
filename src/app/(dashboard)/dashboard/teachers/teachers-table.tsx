@@ -5,6 +5,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { Download, Eye, FileText, Pencil, Plus, Search, Users, X, ArrowUpDown, Loader2 } from "lucide-react"
 import toast from "react-hot-toast"
+import api from "@/lib/api"
 
 import { useAuth } from "@/context/AuthContext"
 import { Badge } from "@/components/ui/badge"
@@ -48,6 +49,28 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 
 type TeacherStatus = "Active" | "On Leave" | "Resigned" | "Terminated" | "Retired"
+type TeacherGender = "MALE" | "FEMALE" | "OTHER"
+type TeacherPayrollType = "MONTHLY" | "PER_CLASS" | "PER_BATCH"
+
+type TeacherCreatePayload = {
+  name: string
+  email: string
+  phone: string
+  password: string
+  qualification: string
+  experience_years: number
+  speciality_subject: string[]
+  gender: TeacherGender
+  date_of_birth: string
+  address: string
+  nid_number: string
+  bank_account: string
+  payroll_type: TeacherPayrollType
+  monthly_salary: string
+  per_class_rate: string
+  per_batch_rate: string
+  joining_date: string
+}
 
 type Teacher = {
   id: string
@@ -64,11 +87,24 @@ type Teacher = {
   employmentType: "Full-time" | "Part-time" | "Guest"
   salary: number
   classes: string[]
+  qualification?: string
+  experienceYears?: number
+  gender?: TeacherGender
+  dateOfBirth?: string
+  address?: string
+  nidNumber?: string
+  bankAccount?: string
+  payrollType?: TeacherPayrollType
+  monthlySalary?: string
+  perClassRate?: string
+  perBatchRate?: string
 }
 
 const DEPARTMENTS = ["Science", "Commerce", "Arts", "General"] as const
 const SHIFTS = ["Morning", "Day", "Evening"] as const
 const STATUSES = ["Active", "On Leave", "Resigned", "Terminated", "Retired"] as const
+const GENDERS: TeacherGender[] = ["MALE", "FEMALE", "OTHER"]
+const PAYROLL_TYPES: TeacherPayrollType[] = ["MONTHLY", "PER_CLASS", "PER_BATCH"]
 const PAGE_SIZES = [10, 20, 50]
 
 const SUBJECT_OPTIONS: Record<string, string[]> = {
@@ -88,6 +124,60 @@ const DUMMY_TEACHERS: Teacher[] = [
   { id: "t-007", teacherId: "TR-1007", fullName: "Tanima Sultana", phone: "01970707070", email: "tanima.sultana@example.com", department: "Science", subjects: ["Biology"], shift: "Morning", designation: "Assistant Teacher", joinedOn: "2026-03-10", status: "Active", employmentType: "Part-time", salary: 28000, classes: ["Class 6 C"] },
   { id: "t-008", teacherId: "TR-1008", fullName: "Shafiq Rahman", phone: "01680808080", email: "shafiq.rahman@example.com", department: "Commerce", subjects: ["Business Studies", "Economics"], shift: "Day", designation: "Senior Teacher", joinedOn: "2021-08-20", status: "Terminated", employmentType: "Full-time", salary: 41000, classes: ["Class 12 Commerce"] },
 ]
+
+function toIsoDateString(value: string) {
+  if (!value) return ""
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return ""
+  return date.toISOString()
+}
+
+function mapPayrollToEmploymentType(payrollType?: string): Teacher["employmentType"] {
+  if (payrollType === "PER_CLASS" || payrollType === "PER_BATCH") return "Part-time"
+  return "Full-time"
+}
+
+function mapApiTeacher(item: any): Teacher {
+  const subjects = Array.isArray(item?.speciality_subject)
+    ? item.speciality_subject.filter((subject: unknown) => typeof subject === "string")
+    : []
+
+  const departmentFromSubject = subjects[0]
+  const department = (DEPARTMENTS.includes(departmentFromSubject as (typeof DEPARTMENTS)[number])
+    ? departmentFromSubject
+    : "General") as Teacher["department"]
+
+  const monthlySalary = typeof item?.monthly_salary === "string" ? item.monthly_salary : "0"
+  const salaryNumber = Number(monthlySalary)
+
+  return {
+    id: String(item?.id ?? `t-${Date.now()}-${Math.random()}`),
+    teacherId: String(item?.teacher_id ?? item?.id ?? "-"),
+    fullName: String(item?.name ?? "Unknown Teacher"),
+    phone: String(item?.phone ?? ""),
+    email: String(item?.email ?? ""),
+    department,
+    subjects,
+    shift: "Day",
+    designation: String(item?.qualification ?? "Teacher"),
+    joinedOn: String(item?.joining_date ?? new Date().toISOString()),
+    status: "Active",
+    employmentType: mapPayrollToEmploymentType(item?.payroll_type),
+    salary: Number.isFinite(salaryNumber) ? salaryNumber : 0,
+    classes: [],
+    qualification: String(item?.qualification ?? ""),
+    experienceYears: Number(item?.experience_years ?? 0),
+    gender: item?.gender as TeacherGender,
+    dateOfBirth: String(item?.date_of_birth ?? ""),
+    address: String(item?.address ?? ""),
+    nidNumber: String(item?.nid_number ?? ""),
+    bankAccount: String(item?.bank_account ?? ""),
+    payrollType: item?.payroll_type as TeacherPayrollType,
+    monthlySalary: String(item?.monthly_salary ?? "0"),
+    perClassRate: String(item?.per_class_rate ?? "0"),
+    perBatchRate: String(item?.per_batch_rate ?? "0"),
+  }
+}
 
 function useDebouncedValue(value: string, delay = 400) {
   const [debounced, setDebounced] = useState(value)
@@ -152,10 +242,24 @@ export default function TeachersTable() {
     fullName: "",
     phone: "",
     email: "",
+    password: "",
     department: "Science",
     shift: "Morning",
     designation: "Assistant Teacher",
     status: "Active" as TeacherStatus,
+    qualification: "",
+    experienceYears: "0",
+    specialitySubjects: "",
+    gender: "FEMALE" as TeacherGender,
+    dateOfBirth: "",
+    address: "",
+    nidNumber: "",
+    bankAccount: "",
+    payrollType: "MONTHLY" as TeacherPayrollType,
+    monthlySalary: "0.00",
+    perClassRate: "0.00",
+    perBatchRate: "0.00",
+    joiningDate: currentIsoDate(),
   })
 
   // Guard implementation intentionally commented for frontend-only flow.
@@ -172,6 +276,12 @@ export default function TeachersTable() {
   const tenantId = useMemo(() => {
     return (user as any)?.tenant_id ?? (user as any)?.tenantId ?? (user as any)?.tenant?.id ?? "demo-tenant"
   }, [user])
+  const tenantIdForApi = tenantId
+  const userIdForApi =
+    (user as any)?.user_id ??
+    (user as any)?.id ??
+    (user as any)?.uuid ??
+    "teacher-user-uuid"
 
   const department = searchParams.get("department") ?? "all"
   const subject = searchParams.get("subject") ?? "all"
@@ -211,25 +321,30 @@ export default function TeachersTable() {
   }, [department])
 
   const listQuery = useQuery({
-    queryKey: ["teachers-list", tenantId, teachers, debouncedSearch, department, subject, shift, status, page, limit],
+    queryKey: ["teachers-list", tenantIdForApi, userIdForApi, debouncedSearch, department, subject, shift, status, page, limit],
     queryFn: async () => {
-      // API implementation intentionally commented for frontend-only flow.
-      // const params = new URLSearchParams({ tenant_id: String(tenantId) })
-      // if (debouncedSearch) params.set("search", debouncedSearch)
-      // if (department !== "all") params.set("department", department)
-      // if (subject !== "all") params.set("subject", subject)
-      // if (shift !== "all") params.set("shift", shift)
-      // if (status !== "all") params.set("status", status)
-      // params.set("page", String(page))
-      // params.set("limit", String(limit))
-      // const res = await fetch(`/api/teachers?${params.toString()}`, { cache: "no-store" })
-      // if (!res.ok) throw new Error("Failed to load teachers")
-      // return await res.json()
+      const response = await api.get(`/api/tenants/${tenantIdForApi}/teachers`, {
+        params: {
+          page,
+          limit,
+          search: debouncedSearch || undefined,
+          user_id: userIdForApi,
+        },
+      })
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : Array.isArray(payload)
+            ? payload
+            : []
 
-      await new Promise((resolve) => setTimeout(resolve, 180))
+      const mappedTeachers = rawItems.map(mapApiTeacher)
+      setTeachers(mappedTeachers)
 
       const q = debouncedSearch.trim().toLowerCase()
-      const filtered = teachers.filter((item) => {
+      const filtered = mappedTeachers.filter((item) => {
         const searchMatch =
           q.length === 0 ||
           item.fullName.toLowerCase().includes(q) ||
@@ -256,7 +371,7 @@ export default function TeachersTable() {
   })
 
   const statsQuery = useQuery({
-    queryKey: ["teachers-stats", tenantId, teachers],
+    queryKey: ["teachers-stats", teachers],
     queryFn: async () => {
       // API implementation intentionally commented for frontend-only flow.
       // const res = await fetch(`/api/teachers/stats?tenant_id=${tenantId}`, { cache: "no-store" })
@@ -282,7 +397,7 @@ export default function TeachersTable() {
   })
 
   const summaryQuery = useQuery({
-    queryKey: ["teacher-summary", tenantId, drawerTeacherId, teachers],
+    queryKey: ["teacher-summary", drawerTeacherId, teachers],
     enabled: !!drawerTeacherId,
     queryFn: async () => {
       // API implementation intentionally commented for frontend-only flow.
@@ -349,10 +464,24 @@ export default function TeachersTable() {
       fullName: "",
       phone: "",
       email: "",
+      password: "",
       department: "Science",
       shift: "Morning",
       designation: "Assistant Teacher",
       status: "Active",
+      qualification: "",
+      experienceYears: "0",
+      specialitySubjects: "",
+      gender: "FEMALE",
+      dateOfBirth: "",
+      address: "",
+      nidNumber: "",
+      bankAccount: "",
+      payrollType: "MONTHLY",
+      monthlySalary: "0.00",
+      perClassRate: "0.00",
+      perBatchRate: "0.00",
+      joiningDate: currentIsoDate(),
     })
     setAddEditDialogOpen(true)
   }
@@ -363,17 +492,31 @@ export default function TeachersTable() {
       fullName: teacher.fullName,
       phone: teacher.phone,
       email: teacher.email,
+      password: "",
       department: teacher.department,
       shift: teacher.shift,
       designation: teacher.designation,
       status: teacher.status,
+      qualification: teacher.qualification ?? teacher.designation,
+      experienceYears: String(teacher.experienceYears ?? 0),
+      specialitySubjects: teacher.subjects.join(", "),
+      gender: teacher.gender ?? "FEMALE",
+      dateOfBirth: teacher.dateOfBirth ? teacher.dateOfBirth.split("T")[0] : "",
+      address: teacher.address ?? "",
+      nidNumber: teacher.nidNumber ?? "",
+      bankAccount: teacher.bankAccount ?? "",
+      payrollType: teacher.payrollType ?? "MONTHLY",
+      monthlySalary: teacher.monthlySalary ?? String(teacher.salary ?? 0),
+      perClassRate: teacher.perClassRate ?? "0.00",
+      perBatchRate: teacher.perBatchRate ?? "0.00",
+      joiningDate: teacher.joinedOn ? teacher.joinedOn.split("T")[0] : currentIsoDate(),
     })
     setAddEditDialogOpen(true)
   }
 
-  const submitTeacherForm = () => {
-    if (!formValues.fullName.trim() || !formValues.phone.trim()) {
-      toast.error("Name and phone are required")
+  const submitTeacherForm = async () => {
+    if (!formValues.fullName.trim() || !formValues.phone.trim() || !formValues.email.trim()) {
+      toast.error("Name, phone and email are required")
       return
     }
 
@@ -402,33 +545,39 @@ export default function TeachersTable() {
 
       toast.success("Teacher updated successfully")
     } else {
-      const nextId = `t-${Date.now()}`
+      if (!formValues.password.trim()) {
+        toast.error("Password is required for new teacher")
+        return
+      }
 
-      // API implementation intentionally commented for frontend-only flow.
-      // const formData = new FormData()
-      // ...append fields and tenant_id
-      // await fetch(`/api/teachers`, { method: "POST", body: formData })
+      const payload: TeacherCreatePayload = {
+        name: formValues.fullName.trim(),
+        email: formValues.email.trim(),
+        phone: formValues.phone.trim(),
+        password: formValues.password,
+        qualification: formValues.qualification.trim() || formValues.designation.trim() || "Teacher",
+        experience_years: Number(formValues.experienceYears) || 0,
+        speciality_subject: formValues.specialitySubjects
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
+        gender: formValues.gender,
+        date_of_birth: toIsoDateString(formValues.dateOfBirth),
+        address: formValues.address.trim(),
+        nid_number: formValues.nidNumber.trim(),
+        bank_account: formValues.bankAccount.trim(),
+        payroll_type: formValues.payrollType,
+        monthly_salary: formValues.monthlySalary,
+        per_class_rate: formValues.perClassRate,
+        per_batch_rate: formValues.perBatchRate,
+        joining_date: toIsoDateString(formValues.joiningDate),
+      }
 
-      setTeachers((prev) => [
-        {
-          id: nextId,
-          teacherId: `TR-${Math.floor(Math.random() * 9000) + 1000}`,
-          fullName: formValues.fullName,
-          phone: formValues.phone,
-          email: formValues.email,
-          department: formValues.department as Teacher["department"],
-          subjects: SUBJECT_OPTIONS[formValues.department]?.slice(0, 2) ?? ["General"],
-          shift: formValues.shift as Teacher["shift"],
-          designation: formValues.designation,
-          joinedOn: currentIsoDate(),
-          status: formValues.status,
-          employmentType: "Full-time",
-          salary: 35000,
-          classes: [],
-        },
-        ...prev,
-      ])
+      const createdResponse = await api.post(`/api/tenants/${tenantIdForApi}/teachers`, payload)
+      const createdData = createdResponse?.data?.data ?? createdResponse?.data ?? payload
+      const mappedCreated = mapApiTeacher(createdData)
 
+      setTeachers((prev) => [mappedCreated, ...prev])
       toast.success("Teacher added successfully")
     }
 
@@ -782,29 +931,134 @@ export default function TeachersTable() {
       </Dialog>
 
       <Dialog open={addEditDialogOpen} onOpenChange={setAddEditDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
+        <DialogContent className="max-h-[90vh] overflow-y-auto pr-2 md:max-h-[84vh] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 dark:hover:[&::-webkit-scrollbar-thumb]:bg-slate-500">
+          <DialogHeader className="border-b px-6 pt-6">
             <DialogTitle>{editingTeacherId ? "Edit Teacher" : "Add Teacher"}</DialogTitle>
             <DialogDescription>{editingTeacherId ? "Update teacher details" : "Create a new teacher profile"}</DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-3 md:grid-cols-2">
-            <Input placeholder="Full name" value={formValues.fullName} onChange={(event) => setFormValues((prev) => ({ ...prev, fullName: event.target.value }))} />
-            <Input placeholder="Phone" value={formValues.phone} onChange={(event) => setFormValues((prev) => ({ ...prev, phone: event.target.value }))} />
-            <Input placeholder="Email" value={formValues.email} onChange={(event) => setFormValues((prev) => ({ ...prev, email: event.target.value }))} />
-            <Input placeholder="Designation" value={formValues.designation} onChange={(event) => setFormValues((prev) => ({ ...prev, designation: event.target.value }))} />
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Full Name</p>
+              <Input placeholder="e.g. Nabila Islam" value={formValues.fullName} onChange={(event) => setFormValues((prev) => ({ ...prev, fullName: event.target.value }))} />
+            </div>
 
-            <Select value={formValues.department} onValueChange={(value) => setFormValues((prev) => ({ ...prev, department: value }))}>
-              {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </Select>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Phone Number</p>
+              <Input placeholder="e.g. 01712345678" value={formValues.phone} onChange={(event) => setFormValues((prev) => ({ ...prev, phone: event.target.value }))} />
+            </div>
 
-            <Select value={formValues.shift} onValueChange={(value) => setFormValues((prev) => ({ ...prev, shift: value }))}>
-              {SHIFTS.map((item) => <option key={item} value={item}>{item}</option>)}
-            </Select>
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Email Address</p>
+              <Input placeholder="e.g. teacher@school.com" value={formValues.email} onChange={(event) => setFormValues((prev) => ({ ...prev, email: event.target.value }))} />
+            </div>
 
-            <Select value={formValues.status} onValueChange={(value) => setFormValues((prev) => ({ ...prev, status: value as TeacherStatus }))}>
-              {STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
-            </Select>
+            {!editingTeacherId ? (
+              <div className="space-y-1">
+                <p className="text-xs font-medium text-muted-foreground">Login Password</p>
+                <Input
+                  type="password"
+                  placeholder="Set initial password"
+                  value={formValues.password}
+                  onChange={(event) => setFormValues((prev) => ({ ...prev, password: event.target.value }))}
+                />
+              </div>
+            ) : null}
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Designation</p>
+              <Input placeholder="e.g. Assistant Teacher" value={formValues.designation} onChange={(event) => setFormValues((prev) => ({ ...prev, designation: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Highest Qualification</p>
+              <Input placeholder="e.g. B.Ed / M.Sc" value={formValues.qualification} onChange={(event) => setFormValues((prev) => ({ ...prev, qualification: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Experience (Years)</p>
+              <Input type="number" min={0} placeholder="e.g. 5" value={formValues.experienceYears} onChange={(event) => setFormValues((prev) => ({ ...prev, experienceYears: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Specialty Subjects</p>
+              <Input placeholder="Comma separated, e.g. Physics, Math" value={formValues.specialitySubjects} onChange={(event) => setFormValues((prev) => ({ ...prev, specialitySubjects: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Date of Birth</p>
+              <Input type="date" value={formValues.dateOfBirth} onChange={(event) => setFormValues((prev) => ({ ...prev, dateOfBirth: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Address</p>
+              <Input placeholder="Residential address" value={formValues.address} onChange={(event) => setFormValues((prev) => ({ ...prev, address: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">NID Number</p>
+              <Input placeholder="National ID" value={formValues.nidNumber} onChange={(event) => setFormValues((prev) => ({ ...prev, nidNumber: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Bank Account</p>
+              <Input placeholder="Bank account number" value={formValues.bankAccount} onChange={(event) => setFormValues((prev) => ({ ...prev, bankAccount: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Monthly Salary</p>
+              <Input placeholder="Used when payroll type is MONTHLY" value={formValues.monthlySalary} onChange={(event) => setFormValues((prev) => ({ ...prev, monthlySalary: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Per Class Rate</p>
+              <Input placeholder="Used when payroll type is PER_CLASS" value={formValues.perClassRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perClassRate: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Per Batch Rate</p>
+              <Input placeholder="Used when payroll type is PER_BATCH" value={formValues.perBatchRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perBatchRate: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Joining Date</p>
+              <Input type="date" value={formValues.joiningDate} onChange={(event) => setFormValues((prev) => ({ ...prev, joiningDate: event.target.value }))} />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Department</p>
+              <Select value={formValues.department} onValueChange={(value) => setFormValues((prev) => ({ ...prev, department: value }))}>
+                {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Shift</p>
+              <Select value={formValues.shift} onValueChange={(value) => setFormValues((prev) => ({ ...prev, shift: value }))}>
+                {SHIFTS.map((item) => <option key={item} value={item}>{item}</option>)}
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Employment Status</p>
+              <Select value={formValues.status} onValueChange={(value) => setFormValues((prev) => ({ ...prev, status: value as TeacherStatus }))}>
+                {STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Gender</p>
+              <Select value={formValues.gender} onValueChange={(value) => setFormValues((prev) => ({ ...prev, gender: value as TeacherGender }))}>
+                {GENDERS.map((item) => <option key={item} value={item}>{item}</option>)}
+              </Select>
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs font-medium text-muted-foreground">Payroll Type</p>
+              <Select value={formValues.payrollType} onValueChange={(value) => setFormValues((prev) => ({ ...prev, payrollType: value as TeacherPayrollType }))}>
+                {PAYROLL_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
+              </Select>
+            </div>
           </div>
 
           <DialogFooter>

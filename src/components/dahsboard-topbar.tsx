@@ -11,13 +11,10 @@ import MenuItem from '@mui/material/MenuItem';
 import Badge from '@mui/material/Badge';
 import Avatar from '@mui/material/Avatar';
 import Divider from '@mui/material/Divider';
-import InputBase from '@mui/material/InputBase';
 import Box from '@mui/material/Box';
 import Typography from '@mui/material/Typography';
 import ListItemIcon from '@mui/material/ListItemIcon';
-
-// MUI Icons
-import SearchIcon from '@mui/icons-material/Search';
+import GlobalSearchBar from '@/components/GlobalSearchBar';
 import LightModeIcon from '@mui/icons-material/LightModeOutlined';
 import DarkModeIcon from '@mui/icons-material/DarkModeOutlined';
 import PersonIcon from '@mui/icons-material/PersonOutlined';
@@ -36,9 +33,7 @@ const notifications = [
 export default function DashboardTopbar() {
   const { theme, setTheme } = useTheme();
 
-  // Search
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [searchText, setSearchText] = useState('');
+
   const router = useRouter();
 
   // Notification menu
@@ -66,37 +61,8 @@ export default function DashboardTopbar() {
       {/* ── Right Side ── */}
       <div className="flex items-center gap-1">
 
-        {/* Search Bar */}
-        <Box
-          sx={{
-            display: 'flex',
-            alignItems: 'center',
-            border: searchOpen ? '1px solid' : 'none',
-            borderColor: 'primary.main',
-            borderRadius: '10px',
-            px: searchOpen ? 1.5 : 0,
-            transition: 'all 0.3s ease',
-            width: searchOpen ? 220 : 36,
-            overflow: 'hidden',
-            backgroundColor: searchOpen ? 'background.paper' : 'transparent',
-          }}
-        >
-          <Tooltip title="Search">
-            <IconButton size="small" onClick={() => setSearchOpen(!searchOpen)}>
-              <SearchIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {searchOpen && (
-            <InputBase
-              autoFocus
-              placeholder="Search..."
-              value={searchText}
-              onChange={(e) => setSearchText(e.target.value)}
-              onBlur={() => { if (!searchText) setSearchOpen(false); }}
-              sx={{ fontSize: 14, flex: 1 }}
-            />
-          )}
-        </Box>
+        {/* Global Search */}
+        <GlobalSearchBar />
 
         {/* Theme Toggle */}
         <Tooltip title="Toggle theme">

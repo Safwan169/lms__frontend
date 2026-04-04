@@ -1,7 +1,10 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { ArrowUpDown, Download, Edit2, Eye, Search, Trash2, X } from "lucide-react"
+import { ArrowUpDown, Download, Edit2, Eye, Plus, Search, Trash2, X } from "lucide-react"
+import toast from "react-hot-toast"
+import api from "@/lib/api"
+import { useAuth } from "@/context/AuthContext"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,7 +39,7 @@ import {
 } from "@/components/ui/table-primitive"
 
 type EmployeeRow = {
-  id: number
+  id: number | string
   firstName: string
   lastName: string
   email: string
@@ -44,6 +47,14 @@ type EmployeeRow = {
   status: "Active" | "Inactive" | "Pending"
   joinDate: string
   session: string
+}
+
+type EmployeeApiItem = {
+  id?: string | number
+  name?: string
+  email?: string
+  phone?: string
+  joining_date?: string
 }
 
 const INITIAL_ROWS: EmployeeRow[] = [
@@ -83,64 +94,142 @@ function badgeVariantForStatus(status: EmployeeRow["status"]) {
   return "warning"
 }
 
+function mapApiEmployee(item: EmployeeApiItem): EmployeeRow {
+  const fullName = String(item?.name ?? "").trim()
+  const [firstName, ...rest] = fullName.split(" ").filter(Boolean)
+
+  return {
+    id: item?.id ?? `emp-${Date.now()}`,
+    firstName: firstName || "Admin",
+    lastName: rest.join(" "),
+    email: String(item?.email ?? ""),
+    role: "Admin",
+    status: "Active",
+    joinDate: String(item?.joining_date ?? ""),
+    session: "-",
+  }
+}
+
 export default function UsersTable() {
+  const { user } = useAuth()
   const [rows, setRows] = useState<EmployeeRow[]>(INITIAL_ROWS)
   const [searchQuery, setSearchQuery] = useState("")
   const [filterRole, setFilterRole] = useState("All")
   const [filterStatus, setFilterStatus] = useState("All")
   const [selectedUser, setSelectedUser] = useState<EmployeeRow | null>(null)
-  const [selectedIds, setSelectedIds] = useState<number[]>([])
+  const [selectedIds, setSelectedIds] = useState<Array<number | string>>([])
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false)
   const [bulkStatus, setBulkStatus] = useState<EmployeeRow["status"]>("Active")
   const [bulkReason, setBulkReason] = useState("")
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [loading, setLoading] = useState(true)
+  const [totalEmployees, setTotalEmployees] = useState(INITIAL_ROWS.length)
+  const [totalPagesFromApi, setTotalPagesFromApi] = useState(1)
+  const [addDialogOpen, setAddDialogOpen] = useState(false)
+  const [addForm, setAddForm] = useState({ firstName: "", lastName: "", email: "", phone: "" })
+  const [addLoading, setAddLoading] = useState(false)
+
+  const tenantIdForApi =
+    (user as any)?.tenant_id ??
+    (user as any)?.tenantId ??
+    (user as any)?.tenant?.id ??
+    "demo-tenant"
+  const userIdForApi =
+    (user as any)?.user_id ??
+    (user as any)?.id ??
+    (user as any)?.uuid ??
+    "admin-user-uuid"
 
   useEffect(() => {
-    const timer = setTimeout(() => setLoading(false), 240)
-    return () => clearTimeout(timer)
-  }, [])
+    let active = true
+
+    const timer = setTimeout(async () => {
+      try {
+        const response = await api.get(`/api/tenants/${tenantIdForApi}/employees`, {
+          params: {
+            page: currentPage,
+            limit: itemsPerPage,
+            search: searchQuery.trim() || undefined,
+            user_id: userIdForApi,
+          },
+        })
+
+        const payload = response?.data
+        const rawItems = Array.isArray(payload?.data)
+          ? payload.data
+          : Array.isArray(payload?.items)
+            ? payload.items
+            : Array.isArray(payload)
+              ? payload
+              : []
+
+        const mappedRows = rawItems.map((item: EmployeeApiItem) => mapApiEmployee(item))
+
+        const total = Number(payload?.meta?.total ?? payload?.total ?? mappedRows.length)
+        const pages = Number(payload?.meta?.totalPages ?? payload?.totalPages ?? Math.max(1, Math.ceil(total / itemsPerPage)))
+
+        if (!active) return
+        setRows(mappedRows)
+        setTotalEmployees(total)
+        setTotalPagesFromApi(Math.max(1, pages))
+      } catch {
+        if (!active) return
+        toast.error("Failed to load admins")
+      } finally {
+        if (active) setLoading(false)
+      }
+    }, 240)
+
+    return () => {
+      active = false
+      clearTimeout(timer)
+    }
+  }, [tenantIdForApi, userIdForApi, currentPage, itemsPerPage, searchQuery])
 
   useEffect(() => {
     setCurrentPage(1)
   }, [searchQuery, filterRole, filterStatus])
 
   const filteredRows = useMemo(() => {
-    const searchLower = searchQuery.trim().toLowerCase()
-
     return rows.filter((row) => {
-      const matchesSearch =
-        searchLower.length === 0 ||
-        row.firstName.toLowerCase().includes(searchLower) ||
-        row.lastName.toLowerCase().includes(searchLower) ||
-        row.email.toLowerCase().includes(searchLower)
-
       const matchesRole = filterRole === "All" || row.role === filterRole
       const matchesStatus = filterStatus === "All" || row.status === filterStatus
 
-      return matchesSearch && matchesRole && matchesStatus
+      return matchesRole && matchesStatus
     })
-  }, [rows, searchQuery, filterRole, filterStatus])
+  }, [rows, filterRole, filterStatus])
 
-  const totalPages = Math.max(1, Math.ceil(filteredRows.length / itemsPerPage))
+  const totalPages = totalPagesFromApi
   const safePage = Math.min(currentPage, totalPages)
 
-  const paginatedRows = useMemo(() => {
-    const startIdx = (safePage - 1) * itemsPerPage
-    return filteredRows.slice(startIdx, startIdx + itemsPerPage)
-  }, [filteredRows, safePage, itemsPerPage])
+  const paginatedRows = filteredRows
 
   const allCheckedOnPage = paginatedRows.length > 0 && paginatedRows.every((row) => selectedIds.includes(row.id))
 
   const handleDelete = (user: EmployeeRow) => {
-    if (window.confirm(`Are you sure you want to delete employee ${user.firstName} ${user.lastName}?`)) {
+    if (window.confirm(`Are you sure you want to delete admin ${user.firstName} ${user.lastName}?`)) {
       setRows((prev) => prev.filter((row) => row.id !== user.id))
     }
   }
 
   const handleEdit = (user: EmployeeRow) => {
-    window.alert(`Edit functionality for employee ${user.firstName} ${user.lastName} - coming soon!`)
+    window.alert(`Edit functionality for admin ${user.firstName} ${user.lastName} - coming soon!`)
+  }
+
+  const openEmployeeDetails = async (id: number | string) => {
+    try {
+      const response = await api.get(`/api/tenants/${tenantIdForApi}/employees/${id}`)
+      const payload = response?.data
+      const data = payload?.data ?? payload
+      if (!data) {
+        toast.error("Admin details not found")
+        return
+      }
+      setSelectedUser(mapApiEmployee(data as EmployeeApiItem))
+    } catch {
+      toast.error("Failed to load admin details")
+    }
   }
 
   const handleExport = () => {
@@ -164,7 +253,7 @@ export default function UsersTable() {
     const url = window.URL.createObjectURL(blob)
     const a = document.createElement("a")
     a.href = url
-    a.download = "employees.csv"
+    a.download = "admins.csv"
     a.click()
     window.URL.revokeObjectURL(url)
   }
@@ -174,6 +263,35 @@ export default function UsersTable() {
     setFilterRole("All")
     setFilterStatus("All")
     setCurrentPage(1)
+  }
+
+  const handleAddEmployee = async () => {
+    if (!addForm.firstName.trim() || !addForm.email.trim() || !addForm.phone.trim()) {
+      toast.error("Name, email and phone are required")
+      return
+    }
+    setAddLoading(true)
+    try {
+      const payload = {
+        name: `${addForm.firstName.trim()} ${addForm.lastName.trim()}`.trim(),
+        email: addForm.email.trim(),
+        phone: addForm.phone.trim(),
+      }
+      const response = await api.post(`/api/tenants/${tenantIdForApi}/employees`, payload)
+      const created = response?.data?.data ?? response?.data
+      const newRow: EmployeeRow = created
+        ? mapApiEmployee(created as EmployeeApiItem)
+        : { id: Date.now(), firstName: addForm.firstName, lastName: addForm.lastName, email: addForm.email, role: "Admin", status: "Active", joinDate: "", session: "-" }
+      setRows((prev) => [newRow, ...prev])
+      setTotalEmployees((prev) => prev + 1)
+      toast.success("Admin added successfully")
+      setAddDialogOpen(false)
+      setAddForm({ firstName: "", lastName: "", email: "", phone: "" })
+    } catch {
+      toast.error("Failed to add admin")
+    } finally {
+      setAddLoading(false)
+    }
   }
 
   const applyBulkStatusUpdate = () => {
@@ -229,6 +347,10 @@ export default function UsersTable() {
         <Button variant="outline" onClick={handleExport}>
           <Download className="mr-1 size-4" /> Export
         </Button>
+
+        <Button onClick={() => setAddDialogOpen(true)}>
+          <Plus className="mr-1 size-4" /> Add Admin
+        </Button>
       </div>
 
       <div className="overflow-hidden rounded-lg border">
@@ -273,7 +395,7 @@ export default function UsersTable() {
             ) : paginatedRows.length === 0 ? (
               <TableRow>
                 <TableCell colSpan={8} className="py-12 text-center text-sm text-muted-foreground">
-                  No employees found. Try adjusting filters.
+                  No admins found. Try adjusting filters.
                 </TableCell>
               </TableRow>
             ) : (
@@ -307,6 +429,9 @@ export default function UsersTable() {
                       <Button variant="ghost" size="icon-sm" onClick={() => setSelectedUser(row)}>
                         <Eye className="size-4" />
                       </Button>
+                      <Button variant="ghost" size="icon-sm" onClick={() => openEmployeeDetails(row.id)}>
+                        <Eye className="size-4" />
+                      </Button>
                       <Button variant="ghost" size="icon-sm" onClick={() => handleEdit(row)}>
                         <Edit2 className="size-4" />
                       </Button>
@@ -324,7 +449,7 @@ export default function UsersTable() {
 
       <div className={`fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 backdrop-blur transition-transform duration-300 ${selectedIds.length > 0 ? "translate-y-0" : "translate-y-full"}`}>
         <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2">
-          <p className="text-sm">{selectedIds.length} employees selected</p>
+          <p className="text-sm">{selectedIds.length} admins selected</p>
           <div className="flex flex-wrap items-center gap-2">
             <Button
               variant="outline"
@@ -346,7 +471,7 @@ export default function UsersTable() {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
-          Showing {(safePage - 1) * itemsPerPage + (paginatedRows.length > 0 ? 1 : 0)} to {Math.min(safePage * itemsPerPage, filteredRows.length)} of {filteredRows.length} employees
+          Showing {(safePage - 1) * itemsPerPage + (paginatedRows.length > 0 ? 1 : 0)} to {Math.min(safePage * itemsPerPage, totalEmployees)} of {totalEmployees} admins
         </p>
 
         <Pagination className="mx-0 w-auto justify-end">
@@ -395,7 +520,7 @@ export default function UsersTable() {
             <DialogTitle>
               {selectedUser?.firstName} {selectedUser?.lastName}
             </DialogTitle>
-            <DialogDescription>Employee details preview</DialogDescription>
+            <DialogDescription>Admin details preview</DialogDescription>
           </DialogHeader>
 
           {selectedUser ? (
@@ -416,11 +541,69 @@ export default function UsersTable() {
         </DialogContent>
       </Dialog>
 
+      <Dialog open={addDialogOpen} onOpenChange={setAddDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Add New Admin</DialogTitle>
+            <DialogDescription>Fill in the details to create a new admin account.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1">
+                <label className="text-sm font-medium">First Name <span className="text-red-500">*</span></label>
+                <Input
+                  value={addForm.firstName}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, firstName: e.target.value }))}
+                  placeholder="John"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-sm font-medium">Last Name</label>
+                <Input
+                  value={addForm.lastName}
+                  onChange={(e) => setAddForm((prev) => ({ ...prev, lastName: e.target.value }))}
+                  placeholder="Doe"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Email <span className="text-red-500">*</span></label>
+              <Input
+                type="email"
+                value={addForm.email}
+                onChange={(e) => setAddForm((prev) => ({ ...prev, email: e.target.value }))}
+                placeholder="john.doe@example.com"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Phone <span className="text-red-500">*</span></label>
+              <Input
+                value={addForm.phone}
+                onChange={(e) => setAddForm((prev) => ({ ...prev, phone: e.target.value }))}
+                placeholder="01712345678"
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setAddDialogOpen(false)} disabled={addLoading}>
+              Cancel
+            </Button>
+            <Button onClick={handleAddEmployee} disabled={addLoading}>
+              {addLoading ? "Adding..." : "Add Admin"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={bulkStatusDialogOpen} onOpenChange={setBulkStatusDialogOpen}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Change Status for {selectedIds.length} Employees</DialogTitle>
-            <DialogDescription>Apply a new status to all selected employees.</DialogDescription>
+            <DialogTitle>Change Status for {selectedIds.length} Admins</DialogTitle>
+            <DialogDescription>Apply a new status to all selected admins.</DialogDescription>
           </DialogHeader>
 
           <RadioGroup value={bulkStatus} onValueChange={(value) => setBulkStatus(value as EmployeeRow["status"])}>

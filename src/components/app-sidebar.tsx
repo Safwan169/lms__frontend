@@ -4,6 +4,7 @@ import * as React from "react"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
+  Calculator,
   ChevronDown,
   Monitor,
   BookOpen,
@@ -92,9 +93,15 @@ const navData: NavItem[] = [
     roles: ["admin", "rektor"],
   },
   {
-    title: "Employee List",
+    title: "Admin List",
     url: "/dashboard/employees",
     icon: Monitor,
+    roles: ["admin", "rektor"],
+  },
+  {
+    title: "Accountants",
+    url: "/dashboard/accountants",
+    icon: Calculator,
     roles: ["admin", "rektor"],
   },
   

@@ -25,6 +25,7 @@ import {
 import toast from "react-hot-toast"
 
 import { useAuth } from "@/context/AuthContext"
+import { useGetStudentProfileQuery, useUpdateStudentProfileMutation } from "@/features/user/userApi"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -145,18 +146,53 @@ export default function StudentProfilePage() {
     return () => window.removeEventListener("click", onClickOutside)
   }, [])
 
-  const studentQuery = useQuery({
-    queryKey: ["student-profile", tenantId, studentId],
+  const isDemo = !tenantId || tenantId === "demo-tenant"
+  const [updateStudentProfileApi] = useUpdateStudentProfileMutation()
+
+  const studentQuery = useGetStudentProfileQuery(
+    { tenantId, profileId: studentId },
+    { skip: isDemo || !studentId }
+  )
+
+  const mockStudentQuery = useQuery({
+    queryKey: ["student-profile-mock", studentId],
+    enabled: isDemo,
     queryFn: async () => {
-      // API implementation intentionally commented for frontend-only flow.
-      // const res = await fetch(`/admin/students/${studentId}?tenant_id=${tenantId}`, { cache: "no-store" })
-      // if (res.status === 404) return null
-      // if (!res.ok) throw new Error("Failed to load student")
-      // return await res.json()
       await new Promise((resolve) => setTimeout(resolve, 240))
       return getStudentById(studentId, DUMMY_STUDENTS) ?? null
     },
   })
+
+  const rawStudentData = isDemo ? mockStudentQuery.data : studentQuery.data
+  const studentApiData = isDemo ? null : studentQuery.data
+  const resolvedStudent: Student | null = isDemo
+    ? (rawStudentData as Student | null ?? null)
+    : studentApiData
+      ? ({
+          id: String(studentApiData.id ?? studentApiData.user_id ?? ""),
+          name: String(studentApiData.full_name ?? studentApiData.student_name ?? studentApiData.name ?? ""),
+          rollNumber: String(studentApiData.student_id ?? studentApiData.roll_number ?? ""),
+          studentId: String(studentApiData.student_id ?? studentApiData.roll_number ?? ""),
+          classId: String(studentApiData.class_id ?? ""),
+          batchId: String(studentApiData.batch_id ?? ""),
+          session: String(studentApiData.session ?? ""),
+          status: (studentApiData.status ?? "Active") as StudentStatus,
+          phone: String(studentApiData.phone ?? studentApiData.student_phone ?? ""),
+          email: String(studentApiData.email ?? studentApiData.student_email ?? ""),
+          gender: (studentApiData.gender ?? "Male") as Student["gender"],
+          dob: String(studentApiData.dob ?? ""),
+          address: String(studentApiData.address ?? ""),
+          fatherName: String(studentApiData.father_name ?? ""),
+          motherName: String(studentApiData.mother_name ?? ""),
+          parentPhone: String(studentApiData.parent_phone ?? ""),
+          admittedAt: String(studentApiData.admitted_at ?? studentApiData.created_at ?? ""),
+          photo: studentApiData.photo ?? undefined,
+          loginIdentifier: String(studentApiData.email ?? studentApiData.student_email ?? studentApiData.phone ?? ""),
+          statusHistory: studentApiData.status_history ?? [],
+          documents: studentApiData.documents ?? [],
+          payments: studentApiData.payments ?? [],
+        } as unknown as Student)
+      : null
 
   const historyQuery = useQuery({
     queryKey: ["student-status-history", tenantId, studentId],
@@ -184,14 +220,14 @@ export default function StudentProfilePage() {
   })
 
   useEffect(() => {
-    const loadedStudent = studentQuery.data
+    const loadedStudent = resolvedStudent
     if (!loadedStudent) {
       setStudent(null)
       return
     }
     setStudent(loadedStudent)
     setStatusForm((prev) => ({ ...prev, status: loadedStudent.status }))
-  }, [studentQuery.data])
+  }, [resolvedStudent])
 
   const attendance = attendanceQuery.data
 
@@ -246,11 +282,26 @@ export default function StudentProfilePage() {
     toast.success(student.portalBlocked ? "Portal access restored" : "Portal access blocked")
   }
 
-  const updateStatus = () => {
+  const updateStatus = async () => {
     if (!student) return
 
-    // API implementation intentionally commented for frontend-only flow.
-    // await fetch(`/admin/students/${student.id}/status`, { method: "PATCH", body: JSON.stringify(...) })
+    if (!isDemo) {
+      try {
+        await updateStudentProfileApi({
+          tenantId,
+          profileId: student.id,
+          data: {
+            status: statusForm.status,
+            status_reason: statusForm.reason || undefined,
+            status_effective_date: statusForm.effectiveDate,
+          },
+        }).unwrap()
+      } catch (error: unknown) {
+        const maybeError = error as { data?: { message?: string }; message?: string }
+        toast.error(maybeError?.data?.message || maybeError?.message || "Failed to update status")
+        return
+      }
+    }
 
     setStudent((prev) => {
       if (!prev) return prev
@@ -264,7 +315,7 @@ export default function StudentProfilePage() {
             oldStatus: prev.status,
             newStatus: statusForm.status,
             date: statusForm.effectiveDate,
-            changedBy: "Admin (Demo)",
+            changedBy: "Admin",
             reason: statusForm.reason || undefined,
           },
         ],

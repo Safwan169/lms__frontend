@@ -5,6 +5,8 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, GraduationCap } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
+import { useForgotPasswordMutation, useLoginMutation, useResetPasswordMutation } from '@/features/user/userApi';
+import { useAuth } from '@/context/AuthContext';
 import { LoginFormData, loginSchema } from '@/schemas';
 
 interface SocialButtonProps {
@@ -62,11 +64,23 @@ const SubmitButton: React.FC<{ isLoading: boolean }> = ({ isLoading }) => (
 const LoginForm: React.FC = () => {
     const [showPassword, setShowPassword] = useState<boolean>(false);
     const [isLoadingLogin, setIsLoadingLogin] = useState<boolean>(false);
+    const [isForgotLoading, setIsForgotLoading] = useState<boolean>(false);
+    const [isResetLoading, setIsResetLoading] = useState<boolean>(false);
+    const [showResetForm, setShowResetForm] = useState<boolean>(false);
+    const [resetEmail, setResetEmail] = useState<string>('');
+    const [resetOtp, setResetOtp] = useState<string>('');
+    const [resetNewPassword, setResetNewPassword] = useState<string>('');
     const router = useRouter();
+    const [loginUser] = useLoginMutation();
+    const [forgotPassword] = useForgotPasswordMutation();
+    const [resetPassword] = useResetPasswordMutation();
+    const { login } = useAuth();
 
     const {
         register,
         handleSubmit,
+        getValues,
+        setError,
         formState: { errors }
     } = useForm<LoginFormData>({
         resolver: zodResolver(loginSchema),
@@ -77,26 +91,137 @@ const LoginForm: React.FC = () => {
     const onSubmit = async (_data: LoginFormData) => {
         setIsLoadingLogin(true);
 
-        // Frontend-only flow for demo: skip real API/auth integration.
-        // const isEmail = _data.identifier.includes('@');
-        // const payload = {
-        //     password: _data.password,
-        //     ...(isEmail ? { email: _data.identifier } : { phone: _data.identifier })
-        // };
-        // const response = await loginUser(payload).unwrap();
-        // const token = response?.token || response?.access_token || response?.accessToken;
-        // const user = response?.user;
-        // if (token && user) {
-        //     login({ token, user });
-        // }
+        try {
+            const isEmail = _data.identifier.includes('@');
+            const payload = isEmail
+                ? { password: _data.password, email: _data.identifier }
+                : { password: _data.password, phone: _data.identifier };
 
-        toast('Logged in successfully!', {
-            description: 'Frontend flow only. Redirecting to dashboard.',
-            position: 'top-right',
-            action: { label: 'x', onClick: () => { } },
-        });
+            const response = await loginUser(payload).unwrap();
+            const token = response?.token || response?.access_token || response?.accessToken;
+            const user = response?.user;
+            const tenant = response?.tenant;
 
-        router.push('/dashboard');
+            if (!token || !user) {
+                throw new Error('Login succeeded but token/user payload is missing.');
+            }
+
+            login({ token, user, tenant });
+
+            toast('Logged in successfully!', {
+                description: 'Redirecting to dashboard.',
+                position: 'top-right',
+                action: { label: 'x', onClick: () => { } },
+            });
+
+            router.push('/dashboard');
+        } catch (error: unknown) {
+            const maybeError = error as { data?: { message?: string }; message?: string };
+            const message =
+                maybeError?.data?.message ||
+                maybeError?.message ||
+                'Unable to login. Please check your credentials and try again.';
+
+            setError('root', { type: 'server', message });
+        } finally {
+            setIsLoadingLogin(false);
+        }
+    };
+
+    const handleForgotPassword = async (identifier?: string) => {
+        const candidate = (identifier || '').trim();
+        const email = candidate.includes('@') ? candidate : '';
+
+        if (!email) {
+            toast('Enter your email first', {
+                description: 'Forgot password works with email. Type your email in the Email or Phone field.',
+                position: 'top-right',
+            });
+            return;
+        }
+
+        setIsForgotLoading(true);
+        try {
+            await forgotPassword({
+                email,
+            }).unwrap();
+
+            setShowResetForm(true);
+            setResetEmail(email);
+
+            toast('OTP sent', {
+                description: 'Check your email and enter OTP below to reset password.',
+                position: 'top-right',
+                action: { label: 'x', onClick: () => { } },
+            });
+        } catch (error: unknown) {
+            const maybeError = error as { data?: { message?: string }; message?: string };
+            toast('Failed to send reset link', {
+                description: maybeError?.data?.message || maybeError?.message || 'Please try again.',
+                position: 'top-right',
+                action: { label: 'x', onClick: () => { } },
+            });
+        } finally {
+            setIsForgotLoading(false);
+        }
+    };
+
+    const handleResetPassword = async () => {
+        const email = resetEmail.trim();
+        const otp = resetOtp.trim();
+        const newPassword = resetNewPassword.trim();
+
+        if (!email || !email.includes('@')) {
+            toast('Email is required', {
+                description: 'Enter a valid email for password reset.',
+                position: 'top-right',
+            });
+            return;
+        }
+
+        if (!otp) {
+            toast('OTP is required', {
+                description: 'Enter the OTP you received via email.',
+                position: 'top-right',
+            });
+            return;
+        }
+
+        if (newPassword.length < 8) {
+            toast('Password too short', {
+                description: 'New password must be at least 8 characters.',
+                position: 'top-right',
+            });
+            return;
+        }
+
+        setIsResetLoading(true);
+        try {
+            await resetPassword({
+                email,
+                otp,
+                new_password: newPassword,
+            }).unwrap();
+
+            toast('Password reset successful', {
+                description: 'You can now sign in with your new password.',
+                position: 'top-right',
+                action: { label: 'x', onClick: () => { } },
+            });
+
+            setShowResetForm(false);
+            setResetOtp('');
+            setResetNewPassword('');
+        } catch (error: unknown) {
+            const maybeError = error as { data?: { message?: string }; message?: string };
+            toast('Reset failed', {
+                description: maybeError?.data?.message || maybeError?.message || 'Please check your OTP and try again.',
+                position: 'top-right',
+                action: { label: 'x', onClick: () => { } },
+            });
+        } finally {
+            setIsResetLoading(false);
+        }
     };
 
     const handleSocialLogin = (provider: string) => console.log(`${provider} login clicked`);
@@ -577,10 +702,85 @@ const LoginForm: React.FC = () => {
                                     <input type="checkbox" {...register('rememberMe')} />
                                     Remember me
                                 </label>
-                                <button type="button" className="lms-forgot" onClick={() => console.log('Forgot password')}>
-                                    Forgot password?
+                                <button
+                                    type="button"
+                                    className="lms-forgot"
+                                    disabled={isForgotLoading}
+                                    onClick={() => handleForgotPassword(getValues('identifier'))}
+                                >
+                                    {isForgotLoading ? 'Sending...' : 'Forgot password?'}
                                 </button>
                             </div>
+
+                            <div className="lms-row" style={{ justifyContent: 'flex-end' }}>
+                                <button
+                                    type="button"
+                                    className="lms-forgot"
+                                    onClick={() => {
+                                        const identifier = getValues('identifier')?.trim() || '';
+                                        const fallbackEmail = identifier.includes('@') ? identifier : '';
+                                        setResetEmail((prev) => prev || fallbackEmail);
+                                        setShowResetForm((prev) => !prev);
+                                    }}
+                                >
+                                    {showResetForm ? 'Hide reset form' : 'Have OTP? Reset password'}
+                                </button>
+                            </div>
+
+                            {showResetForm && (
+                                <div style={{ marginTop: '0.25rem', marginBottom: '0.75rem', display: 'grid', gap: '0.75rem' }}>
+                                    <div className="lms-field" style={{ marginBottom: 0 }}>
+                                        <label className="lms-label">Reset Email</label>
+                                        <div className="lms-input-wrap">
+                                            <Mail className="lms-input-icon" />
+                                            <input
+                                                type="email"
+                                                placeholder="you@example.com"
+                                                className="lms-input"
+                                                value={resetEmail}
+                                                onChange={(event) => setResetEmail(event.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="lms-field" style={{ marginBottom: 0 }}>
+                                        <label className="lms-label">OTP</label>
+                                        <div className="lms-input-wrap">
+                                            <Lock className="lms-input-icon" />
+                                            <input
+                                                type="text"
+                                                placeholder="483921"
+                                                className="lms-input"
+                                                value={resetOtp}
+                                                onChange={(event) => setResetOtp(event.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <div className="lms-field" style={{ marginBottom: 0 }}>
+                                        <label className="lms-label">New Password</label>
+                                        <div className="lms-input-wrap">
+                                            <Lock className="lms-input-icon" />
+                                            <input
+                                                type="password"
+                                                placeholder="NewPassword@123"
+                                                className="lms-input"
+                                                value={resetNewPassword}
+                                                onChange={(event) => setResetNewPassword(event.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+
+                                    <button
+                                        type="button"
+                                        disabled={isResetLoading}
+                                        className="lms-submit-btn"
+                                        onClick={handleResetPassword}
+                                    >
+                                        {isResetLoading ? 'Resetting...' : 'Reset Password'}
+                                    </button>
+                                </div>
+                            )}
 
                             {errors.root?.message && <p className="lms-error">{errors.root.message}</p>}
 

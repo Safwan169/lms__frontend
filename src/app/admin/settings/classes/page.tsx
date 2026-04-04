@@ -9,6 +9,7 @@ import toast from "react-hot-toast"
 import { z } from "zod"
 
 import { useAuth } from "@/context/AuthContext"
+import { useCreateClassMutation, useUpdateClassMutation } from "@/features/user/userApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -73,6 +74,8 @@ const DUMMY_CLASSES: ClassRow[] = [
 export default function SettingsClassesPage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
+  const [createClassApiCall] = useCreateClassMutation()
+  const [updateClassApiCall] = useUpdateClassMutation()
 
   const [classesState, setClassesState] = useState<ClassRow[]>(DUMMY_CLASSES)
   const [dialogOpen, setDialogOpen] = useState(false)
@@ -129,44 +132,56 @@ export default function SettingsClassesPage() {
     mutationFn: async (values: ClassSubmitValues) => {
       if (!tenantId) throw new Error("Tenant information missing")
 
-      const payload = {
-        tenant_id: tenantId,
-        class_name: values.class_name,
-        sections: values.sections,
-        capacity: values.capacity,
-        status: values.status ? "ACTIVE" : "INACTIVE",
+      const classPayload = {
+        name: values.class_name,
+        description: "",
+        subject: values.sections[0] || "General",
+        level: "Beginner",
       }
 
       if (isEditMode && selectedRow) {
-        // API implementation intentionally commented for frontend-only flow.
-        // const response = await fetch(`/admin/settings/classes/${selectedRow.id}`, {
-        //   method: "PUT",
-        //   headers: {
-        //     "Content-Type": "application/json",
-        //     "x-tenant-id": String(tenantId),
-        //   },
-        //   body: JSON.stringify(payload),
-        // })
-        // if (!response.ok) throw new Error("Failed to update class")
-
-        await new Promise((resolve) => setTimeout(resolve, 250))
-        return { ...payload, id: selectedRow.id }
+        // Edit mode: call RTK Query mutation for PATCH
+        try {
+          const result = await updateClassApiCall({
+            tenantId: tenantId || 1,
+            classId: selectedRow.id,
+            classData: classPayload,
+          }).unwrap()
+          return {
+            id: result?.id || selectedRow.id,
+            class_name: values.class_name,
+            sections: values.sections,
+            capacity: values.capacity,
+            status: values.status ? "ACTIVE" : "INACTIVE",
+          }
+        } catch (error: unknown) {
+          const maybeError = error as { data?: { message?: string }; message?: string }
+          throw new Error(
+            maybeError?.data?.message ||
+              maybeError?.message ||
+              "Failed to update class"
+          )
+        }
       }
 
-      // API implementation intentionally commented for frontend-only flow.
-      // const response = await fetch("/admin/settings/classes", {
-      //   method: "POST",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //     "x-tenant-id": String(tenantId),
-      //   },
-      //   body: JSON.stringify(payload),
-      // })
-      // if (!response.ok) throw new Error("Failed to create class")
-      // const created = await response.json()
-
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      return { ...payload, id: `cls-${Date.now()}` }
+      // Create mode: call RTK Query mutation for POST
+      try {
+        const result = await createClassApiCall({ tenantId: tenantId || 1, classData: classPayload }).unwrap()
+        return {
+          id: result?.id || `cls-${Date.now()}`,
+          class_name: values.class_name,
+          sections: values.sections,
+          capacity: values.capacity,
+          status: values.status ? "ACTIVE" : "INACTIVE",
+        }
+      } catch (error: unknown) {
+        const maybeError = error as { data?: { message?: string }; message?: string }
+        throw new Error(
+          maybeError?.data?.message ||
+            maybeError?.message ||
+            "Failed to create class"
+        )
+      }
     },
     onSuccess: (savedRow) => {
       const mapped: ClassRow = {

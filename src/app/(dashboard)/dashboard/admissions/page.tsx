@@ -1,10 +1,11 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { useRouter } from "next/navigation"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Search, Inbox } from "lucide-react"
 import toast from "react-hot-toast"
+
+import { useGetAdmissionsQuery, useUpdateAdmissionMutation } from "@/features/user/userApi"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -37,6 +38,14 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import ManualAdmissionForm from "@/components/admissions/manual-admission-form"
 
 type AdmissionStatus = "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED"
 
@@ -109,7 +118,6 @@ function statusVariant(status: AdmissionStatus) {
 }
 
 export default function AdminAdmissionsPage() {
-  const router = useRouter()
   const queryClient = useQueryClient()
 
   const [status, setStatus] = useState<string>("All")
@@ -117,120 +125,61 @@ export default function AdminAdmissionsPage() {
   const [search, setSearch] = useState<string>("")
   const [page, setPage] = useState<number>(1)
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
+  const [newAdmissionOpen, setNewAdmissionOpen] = useState<boolean>(false)
   const [dialogAction, setDialogAction] = useState<"approve" | "reject" | null>(null)
   const [selectedAdmission, setSelectedAdmission] = useState<AdmissionRow | null>(null)
-  const [admissionsData, setAdmissionsData] = useState<AdmissionRow[]>(DUMMY_ADMISSIONS)
-
-  // Guard implementation intentionally commented for frontend-only flow.
-  // const isAdmin = useMemo(() => {
-  //   if (!user) return false
-  //   const role = String((user as any)?.role ?? "").toLowerCase()
-  //   return role === "admin" || role === "rektor"
-  // }, [user])
-  //
-  // const canAccessPage = DEMO_MODE || (!!user && isAdmin)
-  //
-  // useEffect(() => {
-  //   if (DEMO_MODE) return
-  //
-  //   if (!user) {
-  //     router.push("/login")
-  //     return
-  //   }
-  //   if (!isAdmin) {
-  //     router.push("/dashboard")
-  //   }
-  // }, [user, isAdmin, router])
 
   const canAccessPage = true
 
   const { data: classesData } = useQuery({
     queryKey: ["classes-options-dummy"],
     queryFn: async (): Promise<ClassOption[]> => {
-      // API implementation kept intentionally for later integration.
-      // const res = await fetch("/api/classes", { cache: "no-store" })
-      // if (!res.ok) return DUMMY_CLASSES
-      // const json = await res.json()
-      // const raw = Array.isArray(json) ? json : Array.isArray(json?.data) ? json.data : []
-      // const mapped = raw.map((item: any) => ({
-      //   id: String(item.id),
-      //   name: String(item.name ?? item.title ?? `Class ${item.id}`),
-      // }))
-      // return mapped.length > 0 ? mapped : DUMMY_CLASSES
       return DUMMY_CLASSES
     },
   })
 
-  const admissionsQueryKey = ["admin-admissions-dummy", { status, classId, search, page }, admissionsData]
+  const admissionsQueryKey = ["admin-admissions", { search, classId, page }]
 
-  const { data, isLoading, isFetching } = useQuery({
-    queryKey: admissionsQueryKey,
-    queryFn: async (): Promise<AdmissionsResponse> => {
-      // API implementation kept intentionally for later integration.
-      // const params = new URLSearchParams()
-      // if (status !== "All") params.set("status", status)
-      // if (classId !== "All") params.set("classId", classId)
-      // if (search.trim()) params.set("search", search.trim())
-      // params.set("page", String(page))
-      // const response = await fetch(`/admin/admissions?${params.toString()}`, {
-      //   cache: "no-store",
-      // })
-      // if (!response.ok) throw new Error("Failed to fetch admissions")
-      // const json = await response.json()
-      // ...mapping logic
-
-      const searchLower = search.trim().toLowerCase()
-      const filtered = admissionsData.filter((item) => {
-        const statusMatch = status === "All" ? true : item.status === status
-        const classMatch = classId === "All" ? true : item.class_id === classId
-        const searchMatch =
-          searchLower.length === 0
-            ? true
-            : item.student_name.toLowerCase().includes(searchLower) ||
-              item.phone.toLowerCase().includes(searchLower)
-        return statusMatch && classMatch && searchMatch
-      })
-
-      const total = filtered.length
-      const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
-      const safePage = Math.min(page, totalPages)
-      const start = (safePage - 1) * PAGE_SIZE
-      const paged = filtered.slice(start, start + PAGE_SIZE)
-
-      return {
-        data: paged,
-        total,
-        page: safePage,
-        totalPages,
-      }
-    },
-    placeholderData: (previous) => previous,
+  const {
+    data: admissionsApiData,
+    isLoading,
+    isFetching,
+  } = useGetAdmissionsQuery({
+    page,
+    limit: PAGE_SIZE,
+    search: search.trim() || undefined,
+    class_id: classId !== "All" ? classId : undefined,
   })
 
+  const apiRows: AdmissionRow[] = (admissionsApiData?.data ?? []).map((item: any) => ({
+    id: String(item.id),
+    student_name: String(item.student_name ?? item.name ?? ""),
+    phone: String(item.student_phone ?? item.phone ?? ""),
+    class_name: String(item.class_name ?? item.class?.name ?? ""),
+    class_id: String(item.class_id ?? ""),
+    batch_name: String(item.batch_name ?? item.batch?.name ?? ""),
+    applied_at: String(item.applied_at ?? item.created_at ?? ""),
+    status: (item.status ?? "PENDING") as AdmissionStatus,
+  }))
+
+  const apiTotal: number = admissionsApiData?.total ?? admissionsApiData?.meta?.total ?? apiRows.length
+  const apiTotalPages: number = admissionsApiData?.totalPages ?? admissionsApiData?.meta?.totalPages ?? Math.max(1, Math.ceil(apiTotal / PAGE_SIZE))
+
+  const [updateAdmission] = useUpdateAdmissionMutation()
+
   const updateStatusOptimistically = (admissionId: string, nextStatus: AdmissionStatus) => {
-    setAdmissionsData((prev) =>
-      prev.map((row) => (row.id === admissionId ? { ...row, status: nextStatus } : row))
-    )
-    queryClient.setQueryData(admissionsQueryKey, (previous: AdmissionsResponse | undefined) => {
-      if (!previous) return previous
-      return {
-        ...previous,
-        data: previous.data.map((row) =>
-          row.id === admissionId ? { ...row, status: nextStatus } : row
-        ),
-      }
-    })
+    queryClient.invalidateQueries({ queryKey: admissionsQueryKey })
   }
 
   const actionMutation = useMutation({
     mutationFn: async ({ id, action }: { id: string; action: "approve" | "reject" }) => {
-      // API implementation kept intentionally for later integration.
-      // const endpoint = action === "approve" ? "approve" : "reject"
-      // const res = await fetch(`/admin/admissions/${id}/${endpoint}`, {
-      //   method: "POST",
-      // })
-      // if (!res.ok) throw new Error(`Failed to ${action} admission`)
-      await new Promise((resolve) => setTimeout(resolve, 250))
+      const nextStatus = action === "approve" ? "APPROVED" : "REJECTED"
+      try {
+        await updateAdmission({ admissionId: id, data: { status: nextStatus } }).unwrap()
+      } catch (error: unknown) {
+        const maybeError = error as { data?: { message?: string }; message?: string }
+        throw new Error(maybeError?.data?.message || maybeError?.message || `Failed to ${action} admission`)
+      }
       return action
     },
     onMutate: async ({ id, action }) => {
@@ -240,8 +189,8 @@ export default function AdminAdmissionsPage() {
     onSuccess: (action) => {
       toast.success(action === "approve" ? "Application approved" : "Application rejected")
     },
-    onError: () => {
-      toast.error("Action failed. Please try again.")
+    onError: (error: any) => {
+      toast.error(error?.message || "Action failed. Please try again.")
     },
   })
 
@@ -263,9 +212,9 @@ export default function AdminAdmissionsPage() {
     },
   })
 
-  const rows = data?.data ?? []
-  const totalCount = data?.total ?? 0
-  const totalPages = data?.totalPages ?? 1
+  const rows = apiRows
+  const totalCount = apiTotal
+  const totalPages = apiTotalPages
   const classes = classesData ?? DUMMY_CLASSES
 
   const resetFilters = () => {
@@ -298,7 +247,7 @@ export default function AdminAdmissionsPage() {
           <h1>Admission Applications</h1>
           <p>{totalCount} total applications</p>
         </div>
-        <Button onClick={() => router.push("/admin/admissions/new")}>New Admission</Button>
+        <Button onClick={() => setNewAdmissionOpen(true)}>New Admission</Button>
       </div>
 
       <div className="adm-card">
@@ -503,6 +452,22 @@ export default function AdminAdmissionsPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      <Dialog open={newAdmissionOpen} onOpenChange={setNewAdmissionOpen}>
+        <DialogContent className="max-h-[92vh] max-w-5xl overflow-hidden p-0">
+          <DialogHeader className="border-b px-6 pt-6">
+            <DialogTitle>New Admission</DialogTitle>
+            <DialogDescription>Create a new admission without leaving this page.</DialogDescription>
+          </DialogHeader>
+          <div className="px-6 pb-6 pt-4">
+            <ManualAdmissionForm
+              mode="dialog"
+              onCancel={() => setNewAdmissionOpen(false)}
+              onSuccess={() => setNewAdmissionOpen(false)}
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

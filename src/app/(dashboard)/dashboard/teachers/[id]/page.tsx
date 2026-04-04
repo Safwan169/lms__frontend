@@ -20,6 +20,7 @@ import {
   X,
 } from "lucide-react"
 import toast from "react-hot-toast"
+import api from "@/lib/api"
 
 import { useAuth } from "@/context/AuthContext"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -55,6 +56,8 @@ import { Textarea } from "@/components/ui/textarea"
 
 type TeacherStatus = "Active" | "On Leave" | "Resigned" | "Terminated" | "Retired"
 type LeaveStatus = "Approved" | "Rejected" | "Pending"
+
+type ApiTeacherGender = "MALE" | "FEMALE" | "OTHER"
 
 type TeacherProfile = {
   id: string
@@ -239,6 +242,62 @@ function makeAttendance(month: string) {
   }
 }
 
+function toUiGender(gender?: ApiTeacherGender): TeacherProfile["gender"] {
+  if (gender === "MALE") return "Male"
+  if (gender === "FEMALE") return "Female"
+  return "Other"
+}
+
+function toEmploymentType(payrollType?: string): TeacherProfile["employmentType"] {
+  if (payrollType === "PER_CLASS" || payrollType === "PER_BATCH") return "Part-time"
+  return "Full-time"
+}
+
+function toDepartment(subjects: string[]): string {
+  const first = subjects[0]?.toLowerCase() ?? ""
+  if (["physics", "chemistry", "biology", "math", "mathematics"].some((key) => first.includes(key))) return "Science"
+  if (["accounting", "finance", "business", "economics"].some((key) => first.includes(key))) return "Commerce"
+  if (["bangla", "english", "history", "civics"].some((key) => first.includes(key))) return "Arts"
+  return "General"
+}
+
+function mapApiTeacherProfile(item: any): TeacherProfile {
+  const subjects = Array.isArray(item?.speciality_subject)
+    ? item.speciality_subject.filter((subject: unknown) => typeof subject === "string")
+    : []
+
+  const monthlySalary = Number(item?.monthly_salary ?? 0)
+
+  return {
+    id: String(item?.id ?? ""),
+    teacherId: String(item?.teacher_id ?? item?.id ?? "-"),
+    name: String(item?.name ?? "Unknown Teacher"),
+    designation: String(item?.qualification ?? "Teacher"),
+    department: toDepartment(subjects),
+    employmentType: toEmploymentType(item?.payroll_type),
+    status: "Active",
+    phone: String(item?.phone ?? ""),
+    email: String(item?.email ?? ""),
+    dob: String(item?.date_of_birth ?? ""),
+    gender: toUiGender(item?.gender),
+    address: String(item?.address ?? ""),
+    nid: String(item?.nid_number ?? ""),
+    joiningDate: String(item?.joining_date ?? ""),
+    shift: "Day",
+    salary: Number.isFinite(monthlySalary) ? monthlySalary : 0,
+    portalLogin: String(item?.email ?? item?.phone ?? ""),
+    portalBlocked: false,
+    lastLogin: undefined,
+    passwordLastReset: undefined,
+    photoUrl: undefined,
+    classes: [],
+    statusHistory: [],
+    salaryHistory: [],
+    leaves: [],
+    documents: [],
+  }
+}
+
 export default function TeacherProfilePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
@@ -291,6 +350,7 @@ export default function TeacherProfilePage() {
   const tenantId = useMemo(() => {
     return (user as any)?.tenant_id ?? (user as any)?.tenantId ?? (user as any)?.tenant?.id ?? "demo-tenant"
   }, [user])
+  const tenantIdForApi = tenantId
 
   useEffect(() => {
     const onClick = (event: MouseEvent) => {
@@ -302,15 +362,18 @@ export default function TeacherProfilePage() {
   }, [])
 
   const profileQuery = useQuery({
-    queryKey: ["teacher-profile", tenantId, teacherId],
+    queryKey: ["teacher-profile", tenantIdForApi, teacherId],
     queryFn: async () => {
-      // API implementation intentionally commented for frontend-only flow.
-      // const res = await fetch(`/api/teachers/${teacherId}?tenant_id=${tenantId}`)
-      // if (res.status === 404) return null
-      // if (!res.ok) throw new Error("Failed to load teacher")
-      // return await res.json()
-      await new Promise((resolve) => setTimeout(resolve, 220))
-      return DUMMY_TEACHERS.find((item) => item.id === teacherId) ?? null
+      try {
+        const response = await api.get(`/api/tenants/${tenantIdForApi}/teachers/${teacherId}`)
+        const payload = response?.data
+        const data = payload?.data ?? payload
+        if (!data) return null
+        return mapApiTeacherProfile(data)
+      } catch (error: any) {
+        if (error?.response?.status === 404) return null
+        throw error
+      }
     },
   })
 

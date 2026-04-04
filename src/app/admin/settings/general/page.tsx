@@ -250,7 +250,7 @@ export default function GeneralSettingsPage() {
       <div className="space-y-5 pb-24">
         <div>
           <h1 className="text-2xl font-semibold">General Settings</h1>
-          <p className="text-sm text-muted-foreground">Manage your school's basic information</p>
+          <p className="text-sm text-muted-foreground">Manage your school&apos;s basic information</p>
         </div>
         <LoadingCard />
         <LoadingCard />
@@ -264,7 +264,7 @@ export default function GeneralSettingsPage() {
     <div className="space-y-5 pb-24">
       <div>
         <h1 className="text-2xl font-semibold">General Settings</h1>
-        <p className="text-sm text-muted-foreground">Manage your school's basic information</p>
+        <p className="text-sm text-muted-foreground">Manage your school&apos;s basic information</p>
       </div>
 
       <Form {...form}>

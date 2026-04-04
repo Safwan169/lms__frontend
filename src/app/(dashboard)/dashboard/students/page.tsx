@@ -17,6 +17,7 @@ import {
 import toast from "react-hot-toast"
 
 import { useAuth } from "@/context/AuthContext"
+import { useGetStudentProfilesQuery } from "@/features/user/userApi"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
@@ -199,37 +200,37 @@ export default function StudentsListPage() {
     },
   })
 
-  const listQuery = useQuery({
-    queryKey: ["students-list", tenantId, students, debouncedSearch, classId, batchId, status, session, page, limit],
-    queryFn: async () => {
-      // API implementation intentionally commented for frontend-only flow.
-      // const params = new URLSearchParams({ tenant_id: String(tenantId) })
-      // if (debouncedSearch) params.set("search", debouncedSearch)
-      // if (classId !== "all") params.set("classId", classId)
-      // if (batchId !== "all") params.set("batchId", batchId)
-      // if (status !== "all") params.set("status", status)
-      // if (session !== "all") params.set("session", session)
-      // params.set("page", String(page))
-      // params.set("limit", String(limit))
-      // const res = await fetch(`/admin/students?${params.toString()}`, { cache: "no-store" })
-      // if (!res.ok) throw new Error("Failed to load students")
-      // return await res.json()
-      await new Promise((resolve) => setTimeout(resolve, 220))
-      return filterStudents(
-        {
-          search: debouncedSearch,
-          classId,
-          batchId,
-          status,
-          session,
-          page,
-          limit,
-        },
-        students
-      )
+  const listQuery = useGetStudentProfilesQuery(
+    {
+      tenantId,
+      page,
+      limit,
+      search: debouncedSearch || undefined,
     },
-    placeholderData: (previous) => previous,
-  })
+    { skip: !tenantId || tenantId === "demo-tenant" }
+  )
+
+  const apiRows: Student[] = (listQuery.data?.data ?? listQuery.data?.items ?? []).map((item: any) => ({
+    id: String(item.id ?? item.user_id ?? ""),
+    name: String(item.full_name ?? item.student_name ?? item.name ?? ""),
+    rollNumber: String(item.student_id ?? item.roll_number ?? ""),
+    classId: String(item.class_id ?? ""),
+    batchId: String(item.batch_id ?? ""),
+    session: String(item.session ?? ""),
+    status: (item.status ?? "Active") as Student["status"],
+    phone: String(item.phone ?? item.student_phone ?? ""),
+    email: String(item.email ?? item.student_email ?? ""),
+    gender: (item.gender ?? "Male") as Student["gender"],
+    dob: String(item.dob ?? ""),
+    address: String(item.address ?? ""),
+    fatherName: String(item.father_name ?? ""),
+    motherName: String(item.mother_name ?? ""),
+    parentPhone: String(item.parent_phone ?? ""),
+    admittedAt: String(item.admitted_at ?? item.created_at ?? ""),
+    photo: item.photo ?? undefined,
+  }))
+
+  const useApiData = !(!tenantId || tenantId === "demo-tenant") && listQuery.data != null
 
   const summaryQuery = useQuery({
     queryKey: ["student-summary", tenantId, quickViewId, students],
@@ -251,15 +252,38 @@ export default function StudentsListPage() {
     },
   })
 
+  const fallbackList = useMemo(
+    () =>
+      filterStudents(
+        {
+          search: debouncedSearch,
+          classId,
+          batchId,
+          status,
+          session,
+          page,
+          limit,
+        },
+        students
+      ),
+    [debouncedSearch, classId, batchId, status, session, page, limit, students]
+  )
+
   const classes = classesQuery.data ?? CLASSES
   const batchOptions = getBatchesByClass(classId)
-  const rows = listQuery.data?.items ?? []
-  const total = listQuery.data?.total ?? 0
-  const totalPages = listQuery.data?.totalPages ?? 1
-  const currentPage = listQuery.data?.page ?? 1
+  const rows = useApiData ? apiRows : (listQuery as any).data?.items ?? fallbackList.items
+  const total = useApiData ? (listQuery.data?.total ?? listQuery.data?.meta?.total ?? apiRows.length) : (listQuery as any).data?.total ?? fallbackList.total
+  const totalPages = useApiData ? (listQuery.data?.totalPages ?? listQuery.data?.meta?.totalPages ?? Math.max(1, Math.ceil(total / limit))) : (listQuery as any).data?.totalPages ?? fallbackList.totalPages
+  const currentPage = useApiData ? page : (listQuery as any).data?.page ?? fallbackList.page
 
   useEffect(() => {
-    setSelectedIds((prev) => prev.filter((id) => rows.some((row) => row.id === id) || students.some((s) => s.id === id)))
+    setSelectedIds((prev) => {
+      const next = prev.filter((id) => rows.some((row) => row.id === id) || students.some((s) => s.id === id))
+      if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
+        return prev
+      }
+      return next
+    })
   }, [rows, students])
 
   const allCheckedOnPage = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id))
