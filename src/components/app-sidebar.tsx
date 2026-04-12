@@ -8,10 +8,14 @@ import {
   ChevronDown,
   Monitor,
   BookOpen,
+  CalendarDays,
+  ClipboardCheck,
   HardDrive,
   LifeBuoy,
+  School,
   Settings,
   GraduationCap,
+  Users,
 } from "lucide-react"
 
 import {
@@ -35,6 +39,7 @@ import {
   SidebarFooter,
 } from "@/components/ui/sidebar"
 import Link from "next/link"
+import { useAuth } from "@/context/AuthContext"
 
 type NavSubItem = {
   title: string
@@ -61,7 +66,13 @@ const navData: NavItem[] = [
     title: "Dashboard",
     url: "/dashboard",
     icon: LayoutDashboard,
-    roles: ["admin", "user", "rektor"],
+    roles: ["admin", "user", "rektor", "student"],
+  },
+  {
+    title: "Dashboard",
+    url: "/dashboard/dashboard-empty",
+    icon: LayoutDashboard,
+    roles: ["teacher"],
   },
   // {
   //   title: "Data Master",
@@ -94,15 +105,45 @@ const navData: NavItem[] = [
   },
   {
     title: "Admin List",
-    url: "/dashboard/employees",
+    url: "/dashboard/admins",
     icon: Monitor,
-    roles: ["admin", "rektor"],
+    roles: ["admin", "rektor", "superadmin"],
   },
   {
     title: "Accountants",
     url: "/dashboard/accountants",
     icon: Calculator,
     roles: ["admin", "rektor"],
+  },
+  {
+    title: "Students Page",
+    url: "/dashboard/teacher-students",
+    icon: Users,
+    roles: ["teacher"],
+  },
+  {
+    title: "Class Rooms",
+    url: "/dashboard/classrooms",
+    icon: School,
+    roles: ["teacher"],
+  },
+  {
+    title: "TimeTable",
+    url: "/dashboard/timetable",
+    icon: CalendarDays,
+    roles: ["teacher", "student"],
+  },
+  {
+    title: "Self Attendance",
+    url: "/dashboard/self-attendance",
+    icon: ClipboardCheck,
+    roles: ["teacher", "student"],
+  },
+  {
+    title: "Classes",
+    url: "/dashboard/class-access",
+    icon: BookOpen,
+    roles: ["student"],
   },
   
   // {
@@ -131,7 +172,13 @@ const configData: ConfigItem[] = [
 ]
 
 export function AppSidebar({ userRole = "rektor" }) {
+  const { user } = useAuth()
   const pathname = usePathname()
+  const normalizedUserRole = String(
+    (user as any)?.role ??
+    (Array.isArray((user as any)?.roles) ? (user as any)?.roles[0] : (user as any)?.roles) ??
+    userRole
+  ).toLowerCase()
 
   return (
     <>
@@ -380,7 +427,7 @@ export function AppSidebar({ userRole = "rektor" }) {
             <SidebarGroupLabel>MENU </SidebarGroupLabel>
             <SidebarMenu>
               {navData
-                .filter((item) => item.roles.includes(userRole))
+                .filter((item) => item.roles.includes(normalizedUserRole))
                 .map((item) => (
                   <SidebarMenuItem key={item.title}>
                     {item?.items ? (
@@ -438,7 +485,7 @@ export function AppSidebar({ userRole = "rektor" }) {
             {/* <SidebarGroupLabel>KONFIGURASI</SidebarGroupLabel> */}
             <SidebarMenu>
               {configData
-                .filter((item) => item.roles.includes(userRole))
+                .filter((item) => item.roles.includes(normalizedUserRole))
                 .map((item) => (
                   <SidebarMenuItem key={item.title}>
                     <SidebarMenuButton

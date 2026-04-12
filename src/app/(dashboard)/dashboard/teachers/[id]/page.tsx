@@ -262,6 +262,7 @@ function toDepartment(subjects: string[]): string {
 }
 
 function mapApiTeacherProfile(item: any): TeacherProfile {
+  const user = item?.user ?? {}
   const subjects = Array.isArray(item?.speciality_subject)
     ? item.speciality_subject.filter((subject: unknown) => typeof subject === "string")
     : []
@@ -269,15 +270,15 @@ function mapApiTeacherProfile(item: any): TeacherProfile {
   const monthlySalary = Number(item?.monthly_salary ?? 0)
 
   return {
-    id: String(item?.id ?? ""),
-    teacherId: String(item?.teacher_id ?? item?.id ?? "-"),
-    name: String(item?.name ?? "Unknown Teacher"),
+    id: String(item?.user_id ?? user?.id ?? item?.id ?? ""),
+    teacherId: String(item?.teacher_id ?? item?.user_id ?? user?.id ?? "-"),
+    name: String(user?.name ?? item?.name ?? "Unknown Teacher"),
     designation: String(item?.qualification ?? "Teacher"),
     department: toDepartment(subjects),
     employmentType: toEmploymentType(item?.payroll_type),
     status: "Active",
-    phone: String(item?.phone ?? ""),
-    email: String(item?.email ?? ""),
+    phone: String(user?.phone ?? item?.phone ?? ""),
+    email: String(user?.email ?? item?.email ?? ""),
     dob: String(item?.date_of_birth ?? ""),
     gender: toUiGender(item?.gender),
     address: String(item?.address ?? ""),
@@ -285,7 +286,7 @@ function mapApiTeacherProfile(item: any): TeacherProfile {
     joiningDate: String(item?.joining_date ?? ""),
     shift: "Day",
     salary: Number.isFinite(monthlySalary) ? monthlySalary : 0,
-    portalLogin: String(item?.email ?? item?.phone ?? ""),
+    portalLogin: String(user?.email ?? user?.phone ?? item?.email ?? item?.phone ?? ""),
     portalBlocked: false,
     lastLogin: undefined,
     passwordLastReset: undefined,
@@ -302,7 +303,7 @@ export default function TeacherProfilePage() {
   const params = useParams<{ id: string }>()
   const router = useRouter()
   const searchParams = useSearchParams()
-  const { user } = useAuth()
+  const { user, isAuthReady } = useAuth()
 
   const teacherId = String(params?.id ?? "")
   const initialTab = (searchParams.get("tab") as ProfileTab) || "overview"
@@ -348,7 +349,31 @@ export default function TeacherProfilePage() {
   const [previewDoc, setPreviewDoc] = useState<{ name: string; url: string } | null>(null)
 
   const tenantId = useMemo(() => {
-    return (user as any)?.tenant_id ?? (user as any)?.tenantId ?? (user as any)?.tenant?.id ?? "demo-tenant"
+    const userTenantId =
+      (user as any)?.tenant_id ??
+      (user as any)?.tenantId ??
+      (user as any)?.tenant?.id
+
+    if (userTenantId) return userTenantId
+
+    if (typeof window !== "undefined") {
+      try {
+        const storedUser = localStorage.getItem("user")
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser)
+          return (
+            parsedUser?.tenant_id ??
+            parsedUser?.tenantId ??
+            parsedUser?.tenant?.id ??
+            "demo-tenant"
+          )
+        }
+      } catch {
+        // Ignore malformed local storage and fall back below.
+      }
+    }
+
+    return "demo-tenant"
   }, [user])
   const tenantIdForApi = tenantId
 
@@ -363,6 +388,7 @@ export default function TeacherProfilePage() {
 
   const profileQuery = useQuery({
     queryKey: ["teacher-profile", tenantIdForApi, teacherId],
+    enabled: isAuthReady && !!teacherId && tenantIdForApi !== "demo-tenant",
     queryFn: async () => {
       try {
         const response = await api.get(`/api/tenants/${tenantIdForApi}/teachers/${teacherId}`)

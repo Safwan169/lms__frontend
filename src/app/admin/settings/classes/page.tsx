@@ -8,6 +8,7 @@ import { Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import toast from "react-hot-toast"
 import { z } from "zod"
 
+import api from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { useCreateClassMutation, useUpdateClassMutation } from "@/features/user/userApi"
 import { Badge } from "@/components/ui/badge"
@@ -53,8 +54,31 @@ type ClassRow = {
   status: "ACTIVE" | "INACTIVE"
 }
 
+type ClassApiItem = {
+  id?: string
+  tenant_id?: string
+  name?: string
+  code?: string
+  description?: string
+  level?: string
+  status?: "ACTIVE" | "INACTIVE"
+  class_subjects?: Array<{
+    id?: string
+    name?: string
+    code?: string
+    is_global?: boolean
+    is_active?: boolean
+    is_mandatory?: boolean
+  }>
+}
+
 const classFormSchema = z.object({
   class_name: z.string().trim().min(1, "Class name is required"),
+  code: z.string().trim().min(1, "Class code is required"),
+  description: z.string().trim().min(1, "Description is required"),
+  subject: z.string().trim().min(1, "Subject is required"),
+  level: z.string().trim().min(1, "Level is required"),
+  subject_ids_input: z.string().trim().min(1, "At least one subject ID is required"),
   sections: z.array(z.enum(["Science", "Commerce", "Arts", "General"])).min(1, "Select at least one section"),
   capacity: z.coerce.number().int().min(1, "Capacity must be at least 1"),
   status: z.boolean().default(true),
@@ -93,37 +117,57 @@ export default function SettingsClassesPage() {
     resolver: zodResolver(classFormSchema),
     defaultValues: {
       class_name: "",
+      code: "",
+      description: "",
+      subject: "General",
+      level: "Beginner",
+      subject_ids_input: "",
       sections: ["General"],
       capacity: 1,
       status: true,
     },
   })
 
-  const classesQueryKey = useMemo(
-    () => ["settings-classes", tenantId, classesState] as const,
-    [tenantId, classesState]
-  )
+  const classesQueryKey = useMemo(() => ["settings-classes", tenantId] as const, [tenantId])
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: classesQueryKey,
     queryFn: async (): Promise<ClassRow[]> => {
       if (!tenantId) return []
 
-      // API implementation intentionally commented for frontend-only flow.
-      // const response = await fetch("/admin/settings/classes", {
-      //   method: "GET",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //     "x-tenant-id": String(tenantId),
-      //   },
-      //   cache: "no-store",
-      // })
-      // if (!response.ok) throw new Error("Failed to load classes")
-      // const data = await response.json()
-      // return Array.isArray(data?.data) ? data.data : []
+      const response = await api.get(`/api/tenants/${tenantId}/classes`, {
+        params: {
+          page: 1,
+          limit: 10,
+        },
+      })
 
-      await new Promise((resolve) => setTimeout(resolve, 250))
-      return classesState
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
+
+      return rawItems.map((item: ClassApiItem) => {
+        const subjectNames = Array.isArray(item?.class_subjects)
+          ? item.class_subjects
+              .map((subject) => String(subject?.name ?? "").trim())
+              .filter(Boolean)
+          : []
+
+        const normalizedSections = subjectNames.filter((name): name is ClassSection =>
+          SECTION_OPTIONS.includes(name as ClassSection)
+        )
+
+        return {
+          id: String(item?.id ?? `class-${Date.now()}`),
+          class_name: String(item?.name ?? "Unnamed Class"),
+          sections: normalizedSections.length > 0 ? normalizedSections : ["General"],
+          capacity: 0,
+          status: item?.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+        }
+      })
     },
     enabled: !!tenantId,
   })
@@ -134,9 +178,14 @@ export default function SettingsClassesPage() {
 
       const classPayload = {
         name: values.class_name,
-        description: "",
-        subject: values.sections[0] || "General",
-        level: "Beginner",
+        code: values.code,
+        description: values.description,
+        subject: values.subject,
+        level: values.level,
+        subject_ids: values.subject_ids_input
+          .split(",")
+          .map((item) => item.trim())
+          .filter(Boolean),
       }
 
       if (isEditMode && selectedRow) {
@@ -207,6 +256,11 @@ export default function SettingsClassesPage() {
       setIsEditMode(false)
       form.reset({
         class_name: "",
+        code: "",
+        description: "",
+        subject: "General",
+        level: "Beginner",
+        subject_ids_input: "",
         sections: ["General"],
         capacity: 1,
         status: true,
@@ -251,6 +305,11 @@ export default function SettingsClassesPage() {
     setSelectedRow(null)
     form.reset({
       class_name: "",
+      code: "",
+      description: "",
+      subject: "General",
+      level: "Beginner",
+      subject_ids_input: "",
       sections: ["General"],
       capacity: 1,
       status: true,
@@ -263,6 +322,11 @@ export default function SettingsClassesPage() {
     setSelectedRow(row)
     form.reset({
       class_name: row.class_name,
+      code: "",
+      description: "",
+      subject: row.sections[0] ?? "General",
+      level: "Beginner",
+      subject_ids_input: "",
       sections: row.sections,
       capacity: row.capacity,
       status: row.status === "ACTIVE",
@@ -376,6 +440,76 @@ export default function SettingsClassesPage() {
                     <FormLabel>Class Name</FormLabel>
                     <FormControl>
                       <Input placeholder="Class 6" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="code"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Class Code</FormLabel>
+                    <FormControl>
+                      <Input placeholder="C10-SCI" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="description"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Description</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Science group for SSC exam preparation." {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="subject"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Subject</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Science" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="level"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Level</FormLabel>
+                    <FormControl>
+                      <Input placeholder="Beginner" {...field} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="subject_ids_input"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Subject IDs</FormLabel>
+                    <FormControl>
+                      <Input placeholder="subject-uuid-1, subject-uuid-2" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

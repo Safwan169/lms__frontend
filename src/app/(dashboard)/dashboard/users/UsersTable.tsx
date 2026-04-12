@@ -20,7 +20,6 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { Textarea } from "@/components/ui/textarea"
 import {
   Pagination,
   PaginationContent,
@@ -51,10 +50,19 @@ type EmployeeRow = {
 
 type EmployeeApiItem = {
   id?: string | number
+  user_id?: string | number
   name?: string
   email?: string
   phone?: string
   joining_date?: string
+  created_at?: string
+  is_active?: boolean
+  user?: {
+    id?: string | number
+    name?: string
+    email?: string
+    is_active?: boolean
+  }
 }
 
 const INITIAL_ROWS: EmployeeRow[] = [
@@ -95,17 +103,19 @@ function badgeVariantForStatus(status: EmployeeRow["status"]) {
 }
 
 function mapApiEmployee(item: EmployeeApiItem): EmployeeRow {
-  const fullName = String(item?.name ?? "").trim()
+  const nestedUser = item?.user ?? {}
+  const fullName = String(nestedUser?.name ?? item?.name ?? "").trim()
   const [firstName, ...rest] = fullName.split(" ").filter(Boolean)
+  const isActive = nestedUser?.is_active ?? item?.is_active
 
   return {
-    id: item?.id ?? `emp-${Date.now()}`,
+    id: item?.user_id ?? nestedUser?.id ?? item?.id ?? `emp-${Date.now()}`,
     firstName: firstName || "Admin",
     lastName: rest.join(" "),
-    email: String(item?.email ?? ""),
+    email: String(nestedUser?.email ?? item?.email ?? ""),
     role: "Admin",
-    status: "Active",
-    joinDate: String(item?.joining_date ?? ""),
+    status: isActive === false ? "Inactive" : "Active",
+    joinDate: String(item?.joining_date ?? item?.created_at ?? ""),
     session: "-",
   }
 }
@@ -119,8 +129,8 @@ export default function UsersTable() {
   const [selectedUser, setSelectedUser] = useState<EmployeeRow | null>(null)
   const [selectedIds, setSelectedIds] = useState<Array<number | string>>([])
   const [bulkStatusDialogOpen, setBulkStatusDialogOpen] = useState(false)
-  const [bulkStatus, setBulkStatus] = useState<EmployeeRow["status"]>("Active")
-  const [bulkReason, setBulkReason] = useState("")
+  const [bulkStatus, setBulkStatus] = useState<"Active" | "Inactive">("Active")
+  const [bulkStatusLoading, setBulkStatusLoading] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [loading, setLoading] = useState(true)
@@ -146,12 +156,12 @@ export default function UsersTable() {
 
     const timer = setTimeout(async () => {
       try {
-        const response = await api.get(`/api/tenants/${tenantIdForApi}/employees`, {
+        const response = await api.get(`/api/tenants/${tenantIdForApi}/admins`, {
           params: {
             page: currentPage,
             limit: itemsPerPage,
             search: searchQuery.trim() || undefined,
-            user_id: userIdForApi,
+            
           },
         })
 
@@ -219,7 +229,7 @@ export default function UsersTable() {
 
   const openEmployeeDetails = async (id: number | string) => {
     try {
-      const response = await api.get(`/api/tenants/${tenantIdForApi}/employees/${id}`)
+      const response = await api.get(`/api/tenants/${tenantIdForApi}/admins/${id}`)
       const payload = response?.data
       const data = payload?.data ?? payload
       if (!data) {
@@ -295,10 +305,38 @@ export default function UsersTable() {
   }
 
   const applyBulkStatusUpdate = () => {
-    setRows((prev) => prev.map((row) => (selectedIds.includes(row.id) ? { ...row, status: bulkStatus } : row)))
-    setBulkStatusDialogOpen(false)
-    setBulkReason("")
-    setSelectedIds([])
+    const updateStatuses = async () => {
+      if (selectedIds.length === 0) return
+
+      setBulkStatusLoading(true)
+      try {
+        await Promise.all(
+          selectedIds.map((id) =>
+            api.patch(`/api/tenants/${tenantIdForApi}/admins/${id}/account-status`, {
+              is_active: bulkStatus === "Active",
+            })
+          )
+        )
+
+        setRows((prev) =>
+          prev.map((row) => (selectedIds.includes(row.id) ? { ...row, status: bulkStatus } : row))
+        )
+        setSelectedUser((prev) =>
+          prev && selectedIds.includes(prev.id) ? { ...prev, status: bulkStatus } : prev
+        )
+        toast.success(
+          selectedIds.length === 1 ? "Admin status updated" : `${selectedIds.length} admins updated`
+        )
+        setBulkStatusDialogOpen(false)
+        setSelectedIds([])
+      } catch {
+        toast.error("Failed to update admin status")
+      } finally {
+        setBulkStatusLoading(false)
+      }
+    }
+
+    void updateStatuses()
   }
 
   return (
@@ -426,9 +464,6 @@ export default function UsersTable() {
                   <TableCell>{row.joinDate}</TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon-sm" onClick={() => setSelectedUser(row)}>
-                        <Eye className="size-4" />
-                      </Button>
                       <Button variant="ghost" size="icon-sm" onClick={() => openEmployeeDetails(row.id)}>
                         <Eye className="size-4" />
                       </Button>
@@ -456,7 +491,6 @@ export default function UsersTable() {
               size="sm"
               onClick={() => {
                 setBulkStatus("Active")
-                setBulkReason("")
                 setBulkStatusDialogOpen(true)
               }}
             >
@@ -603,26 +637,21 @@ export default function UsersTable() {
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Change Status for {selectedIds.length} Admins</DialogTitle>
-            <DialogDescription>Apply a new status to all selected admins.</DialogDescription>
+            <DialogDescription>Apply a new active or inactive status to all selected admins.</DialogDescription>
           </DialogHeader>
 
-          <RadioGroup value={bulkStatus} onValueChange={(value) => setBulkStatus(value as EmployeeRow["status"])}>
+          <RadioGroup value={bulkStatus} onValueChange={(value) => setBulkStatus(value as "Active" | "Inactive")}>
             <RadioGroupItem id="emp-active" value="Active">Active</RadioGroupItem>
             <RadioGroupItem id="emp-inactive" value="Inactive">Inactive</RadioGroupItem>
-            <RadioGroupItem id="emp-pending" value="Pending">Pending</RadioGroupItem>
           </RadioGroup>
 
-          <Textarea
-            value={bulkReason}
-            onChange={(event) => setBulkReason(event.target.value)}
-            placeholder="Reason for status update (optional)"
-          />
-
           <DialogFooter>
-            <Button variant="outline" onClick={() => setBulkStatusDialogOpen(false)}>
+            <Button variant="outline" onClick={() => setBulkStatusDialogOpen(false)} disabled={bulkStatusLoading}>
               Cancel
             </Button>
-            <Button onClick={applyBulkStatusUpdate}>Update Status</Button>
+            <Button onClick={applyBulkStatusUpdate} disabled={bulkStatusLoading || selectedIds.length === 0}>
+              {bulkStatusLoading ? "Updating..." : "Update Status"}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

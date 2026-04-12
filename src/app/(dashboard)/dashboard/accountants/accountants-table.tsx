@@ -1,13 +1,14 @@
 "use client"
 
 import { useEffect, useMemo, useState } from "react"
-import { Download, Eye, MapPin, Mail, Phone, Plus, Search, UserRound, X } from "lucide-react"
+import { ArrowUpDown, Download, Eye, MapPin, Mail, Phone, Plus, Search, UserRound, X } from "lucide-react"
 import toast from "react-hot-toast"
 
 import api from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Card, CardContent } from "@/components/ui/card"
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,14 @@ import {
   PaginationNext,
   PaginationPrevious,
 } from "@/components/ui/pagination"
+import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
+import {
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Table,
@@ -38,13 +47,34 @@ import { Textarea } from "@/components/ui/textarea"
 
 type AccountantApiItem = {
   id?: number | string
+  user_id?: string
+  tenant_id?: string
+  accountant_id?: string | null
+  department?: string | null
+  payroll_type?: string | null
+  monthly_salary?: string | null
+  per_class_rate?: string | null
+  per_batch_rate?: string | null
+  bank_account?: string | null
+  gender?: string | null
+  date_of_birth?: string | null
+  nid_number?: string | null
+  qualification?: string | null
   name?: string
   email?: string
   phone?: string
   address?: string
+  profile_completion_pct?: number
   joining_date?: string
   created_at?: string
   updated_at?: string
+  user?: {
+    id?: string
+    name?: string
+    email?: string
+    phone?: string
+    is_active?: boolean
+  }
 }
 
 type AccountantRow = {
@@ -54,6 +84,18 @@ type AccountantRow = {
   phone: string
   address: string
   joiningDate: string
+  status: "Active" | "Inactive"
+  department: string
+  payrollType: string
+  monthlySalary: string
+  bankAccount: string
+  gender: string
+  dateOfBirth: string
+  nidNumber: string
+  qualification: string
+  profileCompletionPct: number
+  createdAt: string
+  updatedAt: string
 }
 
 type AccountantFormState = {
@@ -85,40 +127,96 @@ function formatDate(value?: string) {
   })
 }
 
+function formatCurrency(value?: string | null) {
+  if (!value) return "-"
+  const amount = Number(value)
+  if (Number.isNaN(amount)) return String(value)
+  return new Intl.NumberFormat("en-BD", {
+    style: "currency",
+    currency: "BDT",
+    maximumFractionDigits: 0,
+  }).format(amount)
+}
+
 function mapApiAccountant(item: AccountantApiItem): AccountantRow {
+  const nestedUser = item.user ?? {}
+  const resolvedName = nestedUser.name ?? item.name
+  const resolvedEmail = nestedUser.email ?? item.email
+  const resolvedPhone = nestedUser.phone ?? item.phone
+  const resolvedId = item.user_id ?? nestedUser.id ?? item.id
+
   return {
-    id: item.id ?? `accountant-${Date.now()}`,
-    name: String(item.name ?? "Unnamed Accountant"),
-    email: String(item.email ?? "-"),
-    phone: String(item.phone ?? "-"),
+    id: resolvedId ?? `accountant-${Date.now()}`,
+    name: String(resolvedName ?? "Unnamed Accountant"),
+    email: String(resolvedEmail ?? "-"),
+    phone: String(resolvedPhone ?? "-"),
     address: String(item.address ?? "-"),
-    joiningDate: formatDate(item.joining_date),
+    joiningDate: formatDate(item.joining_date ?? item.created_at),
+    status: nestedUser.is_active === false ? "Inactive" : "Active",
+    department: String(item.department ?? "-"),
+    payrollType: String(item.payroll_type ?? "-"),
+    monthlySalary: formatCurrency(item.monthly_salary),
+    bankAccount: String(item.bank_account ?? "-"),
+    gender: String(item.gender ?? "-"),
+    dateOfBirth: formatDate(item.date_of_birth ?? undefined),
+    nidNumber: String(item.nid_number ?? "-"),
+    qualification: String(item.qualification ?? "-"),
+    profileCompletionPct: Number(item.profile_completion_pct ?? 0),
+    createdAt: formatDate(item.created_at),
+    updatedAt: formatDate(item.updated_at),
   }
 }
 
 export default function AccountantsTable() {
-  const { user } = useAuth()
+  const { user, isAuthReady } = useAuth()
 
   const [rows, setRows] = useState<AccountantRow[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [debouncedSearch, setDebouncedSearch] = useState("")
+  const [selectedIds, setSelectedIds] = useState<Array<number | string>>([])
   const [currentPage, setCurrentPage] = useState(1)
   const [itemsPerPage, setItemsPerPage] = useState(10)
   const [loading, setLoading] = useState(true)
   const [totalAccountants, setTotalAccountants] = useState(0)
   const [totalPages, setTotalPages] = useState(1)
-  const [detailsDialogOpen, setDetailsDialogOpen] = useState(false)
+  const [quickViewId, setQuickViewId] = useState<number | string | null>(null)
   const [selectedAccountant, setSelectedAccountant] = useState<AccountantRow | null>(null)
   const [detailsLoading, setDetailsLoading] = useState(false)
+  const [statusDialogOpen, setStatusDialogOpen] = useState(false)
+  const [statusTargetIds, setStatusTargetIds] = useState<Array<number | string>>([])
+  const [statusUpdating, setStatusUpdating] = useState(false)
+  const [statusValue, setStatusValue] = useState<"Active" | "Inactive">("Active")
   const [addDialogOpen, setAddDialogOpen] = useState(false)
   const [addForm, setAddForm] = useState<AccountantFormState>(EMPTY_FORM)
   const [addLoading, setAddLoading] = useState(false)
 
-  const tenantId =
-    (user as any)?.tenant_id ??
-    (user as any)?.tenantId ??
-    (user as any)?.tenant?.id ??
-    "demo-tenant"
+  const tenantId = useMemo(() => {
+    const userTenantId =
+      (user as any)?.tenant_id ??
+      (user as any)?.tenantId ??
+      (user as any)?.tenant?.id
+
+    if (userTenantId) return userTenantId
+
+    if (typeof window !== "undefined") {
+      try {
+        const storedUser = localStorage.getItem("user")
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser)
+          return (
+            parsedUser?.tenant_id ??
+            parsedUser?.tenantId ??
+            parsedUser?.tenant?.id ??
+            "demo-tenant"
+          )
+        }
+      } catch {
+        // Ignore malformed local storage and fall back below.
+      }
+    }
+
+    return "demo-tenant"
+  }, [user])
 
   const isDemoTenant = !tenantId || tenantId === "demo-tenant"
 
@@ -135,6 +233,11 @@ export default function AccountantsTable() {
   }, [debouncedSearch, itemsPerPage])
 
   useEffect(() => {
+    if (!isAuthReady) {
+      setLoading(true)
+      return
+    }
+
     if (isDemoTenant) {
       setRows([])
       setTotalAccountants(0)
@@ -188,7 +291,7 @@ export default function AccountantsTable() {
     return () => {
       active = false
     }
-  }, [tenantId, currentPage, itemsPerPage, debouncedSearch, isDemoTenant])
+  }, [tenantId, currentPage, itemsPerPage, debouncedSearch, isDemoTenant, isAuthReady])
 
   const stats = useMemo(() => {
     return {
@@ -200,10 +303,16 @@ export default function AccountantsTable() {
   }, [rows, totalAccountants])
 
   const safePage = Math.min(currentPage, totalPages)
+  const allCheckedOnPage = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id))
+  const selectedAccountants = useMemo(
+    () => rows.filter((row) => selectedIds.includes(row.id)),
+    [rows, selectedIds]
+  )
 
   const handleResetFilters = () => {
     setSearchQuery("")
     setCurrentPage(1)
+    setSelectedIds([])
   }
 
   const handleExport = () => {
@@ -237,7 +346,7 @@ export default function AccountantsTable() {
     }
 
     setSelectedAccountant(null)
-    setDetailsDialogOpen(true)
+    setQuickViewId(id)
     setDetailsLoading(true)
     try {
       const response = await api.get(`/api/tenants/${tenantId}/accountants/${id}`)
@@ -314,6 +423,62 @@ export default function AccountantsTable() {
       toast.error("Failed to create accountant")
     } finally {
       setAddLoading(false)
+    }
+  }
+
+  const openStatusDialogFor = (ids: Array<number | string>) => {
+    if (ids.length === 0) return
+
+    const first = rows.find((row) => row.id === ids[0])
+    setStatusTargetIds(ids)
+    setStatusValue(first?.status ?? "Active")
+    setStatusDialogOpen(true)
+  }
+
+  const applyStatusUpdate = async () => {
+    if (isDemoTenant) {
+      toast.error("Tenant information is missing. Please sign in again.")
+      return
+    }
+
+    if (statusTargetIds.length === 0) return
+
+    setStatusUpdating(true)
+    try {
+      await Promise.all(
+        statusTargetIds.map((id) =>
+          api.patch(`/api/tenants/${tenantId}/accountants/${id}/account-status`, {
+            is_active: statusValue === "Active",
+          })
+        )
+      )
+
+      setRows((prev) =>
+        prev.map((row) =>
+          statusTargetIds.includes(row.id)
+            ? { ...row, status: statusValue }
+            : row
+        )
+      )
+
+      setSelectedAccountant((prev) =>
+        prev && statusTargetIds.includes(prev.id)
+          ? { ...prev, status: statusValue }
+          : prev
+      )
+
+      toast.success(
+        statusTargetIds.length === 1
+          ? "Accountant status updated"
+          : `${statusTargetIds.length} accountants updated`
+      )
+      setStatusDialogOpen(false)
+      setStatusTargetIds([])
+      setSelectedIds([])
+    } catch {
+      toast.error("Failed to update accountant status")
+    } finally {
+      setStatusUpdating(false)
     }
   }
 
@@ -413,6 +578,21 @@ export default function AccountantsTable() {
             <Table>
               <TableHeader>
                 <TableRow>
+                  <TableHead className="w-10">
+                    <input
+                      type="checkbox"
+                      checked={allCheckedOnPage}
+                      onChange={(event) => {
+                        if (event.target.checked) {
+                          const next = new Set(selectedIds)
+                          rows.forEach((row) => next.add(row.id))
+                          setSelectedIds(Array.from(next))
+                        } else {
+                          setSelectedIds((prev) => prev.filter((id) => !rows.some((row) => row.id === id)))
+                        }
+                      }}
+                    />
+                  </TableHead>
                   <TableHead>ID</TableHead>
                   <TableHead>Name</TableHead>
                   <TableHead>Email</TableHead>
@@ -427,7 +607,7 @@ export default function AccountantsTable() {
                 {loading ? (
                   Array.from({ length: 6 }).map((_, index) => (
                     <TableRow key={`accountant-skeleton-${index}`}>
-                      {Array.from({ length: 8 }).map((__, cellIndex) => (
+                      {Array.from({ length: 9 }).map((__, cellIndex) => (
                         <TableCell key={cellIndex}>
                           <Skeleton className="h-5 w-full" />
                         </TableCell>
@@ -436,7 +616,7 @@ export default function AccountantsTable() {
                   ))
                 ) : rows.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={8}>
+                    <TableCell colSpan={9}>
                       <div className="flex flex-col items-center gap-3 py-10 text-center">
                         <UserRound className="size-10 text-muted-foreground" />
                         <div>
@@ -453,7 +633,24 @@ export default function AccountantsTable() {
                   </TableRow>
                 ) : (
                   rows.map((row) => (
-                    <TableRow key={row.id}>
+                    <TableRow
+                      key={row.id}
+                      className="cursor-pointer"
+                      onClick={() => openAccountantDetails(row.id)}
+                    >
+                      <TableCell onClick={(event) => event.stopPropagation()}>
+                        <input
+                          type="checkbox"
+                          checked={selectedIds.includes(row.id)}
+                          onChange={(event) => {
+                            if (event.target.checked) {
+                              setSelectedIds((prev) => Array.from(new Set([...prev, row.id])))
+                            } else {
+                              setSelectedIds((prev) => prev.filter((id) => id !== row.id))
+                            }
+                          }}
+                        />
+                      </TableCell>
                       <TableCell className="font-medium">#{row.id}</TableCell>
                       <TableCell>{row.name}</TableCell>
                       <TableCell>{row.email}</TableCell>
@@ -461,9 +658,9 @@ export default function AccountantsTable() {
                       <TableCell className="max-w-[220px] truncate">{row.address}</TableCell>
                       <TableCell>{row.joiningDate}</TableCell>
                       <TableCell>
-                        <Badge variant="default">Active</Badge>
+                        <Badge variant={row.status === "Active" ? "default" : "destructive"}>{row.status}</Badge>
                       </TableCell>
-                      <TableCell>
+                      <TableCell onClick={(event) => event.stopPropagation()}>
                         <Button variant="ghost" size="icon-sm" onClick={() => openAccountantDetails(row.id)}>
                           <Eye className="size-4" />
                         </Button>
@@ -522,61 +719,145 @@ export default function AccountantsTable() {
         </div>
       </div>
 
-      <Dialog
-        open={detailsDialogOpen}
+      <div className={`fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 p-3 backdrop-blur transition-transform duration-300 ${selectedIds.length > 0 ? "translate-y-0" : "translate-y-full"}`}>
+        <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-2">
+          <p className="text-sm">{selectedIds.length} accountants selected</p>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" size="sm" onClick={() => openStatusDialogFor(selectedIds)}>
+              <ArrowUpDown className="mr-1 size-4" /> Change Status
+            </Button>
+            <Button variant="destructive" size="sm" onClick={() => setSelectedIds([])}>
+              Deselect All
+            </Button>
+          </div>
+        </div>
+      </div>
+
+      <Sheet
+        open={!!quickViewId}
         onOpenChange={(open) => {
-          setDetailsDialogOpen(open)
           if (!open) {
+            setQuickViewId(null)
             setSelectedAccountant(null)
             setDetailsLoading(false)
           }
         }}
       >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{selectedAccountant?.name ?? "Accountant Details"}</DialogTitle>
-            <DialogDescription>Details loaded from the specific accountant endpoint.</DialogDescription>
-          </DialogHeader>
+        <SheetContent side="right" className="w-full sm:max-w-[520px]">
+          <SheetHeader>
+            <SheetTitle>Quick Accountant View</SheetTitle>
+            <SheetDescription>Lightweight preview without leaving the list page.</SheetDescription>
+          </SheetHeader>
 
           {detailsLoading ? (
-            <div className="space-y-2">
-              <Skeleton className="h-5 w-full" />
-              <Skeleton className="h-5 w-4/5" />
-              <Skeleton className="h-5 w-3/5" />
+            <div className="space-y-3 p-4">
+              <Skeleton className="h-14" />
+              <Skeleton className="h-28" />
+              <Skeleton className="h-28" />
             </div>
           ) : selectedAccountant ? (
-            <div className="space-y-3 text-sm">
-              <div className="flex items-center gap-2 text-slate-700">
-                <UserRound className="size-4 text-slate-400" />
-                <span>{selectedAccountant.name}</span>
+            <div className="space-y-4 overflow-y-auto p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="flex size-10 items-center justify-center rounded-full bg-primary/10 text-sm font-semibold text-primary">
+                    {selectedAccountant.name
+                      .split(" ")
+                      .filter(Boolean)
+                      .slice(0, 2)
+                      .map((part) => part[0])
+                      .join("")
+                      .toUpperCase() || "AC"}
+                  </div>
+                  <div>
+                    <p className="font-medium">{selectedAccountant.name}</p>
+                    <Badge variant={selectedAccountant.status === "Active" ? "default" : "destructive"}>
+                      {selectedAccountant.status}
+                    </Badge>
+                  </div>
+                </div>
+                <Button variant="outline" size="sm" onClick={() => openStatusDialogFor([selectedAccountant.id])}>
+                  Change Status
+                </Button>
               </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <Mail className="size-4 text-slate-400" />
-                <span>{selectedAccountant.email}</span>
-              </div>
-              <div className="flex items-center gap-2 text-slate-700">
-                <Phone className="size-4 text-slate-400" />
-                <span>{selectedAccountant.phone}</span>
-              </div>
-              <div className="flex items-start gap-2 text-slate-700">
-                <MapPin className="mt-0.5 size-4 text-slate-400" />
-                <span>{selectedAccountant.address}</span>
-              </div>
-              <div className="rounded-xl bg-slate-50 p-3 text-sm text-slate-600">
-                Joining date: {selectedAccountant.joiningDate}
-              </div>
+
+              <Card>
+                <CardContent className="grid grid-cols-2 gap-3 p-3 text-sm">
+                  <div><p className="text-muted-foreground">Accountant ID</p><p>{selectedAccountant.id}</p></div>
+                  <div><p className="text-muted-foreground">Profile Completion</p><p>{selectedAccountant.profileCompletionPct}%</p></div>
+                  <div><p className="text-muted-foreground">Email</p><p>{selectedAccountant.email}</p></div>
+                  <div><p className="text-muted-foreground">Phone</p><p>{selectedAccountant.phone}</p></div>
+                  <div><p className="text-muted-foreground">Department</p><p>{selectedAccountant.department}</p></div>
+                  <div><p className="text-muted-foreground">Payroll Type</p><p>{selectedAccountant.payrollType}</p></div>
+                  <div><p className="text-muted-foreground">Monthly Salary</p><p>{selectedAccountant.monthlySalary}</p></div>
+                  <div><p className="text-muted-foreground">Joining Date</p><p>{selectedAccountant.joiningDate}</p></div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="space-y-2 p-3 text-sm">
+                  <p className="font-medium">Personal Info</p>
+                  <p><span className="text-muted-foreground">Gender:</span> {selectedAccountant.gender}</p>
+                  <p><span className="text-muted-foreground">Date of Birth:</span> {selectedAccountant.dateOfBirth}</p>
+                  <p><span className="text-muted-foreground">NID Number:</span> {selectedAccountant.nidNumber}</p>
+                  <p><span className="text-muted-foreground">Qualification:</span> {selectedAccountant.qualification}</p>
+                  <p><span className="text-muted-foreground">Bank Account:</span> {selectedAccountant.bankAccount}</p>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardContent className="space-y-2 p-3 text-sm">
+                  <p className="font-medium">Address and Timeline</p>
+                  <div className="flex items-start gap-2 text-slate-700">
+                    <MapPin className="mt-0.5 size-4 text-slate-400" />
+                    <span>{selectedAccountant.address}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Mail className="size-4 text-slate-400" />
+                    <span>{selectedAccountant.email}</span>
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-700">
+                    <Phone className="size-4 text-slate-400" />
+                    <span>{selectedAccountant.phone}</span>
+                  </div>
+                  <p><span className="text-muted-foreground">Created:</span> {selectedAccountant.createdAt}</p>
+                  <p><span className="text-muted-foreground">Updated:</span> {selectedAccountant.updatedAt}</p>
+                </CardContent>
+              </Card>
+            </div>
+          ) : null}
+        </SheetContent>
+      </Sheet>
+
+      <Dialog open={statusDialogOpen} onOpenChange={setStatusDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>
+              {statusTargetIds.length === 1 ? "Change Accountant Status" : `Change Status for ${statusTargetIds.length} Accountants`}
+            </DialogTitle>
+            <DialogDescription>
+              {statusTargetIds.length === 1 ? "Update this accountant's current status." : "Update all selected accountants together."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {statusTargetIds.length > 1 ? (
+            <div className="max-h-32 overflow-y-auto rounded-md border p-2 text-sm">
+              {selectedAccountants.map((item) => (
+                <p key={item.id}>{item.name}</p>
+              ))}
             </div>
           ) : null}
 
+          <RadioGroup value={statusValue} onValueChange={(value) => setStatusValue(value as "Active" | "Inactive")}>
+            <RadioGroupItem id="accountant-active" value="Active">Active - Accountant can access the system</RadioGroupItem>
+            <RadioGroupItem id="accountant-inactive" value="Inactive">Inactive - Accountant access is disabled</RadioGroupItem>
+          </RadioGroup>
+
           <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => {
-                setDetailsDialogOpen(false)
-                setSelectedAccountant(null)
-              }}
-            >
-              Close
+            <Button variant="outline" onClick={() => setStatusDialogOpen(false)} disabled={statusUpdating}>
+              Cancel
+            </Button>
+            <Button onClick={applyStatusUpdate} disabled={statusUpdating}>
+              {statusUpdating ? "Updating..." : "Update Status"}
             </Button>
           </DialogFooter>
         </DialogContent>

@@ -25,7 +25,25 @@ instance.interceptors.request.use(
 instance.interceptors.response.use(
   (res) => res,
   (error) => {
+    const status = error.response?.status;
     const message = error.response?.data?.message ?? error.message ?? "Something went wrong";
+
+    if (status === 401 && typeof window !== "undefined") {
+      try {
+        localStorage.removeItem("access_token");
+        localStorage.removeItem("user");
+      } catch {
+        // Ignore storage cleanup errors and continue logout flow.
+      }
+
+      if (window.location.pathname !== "/login") {
+        toast.error("Session expired. Please log in again.");
+        window.location.replace("/login");
+      }
+
+      return Promise.reject(error);
+    }
+
     // Show toast globally
     toast.error(message);
     return Promise.reject(error);

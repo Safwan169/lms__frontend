@@ -105,9 +105,11 @@ export type UpdateStudentProfileRequest = {
 
 export type CreateClassRequest = {
   name: string;
+  code: string;
   description?: string;
   subject?: string;
   level?: string;
+  subject_ids: string[];
 };
 
 export type GetClassesParams = {

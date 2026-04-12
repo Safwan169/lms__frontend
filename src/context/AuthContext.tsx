@@ -9,6 +9,7 @@ import { useLogoutMutation } from "@/features/user/userApi";
 
 interface AuthContextType {
   user: any | null;
+  isAuthReady: boolean;
   login: (payload: { token: string; user: any; tenant?: any }) => void;
   logout: () => Promise<void>;
 }
@@ -17,6 +18,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setLocalUser] = useState<any | null>(null);
+  const [isAuthReady, setIsAuthReady] = useState(false);
   const router = useRouter();
   const dispatch = useDispatch();
   const [logoutApi] = useLogoutMutation();
@@ -30,7 +32,12 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
         setLocalUser(parsed);
         dispatch(setUser({ ...parsed, token }));
       }
-    } catch {}
+    } catch {
+      localStorage.removeItem("access_token");
+      localStorage.removeItem("user");
+    } finally {
+      setIsAuthReady(true);
+    }
   }, [dispatch]);
 
   const login = (payload: { token: string; user: any; tenant?: any }) => {
@@ -63,7 +70,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  return <AuthContext.Provider value={{ user, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, isAuthReady, login, logout }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

@@ -56,20 +56,9 @@ type TeacherCreatePayload = {
   name: string
   email: string
   phone: string
-  password: string
-  qualification: string
-  experience_years: number
   speciality_subject: string[]
-  gender: TeacherGender
-  date_of_birth: string
-  address: string
-  nid_number: string
-  bank_account: string
   payroll_type: TeacherPayrollType
   monthly_salary: string
-  per_class_rate: string
-  per_batch_rate: string
-  joining_date: string
 }
 
 type Teacher = {
@@ -138,6 +127,7 @@ function mapPayrollToEmploymentType(payrollType?: string): Teacher["employmentTy
 }
 
 function mapApiTeacher(item: any): Teacher {
+  const user = item?.user ?? {}
   const subjects = Array.isArray(item?.speciality_subject)
     ? item.speciality_subject.filter((subject: unknown) => typeof subject === "string")
     : []
@@ -151,11 +141,11 @@ function mapApiTeacher(item: any): Teacher {
   const salaryNumber = Number(monthlySalary)
 
   return {
-    id: String(item?.id ?? `t-${Date.now()}-${Math.random()}`),
-    teacherId: String(item?.teacher_id ?? item?.id ?? "-"),
-    fullName: String(item?.name ?? "Unknown Teacher"),
-    phone: String(item?.phone ?? ""),
-    email: String(item?.email ?? ""),
+    id: String(item?.user_id ?? user?.id ?? item?.id ?? `t-${Date.now()}-${Math.random()}`),
+    teacherId: String(item?.teacher_id ?? item?.user_id ?? user?.id ?? "-"),
+    fullName: String(user?.name ?? item?.name ?? "Unknown Teacher"),
+    phone: String(user?.phone ?? item?.phone ?? ""),
+    email: String(user?.email ?? item?.email ?? ""),
     department,
     subjects,
     shift: "Day",
@@ -222,7 +212,7 @@ export default function TeachersTable() {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
-  const { user } = useAuth()
+  const { user, isAuthReady } = useAuth()
 
   const [teachers, setTeachers] = useState<Teacher[]>(DUMMY_TEACHERS)
   const [searchInput, setSearchInput] = useState(searchParams.get("search") ?? "")
@@ -274,7 +264,31 @@ export default function TeachersTable() {
   // }, [isAdmin, router])
 
   const tenantId = useMemo(() => {
-    return (user as any)?.tenant_id ?? (user as any)?.tenantId ?? (user as any)?.tenant?.id ?? "demo-tenant"
+    const userTenantId =
+      (user as any)?.tenant_id ??
+      (user as any)?.tenantId ??
+      (user as any)?.tenant?.id
+
+    if (userTenantId) return userTenantId
+
+    if (typeof window !== "undefined") {
+      try {
+        const storedUser = localStorage.getItem("user")
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser)
+          return (
+            parsedUser?.tenant_id ??
+            parsedUser?.tenantId ??
+            parsedUser?.tenant?.id ??
+            "demo-tenant"
+          )
+        }
+      } catch {
+        // Ignore malformed local storage and fall back below.
+      }
+    }
+
+    return "demo-tenant"
   }, [user])
   const tenantIdForApi = tenantId
   const userIdForApi =
@@ -322,13 +336,13 @@ export default function TeachersTable() {
 
   const listQuery = useQuery({
     queryKey: ["teachers-list", tenantIdForApi, userIdForApi, debouncedSearch, department, subject, shift, status, page, limit],
+    enabled: isAuthReady && tenantIdForApi !== "demo-tenant",
     queryFn: async () => {
       const response = await api.get(`/api/tenants/${tenantIdForApi}/teachers`, {
         params: {
           page,
           limit,
           search: debouncedSearch || undefined,
-          user_id: userIdForApi,
         },
       })
       const payload = response?.data
@@ -343,29 +357,26 @@ export default function TeachersTable() {
       const mappedTeachers = rawItems.map(mapApiTeacher)
       setTeachers(mappedTeachers)
 
-      const q = debouncedSearch.trim().toLowerCase()
-      const filtered = mappedTeachers.filter((item) => {
-        const searchMatch =
-          q.length === 0 ||
-          item.fullName.toLowerCase().includes(q) ||
-          item.phone.toLowerCase().includes(q) ||
-          item.teacherId.toLowerCase().includes(q)
-
+      const filteredItems = mappedTeachers.filter((item) => {
         const depMatch = department === "all" || item.department === department
         const subjMatch = subject === "all" || item.subjects.includes(subject)
         const shiftMatch = shift === "all" || item.shift === shift
         const statusMatch = status === "all" || item.status === status
 
-        return searchMatch && depMatch && subjMatch && shiftMatch && statusMatch
+        return depMatch && subjMatch && shiftMatch && statusMatch
       })
 
-      const total = filtered.length
-      const totalPages = Math.max(1, Math.ceil(total / limit))
-      const safePage = Math.min(page, totalPages)
-      const start = (safePage - 1) * limit
-      const items = filtered.slice(start, start + limit)
+      const apiTotal = Number(payload?.meta?.total ?? payload?.total ?? filteredItems.length)
+      const apiTotalPages = Number(payload?.meta?.totalPages ?? payload?.totalPages ?? Math.max(1, Math.ceil(apiTotal / limit)))
+      const safePage = Number(payload?.meta?.page ?? payload?.page ?? page)
 
-      return { items, total, totalPages, page: safePage, all: filtered }
+      return {
+        items: filteredItems,
+        total: apiTotal,
+        totalPages: Math.max(1, apiTotalPages),
+        page: safePage,
+        all: filteredItems,
+      }
     },
     placeholderData: (previous) => previous,
   })
@@ -515,8 +526,29 @@ export default function TeachersTable() {
   }
 
   const submitTeacherForm = async () => {
+    const specialitySubjects = formValues.specialitySubjects
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean)
+    const monthlySalaryValue = Number(formValues.monthlySalary)
+
     if (!formValues.fullName.trim() || !formValues.phone.trim() || !formValues.email.trim()) {
       toast.error("Name, phone and email are required")
+      return
+    }
+
+    if (!editingTeacherId && specialitySubjects.length === 0) {
+      toast.error("Add at least one specialty subject")
+      return
+    }
+
+    if (!tenantIdForApi || tenantIdForApi === "demo-tenant") {
+      toast.error("Tenant information is missing. Please sign in again.")
+      return
+    }
+
+    if (!editingTeacherId && formValues.payrollType === "MONTHLY" && !Number.isFinite(monthlySalaryValue)) {
+      toast.error("Enter a valid monthly salary")
       return
     }
 
@@ -545,40 +577,50 @@ export default function TeachersTable() {
 
       toast.success("Teacher updated successfully")
     } else {
-      if (!formValues.password.trim()) {
-        toast.error("Password is required for new teacher")
+      try {
+        const payload: TeacherCreatePayload = {
+          name: formValues.fullName.trim(),
+          email: formValues.email.trim(),
+          phone: formValues.phone.trim(),
+          speciality_subject: specialitySubjects,
+          payroll_type: formValues.payrollType,
+          monthly_salary: monthlySalaryValue.toFixed(2),
+        }
+
+        const createdResponse = await api.post(`/api/tenants/${tenantIdForApi}/teachers`, payload)
+        const createdData = createdResponse?.data?.data ?? createdResponse?.data ?? payload
+        const mappedCreated = mapApiTeacher(createdData)
+
+        setTeachers((prev) => [mappedCreated, ...prev])
+        await listQuery.refetch()
+        toast.success("Teacher added successfully")
+        setFormValues({
+          fullName: "",
+          phone: "",
+          email: "",
+          password: "",
+          department: "Science",
+          shift: "Morning",
+          designation: "Assistant Teacher",
+          status: "Active",
+          qualification: "",
+          experienceYears: "0",
+          specialitySubjects: "",
+          gender: "FEMALE",
+          dateOfBirth: "",
+          address: "",
+          nidNumber: "",
+          bankAccount: "",
+          payrollType: "MONTHLY",
+          monthlySalary: "0.00",
+          perClassRate: "0.00",
+          perBatchRate: "0.00",
+          joiningDate: currentIsoDate(),
+        })
+      } catch {
+        toast.error("Failed to create teacher")
         return
       }
-
-      const payload: TeacherCreatePayload = {
-        name: formValues.fullName.trim(),
-        email: formValues.email.trim(),
-        phone: formValues.phone.trim(),
-        password: formValues.password,
-        qualification: formValues.qualification.trim() || formValues.designation.trim() || "Teacher",
-        experience_years: Number(formValues.experienceYears) || 0,
-        speciality_subject: formValues.specialitySubjects
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
-        gender: formValues.gender,
-        date_of_birth: toIsoDateString(formValues.dateOfBirth),
-        address: formValues.address.trim(),
-        nid_number: formValues.nidNumber.trim(),
-        bank_account: formValues.bankAccount.trim(),
-        payroll_type: formValues.payrollType,
-        monthly_salary: formValues.monthlySalary,
-        per_class_rate: formValues.perClassRate,
-        per_batch_rate: formValues.perBatchRate,
-        joining_date: toIsoDateString(formValues.joiningDate),
-      }
-
-      const createdResponse = await api.post(`/api/tenants/${tenantIdForApi}/teachers`, payload)
-      const createdData = createdResponse?.data?.data ?? createdResponse?.data ?? payload
-      const mappedCreated = mapApiTeacher(createdData)
-
-      setTeachers((prev) => [mappedCreated, ...prev])
-      toast.success("Teacher added successfully")
     }
 
     setAddEditDialogOpen(false)
@@ -734,7 +776,6 @@ export default function TeachersTable() {
               </TableHead>
               <TableHead>Teacher</TableHead>
               <TableHead>Teacher ID</TableHead>
-              <TableHead>Department / Subject(s)</TableHead>
               <TableHead>Shift</TableHead>
               <TableHead>Designation</TableHead>
               <TableHead>Phone</TableHead>
@@ -748,14 +789,14 @@ export default function TeachersTable() {
             {listQuery.isLoading ? (
               Array.from({ length: 8 }).map((_, index) => (
                 <TableRow key={`sk-${index}`}>
-                  {Array.from({ length: 10 }).map((__, cell) => (
+                  {Array.from({ length: 9 }).map((__, cell) => (
                     <TableCell key={cell}><Skeleton className="h-5 w-full" /></TableCell>
                   ))}
                 </TableRow>
               ))
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={10}>
+                <TableCell colSpan={9}>
                   <div className="flex flex-col items-center gap-3 py-10 text-center">
                     <Users className="size-10 text-muted-foreground" />
                     <div>
@@ -795,17 +836,6 @@ export default function TeachersTable() {
                     </div>
                   </TableCell>
                   <TableCell>{row.teacherId}</TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <p>{row.department}</p>
-                      <div className="flex flex-wrap gap-1">
-                        {row.subjects.slice(0, 2).map((item) => (
-                          <Badge key={item} variant="outline">{item}</Badge>
-                        ))}
-                        {row.subjects.length > 2 ? <Badge variant="outline">+{row.subjects.length - 2} more</Badge> : null}
-                      </div>
-                    </div>
-                  </TableCell>
                   <TableCell>{row.shift}</TableCell>
                   <TableCell>{row.designation}</TableCell>
                   <TableCell>{row.phone}</TableCell>
@@ -934,7 +964,7 @@ export default function TeachersTable() {
         <DialogContent className="max-h-[90vh] overflow-y-auto pr-2 md:max-h-[84vh] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 dark:hover:[&::-webkit-scrollbar-thumb]:bg-slate-500">
           <DialogHeader className="border-b px-6 pt-6">
             <DialogTitle>{editingTeacherId ? "Edit Teacher" : "Add Teacher"}</DialogTitle>
-            <DialogDescription>{editingTeacherId ? "Update teacher details" : "Create a new teacher profile"}</DialogDescription>
+            <DialogDescription>{editingTeacherId ? "Update teacher details" : "Create a teacher with contact, subjects and payroll"}</DialogDescription>
           </DialogHeader>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -953,105 +983,102 @@ export default function TeachersTable() {
               <Input placeholder="e.g. teacher@school.com" value={formValues.email} onChange={(event) => setFormValues((prev) => ({ ...prev, email: event.target.value }))} />
             </div>
 
-            {!editingTeacherId ? (
-              <div className="space-y-1">
-                <p className="text-xs font-medium text-muted-foreground">Login Password</p>
-                <Input
-                  type="password"
-                  placeholder="Set initial password"
-                  value={formValues.password}
-                  onChange={(event) => setFormValues((prev) => ({ ...prev, password: event.target.value }))}
-                />
-              </div>
-            ) : null}
-
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Designation</p>
-              <Input placeholder="e.g. Assistant Teacher" value={formValues.designation} onChange={(event) => setFormValues((prev) => ({ ...prev, designation: event.target.value }))} />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Highest Qualification</p>
-              <Input placeholder="e.g. B.Ed / M.Sc" value={formValues.qualification} onChange={(event) => setFormValues((prev) => ({ ...prev, qualification: event.target.value }))} />
-            </div>
-
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Experience (Years)</p>
-              <Input type="number" min={0} placeholder="e.g. 5" value={formValues.experienceYears} onChange={(event) => setFormValues((prev) => ({ ...prev, experienceYears: event.target.value }))} />
-            </div>
-
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Specialty Subjects</p>
-              <Input placeholder="Comma separated, e.g. Physics, Math" value={formValues.specialitySubjects} onChange={(event) => setFormValues((prev) => ({ ...prev, specialitySubjects: event.target.value }))} />
+              <Input placeholder="Comma separated, e.g. Mathematics, Physics" value={formValues.specialitySubjects} onChange={(event) => setFormValues((prev) => ({ ...prev, specialitySubjects: event.target.value }))} />
             </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Date of Birth</p>
-              <Input type="date" value={formValues.dateOfBirth} onChange={(event) => setFormValues((prev) => ({ ...prev, dateOfBirth: event.target.value }))} />
-            </div>
+            {editingTeacherId ? (
+              <>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Designation</p>
+                  <Input placeholder="e.g. Assistant Teacher" value={formValues.designation} onChange={(event) => setFormValues((prev) => ({ ...prev, designation: event.target.value }))} />
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Address</p>
-              <Input placeholder="Residential address" value={formValues.address} onChange={(event) => setFormValues((prev) => ({ ...prev, address: event.target.value }))} />
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Highest Qualification</p>
+                  <Input placeholder="e.g. B.Ed / M.Sc" value={formValues.qualification} onChange={(event) => setFormValues((prev) => ({ ...prev, qualification: event.target.value }))} />
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">NID Number</p>
-              <Input placeholder="National ID" value={formValues.nidNumber} onChange={(event) => setFormValues((prev) => ({ ...prev, nidNumber: event.target.value }))} />
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Experience (Years)</p>
+                  <Input type="number" min={0} placeholder="e.g. 5" value={formValues.experienceYears} onChange={(event) => setFormValues((prev) => ({ ...prev, experienceYears: event.target.value }))} />
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Bank Account</p>
-              <Input placeholder="Bank account number" value={formValues.bankAccount} onChange={(event) => setFormValues((prev) => ({ ...prev, bankAccount: event.target.value }))} />
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Date of Birth</p>
+                  <Input type="date" value={formValues.dateOfBirth} onChange={(event) => setFormValues((prev) => ({ ...prev, dateOfBirth: event.target.value }))} />
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Address</p>
+                  <Input placeholder="Residential address" value={formValues.address} onChange={(event) => setFormValues((prev) => ({ ...prev, address: event.target.value }))} />
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">NID Number</p>
+                  <Input placeholder="National ID" value={formValues.nidNumber} onChange={(event) => setFormValues((prev) => ({ ...prev, nidNumber: event.target.value }))} />
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Bank Account</p>
+                  <Input placeholder="Bank account number" value={formValues.bankAccount} onChange={(event) => setFormValues((prev) => ({ ...prev, bankAccount: event.target.value }))} />
+                </div>
+              </>
+            ) : null}
+
 
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Monthly Salary</p>
               <Input placeholder="Used when payroll type is MONTHLY" value={formValues.monthlySalary} onChange={(event) => setFormValues((prev) => ({ ...prev, monthlySalary: event.target.value }))} />
             </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Per Class Rate</p>
-              <Input placeholder="Used when payroll type is PER_CLASS" value={formValues.perClassRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perClassRate: event.target.value }))} />
-            </div>
+            {editingTeacherId ? (
+              <>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Per Class Rate</p>
+                  <Input placeholder="Used when payroll type is PER_CLASS" value={formValues.perClassRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perClassRate: event.target.value }))} />
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Per Batch Rate</p>
-              <Input placeholder="Used when payroll type is PER_BATCH" value={formValues.perBatchRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perBatchRate: event.target.value }))} />
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Per Batch Rate</p>
+                  <Input placeholder="Used when payroll type is PER_BATCH" value={formValues.perBatchRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perBatchRate: event.target.value }))} />
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Joining Date</p>
-              <Input type="date" value={formValues.joiningDate} onChange={(event) => setFormValues((prev) => ({ ...prev, joiningDate: event.target.value }))} />
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Joining Date</p>
+                  <Input type="date" value={formValues.joiningDate} onChange={(event) => setFormValues((prev) => ({ ...prev, joiningDate: event.target.value }))} />
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Department</p>
-              <Select value={formValues.department} onValueChange={(value) => setFormValues((prev) => ({ ...prev, department: value }))}>
-                {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
-              </Select>
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Department</p>
+                  <Select value={formValues.department} onValueChange={(value) => setFormValues((prev) => ({ ...prev, department: value }))}>
+                    {DEPARTMENTS.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </Select>
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Shift</p>
-              <Select value={formValues.shift} onValueChange={(value) => setFormValues((prev) => ({ ...prev, shift: value }))}>
-                {SHIFTS.map((item) => <option key={item} value={item}>{item}</option>)}
-              </Select>
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Shift</p>
+                  <Select value={formValues.shift} onValueChange={(value) => setFormValues((prev) => ({ ...prev, shift: value }))}>
+                    {SHIFTS.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </Select>
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Employment Status</p>
-              <Select value={formValues.status} onValueChange={(value) => setFormValues((prev) => ({ ...prev, status: value as TeacherStatus }))}>
-                {STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
-              </Select>
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Employment Status</p>
+                  <Select value={formValues.status} onValueChange={(value) => setFormValues((prev) => ({ ...prev, status: value as TeacherStatus }))}>
+                    {STATUSES.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </Select>
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Gender</p>
-              <Select value={formValues.gender} onValueChange={(value) => setFormValues((prev) => ({ ...prev, gender: value as TeacherGender }))}>
-                {GENDERS.map((item) => <option key={item} value={item}>{item}</option>)}
-              </Select>
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Gender</p>
+                  <Select value={formValues.gender} onValueChange={(value) => setFormValues((prev) => ({ ...prev, gender: value as TeacherGender }))}>
+                    {GENDERS.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </Select>
+                </div>
+              </>
+            ) : null}
 
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Payroll Type</p>

@@ -1,8 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { usePathname } from "next/navigation"
-import { useMemo } from "react"
+import { usePathname, useRouter } from "next/navigation"
+import { useEffect, useMemo } from "react"
 import {
   ArrowLeft,
   Bell,
@@ -55,14 +55,15 @@ export default function AdminSettingsLayout({
 }) {
   const { user } = useAuth()
   const pathname = usePathname()
-  
-  // Guard implementation intentionally commented for frontend-only flow.
-  // const router = useRouter()
-  // const isAdmin = useMemo(() => {
-  //   if (!user) return false
-  //   const role = String((user as any)?.role ?? "").toLowerCase()
-  //   return role === "admin" || role === "rektor"
-  // }, [user])
+  const router = useRouter()
+  const normalizedRole = useMemo(() => {
+    return String(
+      (user as any)?.role ??
+      (Array.isArray((user as any)?.roles) ? (user as any)?.roles[0] : (user as any)?.roles) ??
+      ""
+    ).toLowerCase()
+  }, [user])
+  const canAccessPage = normalizedRole === "admin" || normalizedRole === "rektor" || normalizedRole === "superadmin"
 
   const tenantId = useMemo(() => {
     return (
@@ -73,18 +74,21 @@ export default function AdminSettingsLayout({
     )
   }, [user])
 
-  // useEffect(() => {
-  //   if (!user) {
-  //     router.push("/login")
-  //     return
-  //   }
-  //
-  //   if (!isAdmin) {
-  //     router.push("/dashboard")
-  //   }
-  // }, [user, isAdmin, router])
+  useEffect(() => {
+    if (!user) return
+    if (!canAccessPage) {
+      if (normalizedRole === "teacher") {
+        router.replace("/dashboard/dashboard-empty")
+        return
+      }
+      if (normalizedRole === "student") {
+        router.replace("/dashboard")
+        return
+      }
+      router.replace("/dashboard")
+    }
+  }, [user, canAccessPage, normalizedRole, router])
 
-  const canAccessPage = true
   if (!canAccessPage) return null
 
   const pageName = getPageName(pathname)

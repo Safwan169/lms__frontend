@@ -3,16 +3,71 @@
 
 import React, { ReactNode, useEffect } from "react";
 import { useAuth } from "@/context/AuthContext";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+
+function normalizeRole(user: any) {
+  return String(
+    user?.role ??
+      (Array.isArray(user?.roles) ? user.roles[0] : user?.roles) ??
+      ""
+  ).toLowerCase();
+}
+
+function isAllowedDashboardPath(role: string, pathname: string) {
+  if (!pathname.startsWith("/dashboard")) return true;
+
+  if (role === "superadmin") {
+    return pathname === "/dashboard/admins";
+  }
+
+  if (role === "teacher") {
+    return [
+      "/dashboard/dashboard-empty",
+      "/dashboard/teacher-students",
+      "/dashboard/classrooms",
+      "/dashboard/timetable",
+      "/dashboard/self-attendance",
+    ].includes(pathname);
+  }
+
+  if (role === "student") {
+    return [
+      "/dashboard",
+      "/dashboard/class-access",
+      "/dashboard/timetable",
+      "/dashboard/self-attendance",
+    ].includes(pathname);
+  }
+
+  return true;
+}
+
+function getDefaultRouteForRole(role: string) {
+  if (role === "superadmin") return "/dashboard/admins";
+  if (role === "teacher") return "/dashboard/dashboard-empty";
+  if (role === "student") return "/dashboard";
+  return "/dashboard";
+}
 
 export default function Protected({ children }: { children: ReactNode }) {
-  const { user } = useAuth();
+  const { user, isAuthReady } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const normalizedRole = normalizeRole(user);
 
   useEffect(() => {
-    if (!user) router.push("/login");
-  }, [user, router]);
+    if (!isAuthReady) return;
+    if (!user) {
+      router.push("/login");
+      return;
+    }
 
-  if (!user) return null;
+    if (!isAllowedDashboardPath(normalizedRole, pathname)) {
+      router.replace(getDefaultRouteForRole(normalizedRole));
+    }
+  }, [isAuthReady, user, router, pathname, normalizedRole]);
+
+  if (!isAuthReady || !user) return null;
+  if (!isAllowedDashboardPath(normalizedRole, pathname)) return null;
   return <>{children}</>;
 }

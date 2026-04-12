@@ -1,5 +1,5 @@
 'use client';
-import { use, useState } from 'react';
+import { useState } from 'react';
 import { SidebarTrigger } from './ui/sidebar';
 import { useTheme } from 'next-themes';
 
@@ -22,6 +22,7 @@ import SettingsIcon from '@mui/icons-material/SettingsOutlined';
 import LogoutIcon from '@mui/icons-material/LogoutOutlined';
 import { Notification } from './Notification';
 import { useRouter } from 'next/navigation';
+import { useAuth } from '@/context/AuthContext';
 
 
 const notifications = [
@@ -32,9 +33,17 @@ const notifications = [
 
 export default function DashboardTopbar() {
   const { theme, setTheme } = useTheme();
-
+  const { user } = useAuth();
 
   const router = useRouter();
+  const normalizedRole = String(
+    (user as any)?.role ??
+    (Array.isArray((user as any)?.roles) ? (user as any)?.roles[0] : (user as any)?.roles) ??
+    ""
+  ).toLowerCase();
+  const canAccessSettings = !["teacher", "student"].includes(normalizedRole);
+  const displayName = String((user as any)?.name ?? "Admin User");
+  const displayEmail = String((user as any)?.email ?? "admin@lms.com");
 
   // Notification menu
   const [notifAnchor, setNotifAnchor] = useState<null | HTMLElement>(null);
@@ -125,8 +134,8 @@ export default function DashboardTopbar() {
           <Box px={2} py={1.5} display="flex" alignItems="center" gap={1.5}>
             <Avatar src="/profile.jpg" sx={{ width: 36, height: 36, fontSize: 14 }}>A</Avatar>
             <Box>
-              <Typography fontSize={13} fontWeight={600}>Admin User</Typography>
-              <Typography fontSize={11} color="text.secondary">admin@lms.com</Typography>
+              <Typography fontSize={13} fontWeight={600}>{displayName}</Typography>
+              <Typography fontSize={11} color="text.secondary">{displayEmail}</Typography>
             </Box>
           </Box>
           <Divider />
@@ -134,16 +143,18 @@ export default function DashboardTopbar() {
             <ListItemIcon><PersonIcon fontSize="small" /></ListItemIcon>
             My Profile
           </MenuItem>
-          <MenuItem
-            sx={{ gap: 1.5, fontSize: 13 }}
-            onClick={() => {
-              setProfileAnchor(null)
-              router.push('/admin/settings/general')
-            }}
-          >
-            <ListItemIcon><SettingsIcon fontSize="small" /></ListItemIcon>
-            Settings
-          </MenuItem>
+          {canAccessSettings ? (
+            <MenuItem
+              sx={{ gap: 1.5, fontSize: 13 }}
+              onClick={() => {
+                setProfileAnchor(null)
+                router.push('/admin/settings/general')
+              }}
+            >
+              <ListItemIcon><SettingsIcon fontSize="small" /></ListItemIcon>
+              Settings
+            </MenuItem>
+          ) : null}
           <Divider />
           <MenuItem sx={{ gap: 1.5, fontSize: 13, color: 'error.main' }}>
             <ListItemIcon><LogoutIcon fontSize="small" sx={{ color: 'error.main' }} /></ListItemIcon>
