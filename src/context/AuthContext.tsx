@@ -11,6 +11,7 @@ interface AuthContextType {
   user: any | null;
   isAuthReady: boolean;
   login: (payload: { token: string; user: any; tenant?: any }) => void;
+  updateUser: (updates: Record<string, any>) => void;
   logout: () => Promise<void>;
 }
 
@@ -56,6 +57,30 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     router.push("/");
   };
 
+  const updateUser = (updates: Record<string, any>) => {
+    setLocalUser((prevUser: any) => {
+      const nextUser = {
+        ...(prevUser ?? {}),
+        ...updates,
+        profile: {
+          ...(prevUser?.profile ?? {}),
+          ...(updates?.profile ?? {}),
+        },
+      };
+
+      try {
+        localStorage.setItem("user", JSON.stringify(nextUser));
+        const token = localStorage.getItem("access_token");
+        dispatch(setUser(token ? { ...nextUser, token } : nextUser));
+      } catch {
+        // Ignore local storage update issues and keep in-memory session updated.
+        dispatch(setUser(nextUser));
+      }
+
+      return nextUser;
+    });
+  };
+
   const logout = async () => {
     try {
       await logoutApi().unwrap();
@@ -70,7 +95,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }
   };
 
-  return <AuthContext.Provider value={{ user, isAuthReady, login, logout }}>{children}</AuthContext.Provider>;
+  return <AuthContext.Provider value={{ user, isAuthReady, login, updateUser, logout }}>{children}</AuthContext.Provider>;
 };
 
 export const useAuth = () => {

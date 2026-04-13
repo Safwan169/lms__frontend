@@ -228,6 +228,7 @@ export default function TeachersTable() {
 
   const [addEditDialogOpen, setAddEditDialogOpen] = useState(false)
   const [editingTeacherId, setEditingTeacherId] = useState<string | null>(null)
+  const [teacherSubmitLoading, setTeacherSubmitLoading] = useState(false)
   const [formValues, setFormValues] = useState({
     fullName: "",
     phone: "",
@@ -552,32 +553,33 @@ export default function TeachersTable() {
       return
     }
 
-    if (editingTeacherId) {
-      // API implementation intentionally commented for frontend-only flow.
-      // const formData = new FormData()
-      // ...append fields and tenant_id
-      // await fetch(`/api/teachers/${editingTeacherId}`, { method: "PUT", body: formData })
+    setTeacherSubmitLoading(true)
+    try {
+      if (editingTeacherId) {
+        // API implementation intentionally commented for frontend-only flow.
+        // const formData = new FormData()
+        // ...append fields and tenant_id
+        // await fetch(`/api/teachers/${editingTeacherId}`, { method: "PUT", body: formData })
 
-      setTeachers((prev) =>
-        prev.map((item) =>
-          item.id === editingTeacherId
-            ? {
-                ...item,
-                fullName: formValues.fullName,
-                phone: formValues.phone,
-                email: formValues.email,
-                department: formValues.department as Teacher["department"],
-                shift: formValues.shift as Teacher["shift"],
-                designation: formValues.designation,
-                status: formValues.status,
-              }
-            : item
+        setTeachers((prev) =>
+          prev.map((item) =>
+            item.id === editingTeacherId
+              ? {
+                  ...item,
+                  fullName: formValues.fullName,
+                  phone: formValues.phone,
+                  email: formValues.email,
+                  department: formValues.department as Teacher["department"],
+                  shift: formValues.shift as Teacher["shift"],
+                  designation: formValues.designation,
+                  status: formValues.status,
+                }
+              : item
+          )
         )
-      )
 
-      toast.success("Teacher updated successfully")
-    } else {
-      try {
+        toast.success("Teacher updated successfully")
+      } else {
         const payload: TeacherCreatePayload = {
           name: formValues.fullName.trim(),
           email: formValues.email.trim(),
@@ -617,10 +619,14 @@ export default function TeachersTable() {
           perBatchRate: "0.00",
           joiningDate: currentIsoDate(),
         })
-      } catch {
-        toast.error("Failed to create teacher")
+      }
+    } catch {
+      if (!editingTeacherId) {
+        // The shared axios interceptor already shows the most specific backend error.
         return
       }
+    } finally {
+      setTeacherSubmitLoading(false)
     }
 
     setAddEditDialogOpen(false)
@@ -960,7 +966,14 @@ export default function TeachersTable() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={addEditDialogOpen} onOpenChange={setAddEditDialogOpen}>
+      <Dialog
+        open={addEditDialogOpen}
+        onOpenChange={(open) => {
+          if (!teacherSubmitLoading) {
+            setAddEditDialogOpen(open)
+          }
+        }}
+      >
         <DialogContent className="max-h-[90vh] overflow-y-auto pr-2 md:max-h-[84vh] [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400 dark:[&::-webkit-scrollbar-thumb]:bg-slate-600 dark:hover:[&::-webkit-scrollbar-thumb]:bg-slate-500">
           <DialogHeader className="border-b px-6 pt-6">
             <DialogTitle>{editingTeacherId ? "Edit Teacher" : "Add Teacher"}</DialogTitle>
@@ -1089,8 +1102,13 @@ export default function TeachersTable() {
           </div>
 
           <DialogFooter>
-            <Button variant="outline" onClick={() => setAddEditDialogOpen(false)}>Cancel</Button>
-            <Button onClick={submitTeacherForm}>{editingTeacherId ? "Update" : "Add"} Teacher</Button>
+            <Button variant="outline" onClick={() => setAddEditDialogOpen(false)} disabled={teacherSubmitLoading}>
+              Cancel
+            </Button>
+            <Button onClick={submitTeacherForm} disabled={teacherSubmitLoading}>
+              {teacherSubmitLoading ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              {teacherSubmitLoading ? (editingTeacherId ? "Updating..." : "Adding...") : (editingTeacherId ? "Update" : "Add")} Teacher
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

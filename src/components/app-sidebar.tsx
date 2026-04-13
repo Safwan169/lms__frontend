@@ -179,6 +179,40 @@ export function AppSidebar({ userRole = "rektor" }) {
     (Array.isArray((user as any)?.roles) ? (user as any)?.roles[0] : (user as any)?.roles) ??
     userRole
   ).toLowerCase()
+  const tenantDisplayName = String(
+    (user as any)?.tenant?.school_name ??
+    (user as any)?.tenant?.schoolName ??
+    (user as any)?.tenant?.name ??
+    (user as any)?.school_name ??
+    (user as any)?.schoolName ??
+    (user as any)?.tenant_name ??
+    "Tenant"
+  ).trim()
+  const userDisplayName = String(
+    (user as any)?.name ??
+    (user as any)?.full_name ??
+    (user as any)?.fullName ??
+    (user as any)?.username ??
+    "User"
+  ).trim()
+  const userDisplayRole = String(
+    (user as any)?.designation ??
+    (user as any)?.role ??
+    (Array.isArray((user as any)?.roles) ? (user as any)?.roles[0] : (user as any)?.roles) ??
+    userRole
+  ).trim()
+  const userInitials = userDisplayName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase() ?? "")
+    .join("") || "US"
+  const userAvatarUrl = String(
+    (user as any)?.avatar_url ??
+    (user as any)?.avatarUrl ??
+    (user as any)?.profile?.avatar_url ??
+    ""
+  ).trim()
 
   return (
     <>
@@ -254,6 +288,14 @@ export function AppSidebar({ userRole = "rektor" }) {
           font-size: 0.72rem;
           font-weight: 600;
           flex-shrink: 0;
+        }
+
+        .sb-user-av img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          border-radius: 8px;
+          display: block;
         }
 
         .sb-user-name {
@@ -405,17 +447,23 @@ export function AppSidebar({ userRole = "rektor" }) {
               <GraduationCap size={18} />
             </div>
             <div>
-              <div className="sb-logo-name">Sans University</div>
+              <div className="sb-logo-name">{tenantDisplayName}</div>
               <div className="sb-logo-tagline">Learning Management</div>
             </div>
           </div>
 
           {/* User card */}
           <div className="sb-user-card">
-            <div className="sb-user-av">NA</div>
+            <div className="sb-user-av">
+              {userAvatarUrl ? (
+                <img src={userAvatarUrl} alt={userDisplayName} />
+              ) : (
+                userInitials
+              )}
+            </div>
             <div>
-              <div className="sb-user-name">Nirmala Azalea</div>
-              <div className="sb-user-role">{userRole}</div>
+              <div className="sb-user-name">{userDisplayName}</div>
+              <div className="sb-user-role">{userDisplayRole}</div>
             </div>
             <div className="sb-user-dot" />
           </div>

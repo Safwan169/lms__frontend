@@ -52,6 +52,8 @@ type ClassRow = {
   sections: ClassSection[]
   capacity: number
   status: "ACTIVE" | "INACTIVE"
+  subject_ids: string[]
+  subject_names: string[]
 }
 
 type ClassApiItem = {
@@ -72,13 +74,20 @@ type ClassApiItem = {
   }>
 }
 
+type SubjectOption = {
+  id: string
+  name: string
+  code: string
+  is_active: boolean
+}
+
 const classFormSchema = z.object({
   class_name: z.string().trim().min(1, "Class name is required"),
   code: z.string().trim().min(1, "Class code is required"),
   description: z.string().trim().min(1, "Description is required"),
   subject: z.string().trim().min(1, "Subject is required"),
   level: z.string().trim().min(1, "Level is required"),
-  subject_ids_input: z.string().trim().min(1, "At least one subject ID is required"),
+  subject_ids: z.array(z.string().trim().min(1)).min(1, "Select at least one subject"),
   sections: z.array(z.enum(["Science", "Commerce", "Arts", "General"])).min(1, "Select at least one section"),
   capacity: z.coerce.number().int().min(1, "Capacity must be at least 1"),
   status: z.boolean().default(true),
@@ -90,9 +99,9 @@ type ClassSubmitValues = z.output<typeof classFormSchema>
 const SECTION_OPTIONS: ClassSection[] = ["Science", "Commerce", "Arts", "General"]
 
 const DUMMY_CLASSES: ClassRow[] = [
-  { id: "c-6", class_name: "Class 6", sections: ["General"], capacity: 120, status: "ACTIVE" },
-  { id: "c-7", class_name: "Class 7", sections: ["Science", "General"], capacity: 100, status: "ACTIVE" },
-  { id: "c-8", class_name: "Class 8", sections: ["Commerce", "Arts"], capacity: 80, status: "INACTIVE" },
+  { id: "c-6", class_name: "Class 6", sections: ["General"], capacity: 120, status: "ACTIVE", subject_ids: [], subject_names: [] },
+  { id: "c-7", class_name: "Class 7", sections: ["Science", "General"], capacity: 100, status: "ACTIVE", subject_ids: [], subject_names: [] },
+  { id: "c-8", class_name: "Class 8", sections: ["Commerce", "Arts"], capacity: 80, status: "INACTIVE", subject_ids: [], subject_names: [] },
 ]
 
 export default function SettingsClassesPage() {
@@ -121,7 +130,7 @@ export default function SettingsClassesPage() {
       description: "",
       subject: "General",
       level: "Beginner",
-      subject_ids_input: "",
+      subject_ids: [],
       sections: ["General"],
       capacity: 1,
       status: true,
@@ -129,6 +138,39 @@ export default function SettingsClassesPage() {
   })
 
   const classesQueryKey = useMemo(() => ["settings-classes", tenantId] as const, [tenantId])
+
+  const { data: subjectOptions = [], isLoading: isSubjectsLoading } = useQuery({
+    queryKey: ["settings-subject-options", tenantId],
+    queryFn: async (): Promise<SubjectOption[]> => {
+      if (!tenantId) return []
+
+      const response = await api.get(`/api/tenants/${tenantId}/subjects`, {
+        params: {
+          page: 1,
+          limit: 100,
+          search: "-",
+          is_active: true,
+        },
+      })
+
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload?.items)
+          ? payload.items
+          : Array.isArray(payload)
+            ? payload
+            : []
+
+      return rawItems.map((item: any) => ({
+        id: String(item?.id ?? ""),
+        name: String(item?.name ?? "Unnamed Subject"),
+        code: String(item?.code ?? "-"),
+        is_active: item?.is_active !== false,
+      })).filter((item: SubjectOption) => item.id)
+    },
+    enabled: !!tenantId,
+  })
 
   const { data: rows = [], isLoading } = useQuery({
     queryKey: classesQueryKey,
@@ -150,11 +192,17 @@ export default function SettingsClassesPage() {
           : []
 
       return rawItems.map((item: ClassApiItem) => {
-        const subjectNames = Array.isArray(item?.class_subjects)
+        const classSubjects = Array.isArray(item?.class_subjects)
           ? item.class_subjects
-              .map((subject) => String(subject?.name ?? "").trim())
-              .filter(Boolean)
           : []
+
+        const subjectNames = classSubjects
+          .map((subject) => String(subject?.name ?? "").trim())
+          .filter(Boolean)
+
+        const subjectIds = classSubjects
+          .map((subject) => String(subject?.id ?? "").trim())
+          .filter(Boolean)
 
         const normalizedSections = subjectNames.filter((name): name is ClassSection =>
           SECTION_OPTIONS.includes(name as ClassSection)
@@ -166,6 +214,8 @@ export default function SettingsClassesPage() {
           sections: normalizedSections.length > 0 ? normalizedSections : ["General"],
           capacity: 0,
           status: item?.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+          subject_ids: subjectIds,
+          subject_names: subjectNames,
         }
       })
     },
@@ -182,10 +232,7 @@ export default function SettingsClassesPage() {
         description: values.description,
         subject: values.subject,
         level: values.level,
-        subject_ids: values.subject_ids_input
-          .split(",")
-          .map((item) => item.trim())
-          .filter(Boolean),
+        subject_ids: values.subject_ids,
       }
 
       if (isEditMode && selectedRow) {
@@ -202,6 +249,10 @@ export default function SettingsClassesPage() {
             sections: values.sections,
             capacity: values.capacity,
             status: values.status ? "ACTIVE" : "INACTIVE",
+            subject_ids: values.subject_ids,
+            subject_names: subjectOptions
+              .filter((item) => values.subject_ids.includes(item.id))
+              .map((item) => item.name),
           }
         } catch (error: unknown) {
           const maybeError = error as { data?: { message?: string }; message?: string }
@@ -222,6 +273,10 @@ export default function SettingsClassesPage() {
           sections: values.sections,
           capacity: values.capacity,
           status: values.status ? "ACTIVE" : "INACTIVE",
+          subject_ids: values.subject_ids,
+          subject_names: subjectOptions
+            .filter((item) => values.subject_ids.includes(item.id))
+            .map((item) => item.name),
         }
       } catch (error: unknown) {
         const maybeError = error as { data?: { message?: string }; message?: string }
@@ -239,6 +294,8 @@ export default function SettingsClassesPage() {
         sections: savedRow.sections,
         capacity: savedRow.capacity,
         status: savedRow.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
+        subject_ids: savedRow.subject_ids,
+        subject_names: savedRow.subject_names,
       }
 
       setClassesState((prev) => {
@@ -260,7 +317,7 @@ export default function SettingsClassesPage() {
         description: "",
         subject: "General",
         level: "Beginner",
-        subject_ids_input: "",
+        subject_ids: [],
         sections: ["General"],
         capacity: 1,
         status: true,
@@ -309,7 +366,7 @@ export default function SettingsClassesPage() {
       description: "",
       subject: "General",
       level: "Beginner",
-      subject_ids_input: "",
+      subject_ids: [],
       sections: ["General"],
       capacity: 1,
       status: true,
@@ -326,7 +383,7 @@ export default function SettingsClassesPage() {
       description: "",
       subject: row.sections[0] ?? "General",
       level: "Beginner",
-      subject_ids_input: "",
+      subject_ids: row.subject_ids,
       sections: row.sections,
       capacity: row.capacity,
       status: row.status === "ACTIVE",
@@ -358,6 +415,7 @@ export default function SettingsClassesPage() {
             <TableRow>
               <TableHead>Class Name</TableHead>
               <TableHead>Sections</TableHead>
+              <TableHead>Subjects</TableHead>
               <TableHead>Capacity</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -369,6 +427,7 @@ export default function SettingsClassesPage() {
                 <TableRow key={`class-skeleton-${index}`}>
                   <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-36" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-32" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                   <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="ml-auto h-8 w-20" /></TableCell>
@@ -376,7 +435,7 @@ export default function SettingsClassesPage() {
               ))
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center">
+                <TableCell colSpan={6} className="py-12 text-center">
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">No classes yet. Add your first class.</p>
                     <Button size="sm" onClick={openAddDialog}>
@@ -391,6 +450,7 @@ export default function SettingsClassesPage() {
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">{row.class_name}</TableCell>
                   <TableCell>{row.sections.join(", ")}</TableCell>
+                  <TableCell>{row.subject_names.length > 0 ? row.subject_names.join(", ") : "-"}</TableCell>
                   <TableCell>{row.capacity}</TableCell>
                   <TableCell>
                     <Badge
@@ -504,12 +564,45 @@ export default function SettingsClassesPage() {
 
               <FormField
                 control={form.control}
-                name="subject_ids_input"
+                name="subject_ids"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Subject IDs</FormLabel>
+                    <FormLabel>Subjects</FormLabel>
                     <FormControl>
-                      <Input placeholder="subject-uuid-1, subject-uuid-2" {...field} />
+                      <div className="grid grid-cols-1 gap-2 rounded-md border p-3 md:grid-cols-2">
+                        {isSubjectsLoading ? (
+                          <div className="col-span-full flex items-center gap-2 text-sm text-muted-foreground">
+                            <Loader2 className="h-4 w-4 animate-spin" />
+                            Loading subjects...
+                          </div>
+                        ) : subjectOptions.length === 0 ? (
+                          <p className="col-span-full text-sm text-muted-foreground">No active subjects found. Create subjects first.</p>
+                        ) : (
+                          subjectOptions.map((subject) => {
+                            const checked = field.value?.includes(subject.id)
+
+                            return (
+                              <label key={subject.id} className="flex items-start gap-2 rounded-md border p-2 text-sm">
+                                <input
+                                  type="checkbox"
+                                  className="mt-0.5 h-4 w-4 rounded border-input"
+                                  checked={checked}
+                                  onChange={(event) => {
+                                    const next = new Set(field.value ?? [])
+                                    if (event.target.checked) next.add(subject.id)
+                                    else next.delete(subject.id)
+                                    field.onChange(Array.from(next))
+                                  }}
+                                />
+                                <span>
+                                  <span className="block font-medium">{subject.name}</span>
+                                  <span className="text-muted-foreground">{subject.code}</span>
+                                </span>
+                              </label>
+                            )
+                          })
+                        )}
+                      </div>
                     </FormControl>
                     <FormMessage />
                   </FormItem>

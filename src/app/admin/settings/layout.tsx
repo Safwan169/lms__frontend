@@ -6,6 +6,7 @@ import { useEffect, useMemo } from "react"
 import {
   ArrowLeft,
   Bell,
+  BookOpen,
   CalendarDays,
   ClipboardList,
   CreditCard,
@@ -25,6 +26,7 @@ type SettingsNavItem = {
 
 const settingsNavItems: SettingsNavItem[] = [
   { title: "General", href: "/admin/settings/general", icon: School },
+  { title: "Subjects", href: "/admin/settings/subjects", icon: BookOpen },
   { title: "Classes", href: "/admin/settings/classes", icon: GraduationCap },
   { title: "Batches", href: "/admin/settings/batches", icon: CalendarDays },
   { title: "Admission", href: "/admin/settings/admission", icon: ClipboardList },
@@ -94,9 +96,9 @@ export default function AdminSettingsLayout({
   const pageName = getPageName(pathname)
 
   return (
-    <div className="adm-root">
-      <div className="mx-auto flex w-full max-w-[1200px] gap-6 px-4 py-6 md:px-8">
-        <aside className="sticky top-6 h-[calc(100vh-3rem)] w-56 shrink-0 rounded-lg border bg-card p-3">
+    <div className="min-h-screen w-full bg-[#f5f6fa] px-8 pt-6 pb-8 font-sans text-[#1a1d2e]">
+      <div className="mx-auto w-full max-w-[1200px] px-4 md:px-8">
+        <aside className="fixed top-2 hidden h-[calc(100vh-4rem)] w-56 overflow-y-auto rounded-lg border bg-card p-3 md:block">
           <h2 className="px-2 pb-3 text-lg font-semibold">Settings</h2>
           <nav className="space-y-1">
             {settingsNavItems.map((item) => {
@@ -120,7 +122,7 @@ export default function AdminSettingsLayout({
           </nav>
         </aside>
 
-        <section className="flex-1 space-y-4">
+        <section className="space-y-4 md:ml-[15.5rem]">
           <Button asChild variant="ghost" className="w-fit">
             <Link href="/dashboard">
               <ArrowLeft className="mr-2 h-4 w-4" />

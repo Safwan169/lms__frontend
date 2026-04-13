@@ -43,7 +43,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table-primitive"
-import { Textarea } from "@/components/ui/textarea"
 
 type AccountantApiItem = {
   id?: number | string
@@ -102,7 +101,6 @@ type AccountantFormState = {
   name: string
   email: string
   phone: string
-  address: string
 }
 
 const PAGE_SIZES = [5, 10, 15, 20, 50]
@@ -111,7 +109,6 @@ const EMPTY_FORM: AccountantFormState = {
   name: "",
   email: "",
   phone: "",
-  address: "",
 }
 
 function formatDate(value?: string) {
@@ -383,7 +380,6 @@ export default function AccountantsTable() {
         name: addForm.name.trim(),
         email: addForm.email.trim(),
         phone: addForm.phone.trim() || undefined,
-        address: addForm.address.trim() || undefined,
       }
 
       const response = await api.post(`/api/tenants/${tenantId}/accountants`, payload)
@@ -420,7 +416,7 @@ export default function AccountantsTable() {
       setTotalAccountants(total)
       setTotalPages(Math.max(1, pages))
     } catch {
-      toast.error("Failed to create accountant")
+      // The shared axios interceptor already shows the backend error message.
     } finally {
       setAddLoading(false)
     }
@@ -896,15 +892,6 @@ export default function AccountantsTable() {
                 value={addForm.phone}
                 onChange={(event) => setAddForm((prev) => ({ ...prev, phone: event.target.value }))}
                 placeholder="01712345678"
-              />
-            </div>
-
-            <div className="space-y-1">
-              <label className="text-sm font-medium">Address</label>
-              <Textarea
-                value={addForm.address}
-                onChange={(event) => setAddForm((prev) => ({ ...prev, address: event.target.value }))}
-                placeholder="Mirpur, Dhaka"
               />
             </div>
           </div>
