@@ -181,6 +181,8 @@ const FALLBACK_DATA: ScheduleBootstrap = {
   ],
   batches: [
     { id: "batch-1", name: "Science Morning A", classId: "class-1", className: "Class 9" },
+    { id: "batch-1", name: "Science Morning 2", classId: "class-1", className: "Class 9" },
+    { id: "batch-1", name: "3", classId: "class-1", className: "Class 9" },
     { id: "batch-2", name: "Commerce Day B", classId: "class-1", className: "Class 9" },
     { id: "batch-3", name: "SSC Evening", classId: "class-2", className: "Class 10" },
   ],
@@ -402,6 +404,55 @@ async function loadScheduleBootstrap(tenantId: string | number | null): Promise<
   return FALLBACK_DATA
 }
 
+function getRawItems(payload: any) {
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.items)) return payload.items
+  if (Array.isArray(payload)) return payload
+  return []
+}
+
+function mapScheduleClassOption(item: any): ClassOption | null {
+  const id = String(item?.id ?? item?.class_id ?? "").trim()
+  const name = String(item?.class_name ?? item?.name ?? "").trim()
+  if (!id) return null
+  return { id, name: name || id }
+}
+
+function mapScheduleBatchOption(item: any): BatchOption | null {
+  const id = String(item?.id ?? item?.batch_id ?? "").trim()
+  const classId = String(item?.class_id ?? item?.class?.id ?? "").trim()
+  const className = String(item?.class?.name ?? item?.class_name ?? "").trim()
+  const name = String(item?.batch_name ?? item?.name ?? item?.section ?? "").trim()
+  if (!id) return null
+  return {
+    id,
+    classId,
+    className: className || "-",
+    name: name || id,
+  }
+}
+
+function mapScheduleSubjectOption(item: any): SubjectOption | null {
+  const id = String(item?.id ?? item?.subject_id ?? "").trim()
+  const name = String(item?.name ?? item?.subject_name ?? item?.title ?? "").trim()
+  if (!id) return null
+  return { id, name: name || id }
+}
+
+function mapScheduleTeacherOption(item: any): TeacherOption | null {
+  const id = String(item?.id ?? item?.teacher_id ?? item?.user_id ?? "").trim()
+  const name = String(
+    item?.user?.name ??
+    item?.name ??
+    item?.full_name ??
+    item?.teacher_name ??
+    item?.teacher_id ??
+    ""
+  ).trim()
+  if (!id) return null
+  return { id, name: name || id }
+}
+
 async function detectConflicts(
   draft: EntryDraft,
   routines: RoutineRecord[],
@@ -526,12 +577,23 @@ function SearchableInput({
   options: Array<{ id: string; name: string }>
   placeholder: string
 }) {
+  const displayValue = options.find((option) => option.id === value)?.name ?? value
+
   return (
     <>
-      <Input list={listId} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
+      <Input
+        list={listId}
+        value={displayValue}
+        onChange={(event) => {
+          const rawValue = event.target.value
+          const matchedOption = options.find((option) => option.name === rawValue || option.id === rawValue)
+          onChange(matchedOption?.id ?? rawValue)
+        }}
+        placeholder={placeholder}
+      />
       <datalist id={listId}>
         {options.map((option) => (
-          <option key={option.id} value={option.id}>
+          <option key={option.id} value={option.name}>
             {option.name}
           </option>
         ))}
@@ -661,12 +723,77 @@ export default function ScheduleWorkspace() {
     queryFn: () => loadScheduleBootstrap(tenantId),
   })
 
+  const classesQuery = useQuery({
+    queryKey: ["schedule-classes", tenantId],
+    enabled: !!tenantId && tenantId !== "demo-tenant",
+    queryFn: async () => {
+      const response = await api.get(`/api/tenants/${tenantId}/classes`, {
+        params: { page: 1, limit: 100 },
+      })
+      return getRawItems(response?.data)
+        .map(mapScheduleClassOption)
+        .filter((item): item is ClassOption => Boolean(item))
+    },
+    staleTime: 60_000,
+  })
+
+  const batchesQuery = useQuery({
+    queryKey: ["schedule-batches", tenantId],
+    enabled: !!tenantId && tenantId !== "demo-tenant",
+    queryFn: async () => {
+      const response = await api.get(`/api/tenants/${tenantId}/batches`, {
+        params: { page: 1, limit: 100 },
+      })
+      return getRawItems(response?.data)
+        .map(mapScheduleBatchOption)
+        .filter((item): item is BatchOption => Boolean(item))
+    },
+    staleTime: 60_000,
+  })
+
+  const subjectsQuery = useQuery({
+    queryKey: ["schedule-subjects", tenantId],
+    enabled: !!tenantId && tenantId !== "demo-tenant",
+    queryFn: async () => {
+      const response = await api.get(`/api/tenants/${tenantId}/subjects`, {
+        params: { page: 1, limit: 100, is_active: true },
+      })
+      return getRawItems(response?.data)
+        .map(mapScheduleSubjectOption)
+        .filter((item): item is SubjectOption => Boolean(item))
+    },
+    staleTime: 60_000,
+  })
+
+  const teachersQuery = useQuery({
+    queryKey: ["schedule-teachers", tenantId],
+    enabled: !!tenantId && tenantId !== "demo-tenant",
+    queryFn: async () => {
+      const response = await api.get(`/api/tenants/${tenantId}/teachers`, {
+        params: { page: 1, limit: 100 },
+      })
+      return getRawItems(response?.data)
+        .map(mapScheduleTeacherOption)
+        .filter((item): item is TeacherOption => Boolean(item))
+    },
+    staleTime: 60_000,
+  })
+
   useEffect(() => {
     if (!bootstrapQuery.data) return
     setRoutines(bootstrapQuery.data.routines)
     setNotifications(bootstrapQuery.data.notifications)
-    setSelectedBatchId((current) => current || bootstrapQuery.data.batches[0]?.id || "")
   }, [bootstrapQuery.data])
+
+  useEffect(() => {
+    const initialBatchId =
+      batchesQuery.data?.[0]?.id ??
+      bootstrapQuery.data?.batches?.[0]?.id ??
+      ""
+
+    if (!initialBatchId) return
+    setSelectedBatchId((current) => current || initialBatchId)
+  }, [batchesQuery.data, bootstrapQuery.data])
 
   useEffect(() => {
     if (!selectedBatchId) {
@@ -676,11 +803,26 @@ export default function ScheduleWorkspace() {
     setEntryDraft((current) => ({ ...current, batchId: selectedBatchId }))
   }, [selectedBatchId])
 
-  const batches = bootstrapQuery.data?.batches ?? []
-  const classes = bootstrapQuery.data?.classes ?? []
-  const subjects = bootstrapQuery.data?.subjects ?? []
-  const teachers = bootstrapQuery.data?.teachers ?? []
+  const batches = batchesQuery.data ?? bootstrapQuery.data?.batches ?? []
+  const classes = classesQuery.data ?? bootstrapQuery.data?.classes ?? []
+  const subjects =
+    tenantId && tenantId !== "demo-tenant"
+      ? (subjectsQuery.data ?? [])
+      : (bootstrapQuery.data?.subjects ?? [])
+  const teachers =
+    tenantId && tenantId !== "demo-tenant"
+      ? (teachersQuery.data ?? [])
+      : (bootstrapQuery.data?.teachers ?? [])
   const rooms = bootstrapQuery.data?.rooms ?? []
+
+  const teacherFilterOptions = useMemo(
+    () => [{ id: "ALL", name: teachersQuery.isLoading ? "Loading teachers..." : "All teachers" }, ...teachers],
+    [teachers, teachersQuery.isLoading]
+  )
+  const subjectFilterOptions = useMemo(
+    () => [{ id: "ALL", name: subjectsQuery.isLoading ? "Loading subjects..." : "All subjects" }, ...subjects],
+    [subjects, subjectsQuery.isLoading]
+  )
 
   const currentRoutine = useMemo(() => routines.find((routine) => routine.batchId === selectedBatchId), [routines, selectedBatchId])
   const currentRoutineEntries = currentRoutine?.entries ?? []
@@ -1103,58 +1245,56 @@ export default function ScheduleWorkspace() {
         </div>
       </section>
       <section className="space-y-6">
-        <div className="grid gap-4 xl:grid-cols-[1.2fr_1fr_1fr]">
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm xl:col-span-1">
-            <div>
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Routine Context</p>
-              <h2 className="mt-2 text-xl font-semibold text-slate-900">Batch Selection</h2>
-              <p className="mt-1 text-sm text-slate-500">Pick a batch to load its draft or published routine automatically.</p>
-            </div>
-            <div className="mt-4">
-              <FieldLabel label="Batch" required />
-              <Select value={selectedBatchId} onValueChange={setSelectedBatchId}>
-                {batches.map((batch) => (
-                  <option key={batch.id} value={batch.id}>{batch.name} ({batch.className})</option>
-                ))}
-              </Select>
-            </div>
-            <div className="mt-4 rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
-              <p className="font-medium text-slate-900">{batches.find((batch) => batch.id === selectedBatchId)?.name ?? "No batch selected"}</p>
-              <p className="mt-1">Active routine context</p>
-            </div>
-          </div>
+        {viewMode !== "list" ? (
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+            <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Routine Context</p>
+                  <h2 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">Batch Selection</h2>
+                </div>
+                <div>
+                  <FieldLabel label="Batch" required />
+                  <Select value={selectedBatchId} onValueChange={setSelectedBatchId}>
+                    {batches.map((batch) => (
+                      <option key={batch.id} value={batch.id}>{batch.name} ({batch.className})</option>
+                    ))}
+                  </Select>
+                </div>
+                <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">
+                  <p className="font-medium text-slate-900 dark:text-white">{batches.find((batch) => batch.id === selectedBatchId)?.name ?? "No batch selected"}</p>
+                  <p className="mt-1">Active routine context</p>
+                </div>
+              </div>
 
-          <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Routine Status</p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {currentRoutine ? <Badge {...getStatusBadgeProps(currentRoutine.status)}>{currentRoutine.status}</Badge> : <Badge variant="warning">EMPTY</Badge>}
-              {currentRoutine?.status === "PUBLISHED" ? <Badge variant="warning">Base entries locked</Badge> : null}
-            </div>
-            <p className="mt-3 text-sm text-slate-500">
-              {currentRoutine ? `${currentRoutine.entries.filter((entry) => !entry.isOverride).length} base entries loaded for this batch.` : "No routine exists yet. Start by clicking any empty slot in the grid."}
-            </p>
-            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
-              <p className="text-sm font-medium text-slate-800">Delivery Mode Legend</p>
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(["ON_SITE", "LIVE_ONLINE", "RECORDED_SUPPORT", "HYBRID"] as DeliveryMode[]).map((mode) => {
-                  const badge = getModeBadgeProps(mode)
-                  return <Badge key={mode} className={badge.className}>{badge.label}</Badge>
-                })}
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Publish Flow</p>
+                  <h3 className="mt-2 text-lg font-semibold text-slate-900 dark:text-white">Publish Routine</h3>
+                </div>
+                <p className="text-xs leading-5 text-slate-600 dark:text-slate-300">
+                  Make this routine visible to teachers and students.
+                </p>
+                {isAdmin ? (
+                  <>
+                    <Button
+                      className="h-10 w-full"
+                      onClick={handlePublishRoutine}
+                      disabled={!currentRoutine || currentRoutine.status === "PUBLISHED" || routineHardConflicts.length > 0}
+                    >
+                      Publish Routine
+                    </Button>
+                    {routineHardConflicts.length > 0 ? (
+                      <p className="text-xs text-red-600 dark:text-red-300">Resolve hard conflicts before publishing.</p>
+                    ) : null}
+                  </>
+                ) : (
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Publishing is available for admin roles only.</p>
+                )}
               </div>
             </div>
           </div>
-
-          {isAdmin ? (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <p className="text-xs font-semibold uppercase tracking-[0.2em] text-slate-500">Publish Flow</p>
-              <p className="mt-3 text-sm text-slate-500">Publishing makes the routine visible to teachers and students and locks base entry editing.</p>
-              <Button className="mt-5 w-full" onClick={handlePublishRoutine} disabled={!currentRoutine || currentRoutine.status === "PUBLISHED" || routineHardConflicts.length > 0}>
-                Publish Routine
-              </Button>
-              {routineHardConflicts.length > 0 ? <p className="mt-2 text-xs text-red-600">Resolve hard conflicts before publishing.</p> : null}
-            </div>
-          ) : null}
-        </div>
+        ) : null}
 
         {isAdmin && currentRoutine && routineHardConflicts.length > 0 ? (
           <Alert variant="destructive">
@@ -1437,8 +1577,22 @@ export default function ScheduleWorkspace() {
               <div className="grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-3">
                 <div><FieldLabel label="Class" /><Select value={filters.classId} onValueChange={(value) => setFilters((current) => ({ ...current, classId: value, batchId: "ALL" }))}><option value="ALL">All classes</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
                 <div><FieldLabel label="Batch" /><Select value={filters.batchId} onValueChange={(value) => setFilters((current) => ({ ...current, batchId: value }))}><option value="ALL">All batches</option>{filteredBatches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
-                <div><FieldLabel label="Teacher" /><SearchableInput listId="teacher-filter-list" value={filters.teacherId} onChange={(value) => setFilters((current) => ({ ...current, teacherId: value || "ALL" }))} options={[{ id: "ALL", name: "All teachers" }, ...teachers]} placeholder="Search teacher id" /></div>
-                <div><FieldLabel label="Subject" /><SearchableInput listId="subject-filter-list" value={filters.subjectId} onChange={(value) => setFilters((current) => ({ ...current, subjectId: value || "ALL" }))} options={[{ id: "ALL", name: "All subjects" }, ...subjects]} placeholder="Search subject id" /></div>
+                <div>
+                  <FieldLabel label="Teacher" />
+                  <Select value={filters.teacherId} onValueChange={(value) => setFilters((current) => ({ ...current, teacherId: value || "ALL" }))}>
+                    {teacherFilterOptions.map((option) => (
+                      <option key={option.id} value={option.id}>{option.name}</option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <FieldLabel label="Subject" />
+                  <Select value={filters.subjectId} onValueChange={(value) => setFilters((current) => ({ ...current, subjectId: value || "ALL" }))}>
+                    {subjectFilterOptions.map((option) => (
+                      <option key={option.id} value={option.id}>{option.name}</option>
+                    ))}
+                  </Select>
+                </div>
                 <div><FieldLabel label="From Date" /><Input type="date" value={filters.fromDate} onChange={(event) => setFilters((current) => ({ ...current, fromDate: event.target.value }))} /></div>
                 <div><FieldLabel label="To Date" /><Input type="date" value={filters.toDate} onChange={(event) => setFilters((current) => ({ ...current, toDate: event.target.value }))} /></div>
                 <div><FieldLabel label="Status" /><Select value={filters.status} onValueChange={(value) => setFilters((current) => ({ ...current, status: value }))}><option value="ALL">All statuses</option><option value="DRAFT">Draft</option><option value="PUBLISHED">Published</option><option value="CANCELLED">Cancelled</option></Select></div>
@@ -1541,10 +1695,10 @@ export default function ScheduleWorkspace() {
             {entryConflicts.some((item) => item.severity === "HARD") ? <Alert variant="destructive"><AlertTitle>Hard conflict detected</AlertTitle><AlertDescription className="space-y-2">{entryConflicts.filter((item) => item.severity === "HARD").map((conflict) => <div key={conflict.id} className="flex items-start gap-2"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{conflict.message}</span></div>)}</AlertDescription></Alert> : null}
             <div className="grid gap-4 md:grid-cols-2">
               <div><FieldLabel label="Day of Week" required /><Select value={entryDraft.dayOfWeek} onValueChange={(value) => setEntryDraft((current) => ({ ...current, dayOfWeek: value as DayOfWeek }))}>{FULL_WEEK_DAYS.map((day) => <option key={day} value={day}>{DAY_LONG_LABELS[day]}</option>)}</Select><FieldError message={entryErrors.dayOfWeek} /></div>
-              <div><FieldLabel label="Subject" required /><SearchableInput listId="subject-options-list" value={entryDraft.subjectId} onChange={(value) => setEntryDraft((current) => ({ ...current, subjectId: value }))} options={subjects} placeholder="Search subject by id" /><FieldError message={entryErrors.subjectId} /></div>
+              <div><FieldLabel label="Subject" required /><SearchableInput listId="subject-options-list" value={entryDraft.subjectId} onChange={(value) => setEntryDraft((current) => ({ ...current, subjectId: value }))} options={subjects} placeholder="Search subject" /><FieldError message={entryErrors.subjectId} /></div>
               <div><FieldLabel label="Start Time" required /><Input type="time" value={entryDraft.startTime} onChange={(event) => setEntryDraft((current) => ({ ...current, startTime: event.target.value }))} /><FieldError message={entryErrors.startTime} /></div>
               <div><FieldLabel label="End Time" required /><Input type="time" value={entryDraft.endTime} onChange={(event) => setEntryDraft((current) => ({ ...current, endTime: event.target.value }))} /><FieldError message={entryErrors.endTime} /></div>
-              <div><FieldLabel label="Teacher" required /><SearchableInput listId="teacher-options-list" value={entryDraft.teacherId} onChange={(value) => setEntryDraft((current) => ({ ...current, teacherId: value }))} options={teachers} placeholder="Search teacher by id" /><FieldError message={entryErrors.teacherId} /></div>
+              <div><FieldLabel label="Teacher" required /><SearchableInput listId="teacher-options-list" value={entryDraft.teacherId} onChange={(value) => setEntryDraft((current) => ({ ...current, teacherId: value }))} options={teachers} placeholder="Search teacher" /><FieldError message={entryErrors.teacherId} /></div>
               <div>
                 <FieldLabel label="Delivery Mode" required />
                 <div className="grid grid-cols-2 gap-2">
