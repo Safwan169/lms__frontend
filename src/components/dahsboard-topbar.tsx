@@ -7,7 +7,6 @@ import IconButton from "@mui/material/IconButton";
 import Tooltip from "@mui/material/Tooltip";
 import Menu from "@mui/material/Menu";
 import MenuItem from "@mui/material/MenuItem";
-import Badge from "@mui/material/Badge";
 import Avatar from "@mui/material/Avatar";
 import Divider from "@mui/material/Divider";
 import Box from "@mui/material/Box";
@@ -24,9 +23,9 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
 const notifications = [
-  { id: 1, title: "New enrollment", message: "John Doe enrolled in React course", time: "2m ago", unread: true },
-  { id: 2, title: "Assignment submitted", message: "Jane submitted her final project", time: "1h ago", unread: true },
-  { id: 3, title: "New message", message: "You have a new message from admin", time: "3h ago", unread: false },
+  { id: 1, title: "Routine published for Science Morning A", message: "Teachers and students can now see the published weekly routine.", time: "2m ago", unread: true, href: "/dashboard/timetable" },
+  { id: 2, title: "Class cancelled on 16 Apr for Physics", message: "A date-specific override marked the class as cancelled.", time: "1h ago", unread: true, href: "/dashboard/timetable" },
+  { id: 3, title: "Teacher changed for Accounting on 18 Apr", message: "The schedule override updated the assigned teacher.", time: "Yesterday", unread: false, href: "/dashboard/timetable" },
 ];
 
 export default function DashboardTopbar() {
@@ -50,10 +49,7 @@ export default function DashboardTopbar() {
   );
   const avatarInitial = displayName.trim().charAt(0).toUpperCase() || "A";
 
-  const [notifAnchor, setNotifAnchor] = useState<null | HTMLElement>(null);
   const [profileAnchor, setProfileAnchor] = useState<null | HTMLElement>(null);
-
-  const unreadCount = notifications.filter((n) => n.unread).length;
   const handleLogout = () => {
     router.push("/login");
   };
@@ -75,31 +71,11 @@ export default function DashboardTopbar() {
           </IconButton>
         </Tooltip>
 
-        <Tooltip title="">
-          <Badge badgeContent={unreadCount} color="error">
+        <Tooltip title="Notifications">
+          <div>
             <Notification notifications={notifications} />
-          </Badge>
+          </div>
         </Tooltip>
-
-        <Menu
-          anchorEl={notifAnchor}
-          open={Boolean(notifAnchor)}
-          onClose={() => setNotifAnchor(null)}
-          PaperProps={{ sx: { width: 320, borderRadius: "12px", mt: 1 } }}
-          transformOrigin={{ horizontal: "right", vertical: "top" }}
-          anchorOrigin={{ horizontal: "right", vertical: "bottom" }}
-        >
-          <Box px={2} py={1.5} display="flex" justifyContent="space-between" alignItems="center">
-            <Typography fontWeight={600} fontSize={14}>Notifications</Typography>
-            <Typography fontSize={12} color="primary" sx={{ cursor: "pointer" }}>Mark all read</Typography>
-          </Box>
-
-          <Box textAlign="center" py={1}>
-            <Typography fontSize={13} color="primary" sx={{ cursor: "pointer" }}>
-              View all notifications
-            </Typography>
-          </Box>
-        </Menu>
 
         <Tooltip title="Account">
           <IconButton size="small" onClick={(e) => setProfileAnchor(e.currentTarget)} sx={{ ml: 0.5 }}>

@@ -16,6 +16,8 @@ import {
 } from "lucide-react"
 import toast from "react-hot-toast"
 
+import api from "@/lib/api"
+import { cn } from "@/lib/utils"
 import { useAuth } from "@/context/AuthContext"
 import { useGetStudentProfilesQuery } from "@/features/user/userApi"
 import { Button } from "@/components/ui/button"
@@ -55,7 +57,6 @@ import {
   BATCHES,
   CLASSES,
   DUMMY_STUDENTS,
-  SESSIONS,
   Student,
   StudentStatus,
   filterStudents,
@@ -71,7 +72,16 @@ import {
 
 const STATUSES = ["all", "Active", "Inactive", "Transferred", "Passed Out", "Dropped"] as const
 const LIMITS = [10, 20, 50]
-const DEMO_MODE = true
+const COLUMN_OPTIONS = [
+  { key: "studentId", label: "Student ID" },
+  { key: "classBatch", label: "Class / Batch" },
+  { key: "phone", label: "Phone" },
+  { key: "parentPhone", label: "Parent Phone" },
+  { key: "enrolledOn", label: "Enrolled On" },
+  { key: "status", label: "Status" },
+] as const
+
+type ColumnKey = (typeof COLUMN_OPTIONS)[number]["key"]
 
 function useDebouncedValue(value: string, delay = 400) {
   const [debounced, setDebounced] = useState(value)
@@ -103,6 +113,15 @@ export default function StudentsListPage() {
   const [searchInput, setSearchInput] = useState(searchParams.get("search") ?? "")
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [quickViewId, setQuickViewId] = useState<string | null>(null)
+  const [columnDialogOpen, setColumnDialogOpen] = useState(false)
+  const [visibleColumns, setVisibleColumns] = useState<Record<ColumnKey, boolean>>({
+    studentId: true,
+    classBatch: true,
+    phone: true,
+    parentPhone: true,
+    enrolledOn: true,
+    status: true,
+  })
 
   const [statusDialogOpen, setStatusDialogOpen] = useState(false)
   const [statusTargetIds, setStatusTargetIds] = useState<string[]>([])
@@ -143,7 +162,6 @@ export default function StudentsListPage() {
   const classId = searchParams.get("classId") ?? "all"
   const batchId = searchParams.get("batchId") ?? "all"
   const status = searchParams.get("status") ?? "all"
-  const session = searchParams.get("session") ?? "all"
   const page = Number(searchParams.get("page") ?? "1")
   const limit = Number(searchParams.get("limit") ?? "20")
 
@@ -178,12 +196,45 @@ export default function StudentsListPage() {
   const classesQuery = useQuery({
     queryKey: ["student-classes", tenantId],
     queryFn: async () => {
-      // API implementation intentionally commented for frontend-only flow.
-      // const res = await fetch(`/admin/settings/classes?tenant_id=${tenantId}`, { cache: "no-store" })
-      // if (!res.ok) throw new Error("Failed to load classes")
-      // return await res.json()
-      await new Promise((resolve) => setTimeout(resolve, 120))
-      return CLASSES
+      if (!tenantId || tenantId === "demo-tenant") return CLASSES
+
+      const response = await api.get(`/api/tenants/${tenantId}/classes`, {
+        params: { page: 1, limit: 100 },
+      })
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
+
+      return rawItems
+        .map((item: any, index: number) => ({
+          id: String(item?.id ?? item?.class_id ?? "").trim(),
+          name: String(item?.class_name ?? item?.name ?? "").trim(),
+          color: CLASSES[index % CLASSES.length]?.color ?? "bg-slate-100 text-slate-700",
+        }))
+        .filter((item: any) => item.id.length > 0)
+    },
+    staleTime: 60_000,
+  })
+
+  const batchesQuery = useQuery({
+    queryKey: ["student-batches", tenantId, classId],
+    queryFn: async () => {
+      if (!tenantId || tenantId === "demo-tenant") return getBatchesByClass(classId)
+
+      const params: Record<string, string | number> = { page: 1, limit: 100 }
+      if (classId !== "all") params.class_id = classId
+
+      const response = await api.get(`/api/tenants/${tenantId}/batches`, { params })
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
+
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.id ?? item?.batch_id ?? "").trim(),
+          classId: String(item?.class_id ?? item?.class?.id ?? "").trim(),
+          name: String(item?.batch_name ?? item?.name ?? item?.section ?? "").trim(),
+          capacity: Number(item?.capacity ?? 0),
+        }))
+        .filter((item: any) => item.id.length > 0)
     },
     staleTime: 60_000,
   })
@@ -213,27 +264,74 @@ export default function StudentsListPage() {
   const apiRows: Student[] = (listQuery.data?.data ?? listQuery.data?.items ?? []).map((item: any) => ({
     id: String(item.id ?? item.user_id ?? ""),
     name: String(item.full_name ?? item.student_name ?? item.name ?? ""),
-    rollNumber: String(item.student_id ?? item.roll_number ?? ""),
-    classId: String(item.class_id ?? ""),
-    batchId: String(item.batch_id ?? ""),
+    studentId: String(item.student_id ?? item.roll_number ?? ""),
+    classId: String(item.class_id ?? item.class?.id ?? ""),
+    className: String(item.class?.name ?? item.class_name ?? ""),
+    batchId: String(item.batch_id ?? item.batch?.id ?? ""),
+    batchName: String(item.batch?.name ?? item.batch_name ?? ""),
     session: String(item.session ?? ""),
     status: (item.status ?? "Active") as Student["status"],
     phone: String(item.phone ?? item.student_phone ?? ""),
+    parentPhone: String(item.parent_phone ?? ""),
     email: String(item.email ?? item.student_email ?? ""),
     gender: (item.gender ?? "Male") as Student["gender"],
     dob: String(item.dob ?? ""),
     address: String(item.address ?? ""),
     fatherName: String(item.father_name ?? ""),
     motherName: String(item.mother_name ?? ""),
-    parentPhone: String(item.parent_phone ?? ""),
-    admittedAt: String(item.admitted_at ?? item.created_at ?? ""),
-    photo: item.photo ?? undefined,
+    enrolledOn: String(item.admitted_at ?? item.created_at ?? ""),
+    enrolledBy: String(item.enrolled_by ?? "System"),
+    portalBlocked: Boolean(item.portal_blocked ?? false),
+    loginIdentifier: String(item.phone ?? item.student_phone ?? item.email ?? item.student_email ?? ""),
+    photoUrl: item.photo ?? item.photo_url ?? undefined,
+    admissionFee: {
+      amount: Number(item.payment?.amount ?? 0),
+      method: String(item.payment?.method ?? "-"),
+      transactionId: String(item.payment?.transaction_id ?? "-"),
+      date: String(item.payment?.paid_at ?? item.payment?.created_at ?? ""),
+      verifiedBy: String(item.payment?.verified_by ?? "System"),
+      status: String(item.payment?.payment_status ?? "").toUpperCase() === "COMPLETED" ? "Verified" : "Pending",
+    },
+    statusHistory: [],
+    promotionHistory: [],
+    documents: [],
   }))
 
   const useApiData = !(!tenantId || tenantId === "demo-tenant") && listQuery.data != null
 
+  const fallbackList = useMemo(
+    () =>
+      filterStudents(
+        {
+          search: debouncedSearch,
+          classId,
+          batchId,
+          status,
+          page,
+          limit,
+        },
+        students
+      ),
+    [debouncedSearch, classId, batchId, status, page, limit, students]
+  )
+
+  const classes = classesQuery.data ?? CLASSES
+  const batchOptions = batchesQuery.data ?? getBatchesByClass(classId)
+  const baseRows: Student[] = useApiData ? apiRows : ((listQuery as any).data?.items ?? fallbackList.items)
+  const rows = useMemo(() => {
+    return baseRows.filter((row) => {
+      const classMatch = classId === "all" ? true : row.classId === classId
+      const batchMatch = batchId === "all" ? true : row.batchId === batchId
+      const statusMatch = status === "all" ? true : row.status === status
+      return classMatch && batchMatch && statusMatch
+    })
+  }, [baseRows, classId, batchId, status])
+  const total = useApiData ? rows.length : (listQuery as any).data?.total ?? fallbackList.total
+  const totalPages = useApiData ? 1 : (listQuery as any).data?.totalPages ?? fallbackList.totalPages
+  const currentPage = useApiData ? page : (listQuery as any).data?.page ?? fallbackList.page
+
   const summaryQuery = useQuery({
-    queryKey: ["student-summary", tenantId, quickViewId, students],
+    queryKey: ["student-summary", tenantId, quickViewId, rows, students],
     enabled: !!quickViewId,
     queryFn: async () => {
       // API implementation intentionally commented for frontend-only flow.
@@ -241,7 +339,9 @@ export default function StudentsListPage() {
       // if (!res.ok) throw new Error("Failed to load student summary")
       // return await res.json()
       await new Promise((resolve) => setTimeout(resolve, 140))
-      const student = getStudentById(String(quickViewId), students)
+      const student =
+        rows.find((item) => item.id === String(quickViewId)) ??
+        getStudentById(String(quickViewId), students)
       if (!student) return null
       const attendance = createAttendanceForMonth(new Date().toISOString().slice(0, 7))
       return {
@@ -252,33 +352,9 @@ export default function StudentsListPage() {
     },
   })
 
-  const fallbackList = useMemo(
-    () =>
-      filterStudents(
-        {
-          search: debouncedSearch,
-          classId,
-          batchId,
-          status,
-          session,
-          page,
-          limit,
-        },
-        students
-      ),
-    [debouncedSearch, classId, batchId, status, session, page, limit, students]
-  )
-
-  const classes = classesQuery.data ?? CLASSES
-  const batchOptions = getBatchesByClass(classId)
-  const rows = useApiData ? apiRows : (listQuery as any).data?.items ?? fallbackList.items
-  const total = useApiData ? (listQuery.data?.total ?? listQuery.data?.meta?.total ?? apiRows.length) : (listQuery as any).data?.total ?? fallbackList.total
-  const totalPages = useApiData ? (listQuery.data?.totalPages ?? listQuery.data?.meta?.totalPages ?? Math.max(1, Math.ceil(total / limit))) : (listQuery as any).data?.totalPages ?? fallbackList.totalPages
-  const currentPage = useApiData ? page : (listQuery as any).data?.page ?? fallbackList.page
-
   useEffect(() => {
     setSelectedIds((prev) => {
-      const next = prev.filter((id) => rows.some((row) => row.id === id) || students.some((s) => s.id === id))
+      const next = prev.filter((id) => rows.some((row: Student) => row.id === id) || students.some((s: Student) => s.id === id))
       if (next.length === prev.length && next.every((id, index) => id === prev[index])) {
         return prev
       }
@@ -289,14 +365,32 @@ export default function StudentsListPage() {
   const allCheckedOnPage = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id))
 
   const selectedStudents = useMemo(() => {
-    const map = new Map(students.map((item) => [item.id, item]))
+    const map = new Map([...students, ...rows].map((item) => [item.id, item]))
     return selectedIds.map((id) => map.get(id)).filter(Boolean) as Student[]
-  }, [selectedIds, students])
+  }, [selectedIds, students, rows])
 
   const resetFilters = () => {
     setSearchInput("")
     setSelectedIds([])
     router.replace(pathname)
+  }
+
+  const toggleColumn = (key: ColumnKey) => {
+    setVisibleColumns((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const columnClassName = (key: ColumnKey) => {
+    const hiddenByUser = !visibleColumns[key]
+    const responsiveDefaults: Record<ColumnKey, string> = {
+      studentId: "hidden xl:table-cell",
+      classBatch: "hidden sm:table-cell",
+      phone: "hidden lg:table-cell",
+      parentPhone: "hidden xl:table-cell",
+      enrolledOn: "hidden md:table-cell",
+      status: "",
+    }
+
+    return cn(responsiveDefaults[key], hiddenByUser && "!hidden")
   }
 
   const downloadFile = (format: "xlsx" | "pdf") => {
@@ -312,7 +406,7 @@ export default function StudentsListPage() {
         ? [
             "Student Name,Student ID,Class,Batch,Phone,Status",
             ...(listQuery.data?.all ?? []).map(
-              (item) => `${item.name},${item.studentId},${item.className},${item.batchName},${item.phone},${item.status}`
+              (item: Student) => `${item.name},${item.studentId},${item.className},${item.batchName},${item.phone},${item.status}`
             ),
           ].join("\n")
         : `Student Report\nTotal: ${total}\nGenerated at: ${new Date().toLocaleString()}`
@@ -388,7 +482,7 @@ export default function StudentsListPage() {
     setPromoteDialogOpen(true)
   }
 
-  const promoteTargetBatches = getBatchesByClass(promotionForm.toClassId)
+  const promoteTargetBatches = (batchesQuery.data ?? BATCHES).filter((item) => item.classId === promotionForm.toClassId)
 
   const applyPromotion = () => {
     if (!promotionForm.toClassId || !promotionForm.toBatchId) {
@@ -546,16 +640,9 @@ export default function StudentsListPage() {
               ))}
             </Select>
 
-            <Select
-              value={session}
-              onValueChange={(value) => updateQuery({ session: value, page: 1 })}
-              className="w-[170px]"
-            >
-              <option value="all">All Sessions</option>
-              {SESSIONS.map((item) => (
-                <option key={item} value={item}>{item}</option>
-              ))}
-            </Select>
+            <Button variant="outline" onClick={() => setColumnDialogOpen(true)}>
+              Columns
+            </Button>
 
             <Button variant="ghost" onClick={resetFilters}>
               <X className="mr-1 size-4" /> Reset filters
@@ -594,12 +681,12 @@ export default function StudentsListPage() {
                     />
                   </TableHead>
                   <TableHead>Student</TableHead>
-                  <TableHead>Student ID</TableHead>
-                  <TableHead>Class / Batch</TableHead>
-                  <TableHead>Phone</TableHead>
-                  <TableHead>Parent Phone</TableHead>
-                  <TableHead>Enrolled On</TableHead>
-                  <TableHead>Status</TableHead>
+                  <TableHead className={columnClassName("studentId")}>Student ID</TableHead>
+                  <TableHead className={columnClassName("classBatch")}>Class / Batch</TableHead>
+                  <TableHead className={columnClassName("phone")}>Phone</TableHead>
+                  <TableHead className={columnClassName("parentPhone")}>Parent Phone</TableHead>
+                  <TableHead className={columnClassName("enrolledOn")}>Enrolled On</TableHead>
+                  <TableHead className={columnClassName("status")}>Status</TableHead>
                   <TableHead className="w-[60px]">Actions</TableHead>
                 </TableRow>
               </TableHeader>
@@ -657,12 +744,12 @@ export default function StudentsListPage() {
                             <span className="font-medium">{row.name}</span>
                           </div>
                         </TableCell>
-                        <TableCell>{row.studentId}</TableCell>
-                        <TableCell>{row.className} / {row.batchName}</TableCell>
-                        <TableCell>{row.phone}</TableCell>
-                        <TableCell>{row.parentPhone}</TableCell>
-                        <TableCell>{formatDate(row.enrolledOn)}</TableCell>
-                        <TableCell>
+                        <TableCell className={columnClassName("studentId")}>{row.studentId}</TableCell>
+                        <TableCell className={columnClassName("classBatch")}>{row.className} / {row.batchName}</TableCell>
+                        <TableCell className={columnClassName("phone")}>{row.phone}</TableCell>
+                        <TableCell className={columnClassName("parentPhone")}>{row.parentPhone}</TableCell>
+                        <TableCell className={columnClassName("enrolledOn")}>{formatDate(row.enrolledOn)}</TableCell>
+                        <TableCell className={columnClassName("status")}>
                           <Badge variant={getStatusBadgeVariant(row.status)}>{row.status}</Badge>
                         </TableCell>
                         <TableCell onClick={(event) => event.stopPropagation()}>
@@ -871,6 +958,47 @@ export default function StudentsListPage() {
           <DialogFooter>
             <Button variant="outline" onClick={() => setStatusDialogOpen(false)}>Cancel</Button>
             <Button onClick={applyStatusUpdate}>Update Status</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={columnDialogOpen} onOpenChange={setColumnDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Column Controls</DialogTitle>
+            <DialogDescription>Choose which columns stay visible. Smaller screens will still prioritize compact layout.</DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-3">
+            {COLUMN_OPTIONS.map((column) => (
+              <label key={column.key} className="flex items-center justify-between rounded-lg border px-3 py-2 text-sm">
+                <span>{column.label}</span>
+                <input
+                  type="checkbox"
+                  checked={visibleColumns[column.key]}
+                  onChange={() => toggleColumn(column.key)}
+                />
+              </label>
+            ))}
+          </div>
+
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() =>
+                setVisibleColumns({
+                  studentId: true,
+                  classBatch: true,
+                  phone: true,
+                  parentPhone: true,
+                  enrolledOn: true,
+                  status: true,
+                })
+              }
+            >
+              Reset Columns
+            </Button>
+            <Button onClick={() => setColumnDialogOpen(false)}>Done</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

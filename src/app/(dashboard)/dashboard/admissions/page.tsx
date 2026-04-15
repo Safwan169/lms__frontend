@@ -1,10 +1,12 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { Loader2, Search, Inbox } from "lucide-react"
 import toast from "react-hot-toast"
 
+import api from "@/lib/api"
+import { useAuth } from "@/context/AuthContext"
 import { useGetAdmissionsQuery, useUpdateAdmissionMutation } from "@/features/user/userApi"
 
 import { Button } from "@/components/ui/button"
@@ -47,7 +49,7 @@ import {
 } from "@/components/ui/dialog"
 import ManualAdmissionForm from "@/components/admissions/manual-admission-form"
 
-type AdmissionStatus = "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED"
+type AdmissionStatus = "PENDING" | "APPROVED" | "REJECTED" | "EXPIRED" | "ENROLLED"
 
 type ClassOption = {
   id: string
@@ -65,40 +67,8 @@ type AdmissionRow = {
   status: AdmissionStatus
 }
 
-type AdmissionsResponse = {
-  data: AdmissionRow[]
-  total: number
-  page: number
-  totalPages: number
-}
-
-const DUMMY_CLASSES: ClassOption[] = [
-  { id: "6", name: "Class 6" },
-  { id: "7", name: "Class 7" },
-  { id: "8", name: "Class 8" },
-  { id: "9", name: "Class 9" },
-  { id: "10", name: "Class 10" },
-  { id: "11", name: "Class 11" },
-  { id: "12", name: "Class 12" },
-]
-
-const DUMMY_ADMISSIONS: AdmissionRow[] = [
-  { id: "1", student_name: "Ayesha Rahman", phone: "01711111111", class_name: "Class 6", class_id: "6", batch_name: "Batch A", applied_at: "2026-03-20T09:00:00.000Z", status: "PENDING" },
-  { id: "2", student_name: "Tanvir Hasan", phone: "01822222222", class_name: "Class 8", class_id: "8", batch_name: "Batch B", applied_at: "2026-03-19T10:15:00.000Z", status: "APPROVED" },
-  { id: "3", student_name: "Nusrat Jahan", phone: "01933333333", class_name: "Class 10", class_id: "10", batch_name: "Science", applied_at: "2026-03-18T11:20:00.000Z", status: "APPROVED" },
-  { id: "5", student_name: "Maliha Akter", phone: "01755555555", class_name: "Class 11", class_id: "11", batch_name: "Arts", applied_at: "2026-03-17T14:05:00.000Z", status: "PENDING" },
-  { id: "6", student_name: "Rakib Chowdhury", phone: "01866666666", class_name: "Class 7", class_id: "7", batch_name: "Batch A", applied_at: "2026-03-16T09:30:00.000Z", status: "PENDING" },
-  { id: "7", student_name: "Farhana Islam", phone: "01977777777", class_name: "Class 12", class_id: "12", batch_name: "Science", applied_at: "2026-03-15T12:30:00.000Z", status: "APPROVED" },
-  { id: "8", student_name: "Samiul Karim", phone: "01788888888", class_name: "Class 9", class_id: "9", batch_name: "Arts", applied_at: "2026-03-15T16:55:00.000Z", status: "PENDING" },
-  { id: "9", student_name: "Rafiul Alam", phone: "01899999999", class_name: "Class 6", class_id: "6", batch_name: "Batch B", applied_at: "2026-03-14T08:45:00.000Z", status: "APPROVED" },
-  { id: "10", student_name: "Adiba Noor", phone: "01712345000", class_name: "Class 10", class_id: "10", batch_name: "Science", applied_at: "2026-03-14T10:00:00.000Z", status: "PENDING" },
-  { id: "11", student_name: "Ibrahim Khan", phone: "01911223344", class_name: "Class 8", class_id: "8", batch_name: "Batch A", applied_at: "2026-03-13T15:10:00.000Z", status: "EXPIRED" },
-  { id: "12", student_name: "Sadia Ahmed", phone: "01855667788", class_name: "Class 11", class_id: "11", batch_name: "Commerce", applied_at: "2026-03-13T18:00:00.000Z", status: "PENDING" },
-]
-
-const statusOptions = ["All", "PENDING", "APPROVED", "REJECTED", "EXPIRED"] as const
+const statusOptions = ["All", "PENDING", "APPROVED", "REJECTED", "EXPIRED", "ENROLLED"] as const
 const PAGE_SIZE = 10
-const DEMO_MODE = true
 
 function formatDate(dateValue: string) {
   const date = new Date(dateValue)
@@ -113,15 +83,18 @@ function formatDate(dateValue: string) {
 function statusVariant(status: AdmissionStatus) {
   if (status === "PENDING") return "warning"
   if (status === "APPROVED") return "info"
+  if (status === "ENROLLED") return "default"
   if (status === "REJECTED") return "destructive"
   return "muted"
 }
 
 export default function AdminAdmissionsPage() {
+  const { user } = useAuth()
   const queryClient = useQueryClient()
 
   const [status, setStatus] = useState<string>("All")
   const [classId, setClassId] = useState<string>("All")
+  const [batchId, setBatchId] = useState<string>("All")
   const [search, setSearch] = useState<string>("")
   const [page, setPage] = useState<number>(1)
   const [dialogOpen, setDialogOpen] = useState<boolean>(false)
@@ -130,15 +103,53 @@ export default function AdminAdmissionsPage() {
   const [selectedAdmission, setSelectedAdmission] = useState<AdmissionRow | null>(null)
 
   const canAccessPage = true
+  const tenantId =
+    (user as any)?.tenant_id ??
+    (user as any)?.tenantId ??
+    (user as any)?.tenant?.id ??
+    null
 
-  const { data: classesData } = useQuery({
-    queryKey: ["classes-options-dummy"],
+  const { data: classes = [] } = useQuery({
+    queryKey: ["admission-classes-options", tenantId],
     queryFn: async (): Promise<ClassOption[]> => {
-      return DUMMY_CLASSES
+      if (!tenantId) return []
+
+      const response = await api.get(`/api/tenants/${tenantId}/classes`, {
+        params: { page: 1, limit: 100 },
+      })
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.id ?? item?.class_id ?? "").trim(),
+          name: String(item?.class_name ?? item?.name ?? "").trim(),
+        }))
+        .filter((item: ClassOption) => item.id.length > 0)
     },
+    enabled: !!tenantId,
+  })
+  const { data: batches = [] } = useQuery({
+    queryKey: ["admission-batches-options", tenantId, classId],
+    queryFn: async (): Promise<ClassOption[]> => {
+      if (!tenantId) return []
+
+      const params: Record<string, string | number> = { page: 1, limit: 100 }
+      if (classId !== "All") params.class_id = classId
+
+      const response = await api.get(`/api/tenants/${tenantId}/batches`, { params })
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data) ? payload.data : Array.isArray(payload) ? payload : []
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.id ?? item?.batch_id ?? "").trim(),
+          name: String(item?.batch_name ?? item?.name ?? item?.section ?? "").trim(),
+        }))
+        .filter((item: ClassOption) => item.id.length > 0)
+    },
+    enabled: !!tenantId,
   })
 
-  const admissionsQueryKey = ["admin-admissions", { search, classId, page }]
+  const admissionsQueryKey = ["admin-admissions", { search, classId, batchId, status, page }]
 
   const {
     data: admissionsApiData,
@@ -149,16 +160,18 @@ export default function AdminAdmissionsPage() {
     limit: PAGE_SIZE,
     search: search.trim() || undefined,
     class_id: classId !== "All" ? classId : undefined,
+    batch_id: batchId !== "All" ? batchId : undefined,
+    status: status !== "All" ? status : undefined,
   })
 
   const apiRows: AdmissionRow[] = (admissionsApiData?.data ?? []).map((item: any) => ({
     id: String(item.id),
-    student_name: String(item.student_name ?? item.name ?? ""),
-    phone: String(item.student_phone ?? item.phone ?? ""),
+    student_name: String(item.student?.name ?? item.student_name ?? item.name ?? ""),
+    phone: String(item.student?.phone ?? item.student_phone ?? item.phone ?? ""),
     class_name: String(item.class_name ?? item.class?.name ?? ""),
-    class_id: String(item.class_id ?? ""),
+    class_id: String(item.class_id ?? item.class?.id ?? ""),
     batch_name: String(item.batch_name ?? item.batch?.name ?? ""),
-    applied_at: String(item.applied_at ?? item.created_at ?? ""),
+    applied_at: String(item.enrolled_at ?? item.applied_at ?? item.created_at ?? ""),
     status: (item.status ?? "PENDING") as AdmissionStatus,
   }))
 
@@ -215,11 +228,11 @@ export default function AdminAdmissionsPage() {
   const rows = apiRows
   const totalCount = apiTotal
   const totalPages = apiTotalPages
-  const classes = classesData ?? DUMMY_CLASSES
 
   const resetFilters = () => {
     setStatus("All")
     setClassId("All")
+    setBatchId("All")
     setSearch("")
     setPage(1)
   }
@@ -271,12 +284,29 @@ export default function AdminAdmissionsPage() {
             value={classId}
             onValueChange={(value) => {
               setClassId(value)
+              setBatchId("All")
               setPage(1)
             }}
             className="w-[170px]"
           >
             <option value="All">All Classes</option>
             {classes.map((option) => (
+              <option key={option.id} value={option.id}>
+                {option.name}
+              </option>
+            ))}
+          </Select>
+
+          <Select
+            value={batchId}
+            onValueChange={(value) => {
+              setBatchId(value)
+              setPage(1)
+            }}
+            className="w-[170px]"
+          >
+            <option value="All">All Batches</option>
+            {batches.map((option) => (
               <option key={option.id} value={option.id}>
                 {option.name}
               </option>
@@ -291,7 +321,7 @@ export default function AdminAdmissionsPage() {
                 setSearch(event.target.value)
                 setPage(1)
               }}
-              placeholder="Search by student name or phone"
+              placeholder="Search by student name, email, or phone"
               className="pl-8"
             />
           </div>
@@ -307,7 +337,7 @@ export default function AdminAdmissionsPage() {
               <TableHead>Student Name</TableHead>
               <TableHead>Phone</TableHead>
               <TableHead>Class / Batch</TableHead>
-              <TableHead>Applied At</TableHead>
+              <TableHead>Enrolled At</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -454,7 +484,7 @@ export default function AdminAdmissionsPage() {
       </AlertDialog>
 
       <Dialog open={newAdmissionOpen} onOpenChange={setNewAdmissionOpen}>
-        <DialogContent className="max-h-[92vh] max-w-5xl overflow-hidden p-0">
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto p-0">
           <DialogHeader className="border-b px-6 pt-6">
             <DialogTitle>New Admission</DialogTitle>
             <DialogDescription>Create a new admission without leaving this page.</DialogDescription>

@@ -456,19 +456,19 @@ export default function ProfileManagementPage() {
           continue
         }
 
-      const finalUrl = sanitizeAvatarUrl(uploadedUrl)
-      form.setValue("avatar_url", finalUrl, { shouldDirty: true })
-      setCurrentAvatarUrl(finalUrl)
-      updateUser({
-        avatar_url: finalUrl,
-        avatarUrl: finalUrl,
-        profile: {
+        const finalUrl = sanitizeAvatarUrl(uploadedUrl)
+        form.setValue("avatar_url", finalUrl, { shouldDirty: true })
+        setCurrentAvatarUrl(finalUrl)
+        updateUser({
           avatar_url: finalUrl,
-        },
-      })
-      if (avatarPreview) {
-        URL.revokeObjectURL(avatarPreview)
-      }
+          avatarUrl: finalUrl,
+          profile: {
+            avatar_url: finalUrl,
+          },
+        })
+        if (avatarPreview) {
+          URL.revokeObjectURL(avatarPreview)
+        }
         setAvatarPreview(null)
         setAvatarFile(null)
         return finalUrl
@@ -509,9 +509,9 @@ export default function ProfileManagementPage() {
         ...payload,
         ...(payload.avatar_url
           ? {
-              avatar_url: payload.avatar_url,
-              avatarUrl: payload.avatar_url,
-            }
+            avatar_url: payload.avatar_url,
+            avatarUrl: payload.avatar_url,
+          }
           : {}),
         profile: {
           ...payload,
@@ -708,7 +708,6 @@ export default function ProfileManagementPage() {
                       </FormItem>
                     )}
                   />
-
                   <FormField
                     control={form.control}
                     name="school_name"

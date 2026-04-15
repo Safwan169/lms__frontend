@@ -148,7 +148,7 @@ export default function SettingsClassesPage() {
         params: {
           page: 1,
           limit: 100,
-          search: "-",
+          search: " ",
           is_active: true,
         },
       })

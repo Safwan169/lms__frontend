@@ -166,7 +166,7 @@ export default function SettingsSubjectsPage() {
     enabled: !!tenantId,
   })
 
-  const rows = data?.items ?? []
+  const rows: SubjectRow[] = data?.items ?? []
   const total = data?.total ?? 0
   const totalPages = data?.totalPages ?? 1
 
@@ -343,7 +343,7 @@ export default function SettingsSubjectsPage() {
                 </TableCell>
               </TableRow>
             ) : (
-              rows.map((row) => (
+              rows.map((row: SubjectRow) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">{row.name}</TableCell>
                   <TableCell>{row.code}</TableCell>

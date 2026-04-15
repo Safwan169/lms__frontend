@@ -2,13 +2,17 @@
 
 import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
+import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { Loader2 } from "lucide-react"
 import toast from "react-hot-toast"
 import { z } from "zod"
 
+import api from "@/lib/api"
+import { useAuth } from "@/context/AuthContext"
 import { useCreateManualAdmissionMutation } from "@/features/user/userApi"
+import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
@@ -20,45 +24,32 @@ import { Textarea } from "@/components/ui/textarea"
 
 type ClassOption = { id: string; name: string }
 type BatchOption = { id: string; name: string }
-
-const DUMMY_CLASSES: ClassOption[] = [
-  { id: "6", name: "Class 6" },
-  { id: "7", name: "Class 7" },
-  { id: "8", name: "Class 8" },
-  { id: "9", name: "Class 9" },
-  { id: "10", name: "Class 10" },
-  { id: "11", name: "Class 11" },
-  { id: "12", name: "Class 12" },
-]
-
-const DUMMY_BATCHES_BY_CLASS: Record<string, BatchOption[]> = {
-  "6": [{ id: "6-a", name: "Batch A" }, { id: "6-b", name: "Batch B" }],
-  "7": [{ id: "7-a", name: "Batch A" }, { id: "7-b", name: "Batch B" }],
-  "8": [{ id: "8-a", name: "Batch A" }, { id: "8-b", name: "Batch B" }],
-  "9": [{ id: "9-sci", name: "Science" }, { id: "9-com", name: "Commerce" }, { id: "9-art", name: "Arts" }],
-  "10": [{ id: "10-sci", name: "Science" }, { id: "10-com", name: "Commerce" }, { id: "10-art", name: "Arts" }],
-  "11": [{ id: "11-sci", name: "Science" }, { id: "11-com", name: "Commerce" }, { id: "11-art", name: "Arts" }],
-  "12": [{ id: "12-sci", name: "Science" }, { id: "12-com", name: "Commerce" }, { id: "12-art", name: "Arts" }],
-}
+const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split("T")[0] ?? ""
 
 const formSchema = z.object({
   full_name: z.string().trim().min(1, "Full name is required"),
-  dob: z.string().min(1, "Date of birth is required"),
-  gender: z.enum(["Male", "Female", "Other"], { message: "Gender is required" }),
+  dob: z
+    .string()
+    .optional()
+    .refine((value) => !value || value <= yesterdayDate, {
+      message: "Date of birth must be before today",
+    }),
+  gender: z.enum(["Male", "Female", "Other"], { message: "Gender is required" }).optional(),
   phone: z.string().trim().min(1, "Phone is required"),
   email: z.string().trim().email("Enter a valid email").optional().or(z.literal("")),
-  address: z.string().trim().min(1, "Address is required"),
+  address: z.string().optional(),
   class_id: z.string().min(1, "Class is required"),
   batch_id: z.string().min(1, "Batch is required"),
-  father_name: z.string().trim().min(1, "Father name is required"),
-  mother_name: z.string().trim().min(1, "Mother name is required"),
+  father_name: z.string().optional(),
+  mother_name: z.string().optional(),
   parent_phone: z.string().trim().min(1, "Parent phone is required"),
   parent_nid: z.string().optional(),
-  parent_nid_front: z.custom<File>((value) => value instanceof File, { message: "Front NID image is required" }),
-  parent_nid_back: z.custom<File>((value) => value instanceof File, { message: "Back NID image is required" }),
+  parent_nid_front: z.custom<File | undefined>((value) => value == null || value instanceof File),
+  parent_nid_back: z.custom<File | undefined>((value) => value == null || value instanceof File),
   amount: z.coerce.number().positive("Amount is required"),
-  method: z.enum(["CASH", "MFS", "POS", "ONLINE"], { message: "Method is required" }),
-  transaction_id: z.string().trim().min(1, "Transaction / Reference ID is required"),
+  discount: z.coerce.number().min(0, "Discount cannot be negative").default(0),
+  method: z.enum(["CASH", "BKASH", "CARD"], { message: "Method is required" }),
+  transaction_id: z.string().optional(),
 })
 
 type FormValues = z.input<typeof formSchema>
@@ -72,13 +63,16 @@ type ManualAdmissionFormProps = {
 
 export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess }: ManualAdmissionFormProps) {
   const router = useRouter()
+  const { user } = useAuth()
   const [createManualAdmission] = useCreateManualAdmissionMutation()
-  const [classes, setClasses] = useState<ClassOption[]>([])
-  const [batches, setBatches] = useState<BatchOption[]>([])
-  const [isClassesLoading, setIsClassesLoading] = useState(true)
-  const [isBatchesLoading, setIsBatchesLoading] = useState(false)
   const [parentNidFrontPreview, setParentNidFrontPreview] = useState<string | null>(null)
   const [parentNidBackPreview, setParentNidBackPreview] = useState<string | null>(null)
+
+  const tenantId =
+    (user as any)?.tenant_id ??
+    (user as any)?.tenantId ??
+    (user as any)?.tenant?.id ??
+    null
 
   const form = useForm<FormValues, any, SubmitValues>({
     resolver: zodResolver(formSchema),
@@ -99,48 +93,82 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
       parent_nid_front: undefined,
       parent_nid_back: undefined,
       amount: 0,
+      discount: 0,
       method: undefined,
       transaction_id: "",
     },
   })
 
   const selectedClassId = form.watch("class_id")
+  const isDialogMode = mode === "dialog"
+  const { data: classes = [], isLoading: isClassesLoading } = useQuery({
+    queryKey: ["manual-admission-classes", tenantId],
+    queryFn: async (): Promise<ClassOption[]> => {
+      if (!tenantId) return []
+
+      const response = await api.get(`/api/tenants/${tenantId}/classes`, {
+        params: {
+          page: 1,
+          limit: 100,
+        },
+      })
+
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
+
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.id ?? item?.class_id ?? "").trim(),
+          name: String(item?.class_name ?? item?.name ?? `Class ${item?.id ?? ""}`).trim(),
+        }))
+        .filter((item: ClassOption) => item.id.length > 0)
+    },
+    enabled: !!tenantId,
+  })
+  const { data: batches = [], isLoading: isBatchesLoading } = useQuery({
+    queryKey: ["manual-admission-batches", tenantId, selectedClassId],
+    queryFn: async (): Promise<BatchOption[]> => {
+      if (!tenantId || !selectedClassId) return []
+
+      const response = await api.get(`/api/tenants/${tenantId}/batches`, {
+        params: {
+          page: 1,
+          limit: 100,
+          class_id: selectedClassId,
+        },
+      })
+
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
+
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.id ?? item?.batch_id ?? "").trim(),
+          name: String(item?.batch_name ?? item?.name ?? item?.section ?? `Batch ${item?.id ?? ""}`).trim(),
+        }))
+        .filter((item: BatchOption) => item.id.length > 0)
+    },
+    enabled: !!tenantId && !!selectedClassId,
+  })
 
   useEffect(() => {
-    let mounted = true
-    ;(async () => {
-      setIsClassesLoading(true)
-      await new Promise((resolve) => setTimeout(resolve, 150))
-      if (mounted) {
-        setClasses(DUMMY_CLASSES)
-        setIsClassesLoading(false)
-      }
-    })()
-    return () => {
-      mounted = false
-    }
-  }, [])
-
-  useEffect(() => {
-    let mounted = true
-    ;(async () => {
-      if (!selectedClassId) {
-        form.setValue("batch_id", "")
-        setBatches([])
-        return
-      }
-      setIsBatchesLoading(true)
+    if (!selectedClassId) {
       form.setValue("batch_id", "")
-      await new Promise((resolve) => setTimeout(resolve, 150))
-      if (mounted) {
-        setBatches(DUMMY_BATCHES_BY_CLASS[selectedClassId] ?? [])
-        setIsBatchesLoading(false)
-      }
-    })()
-    return () => {
-      mounted = false
+      return
     }
-  }, [selectedClassId, form])
+    const currentBatchId = form.getValues("batch_id")
+    if (currentBatchId && !batches.some((item) => item.id === currentBatchId)) {
+      form.setValue("batch_id", "")
+    }
+  }, [selectedClassId, batches, form])
 
   useEffect(() => {
     return () => {
@@ -153,18 +181,18 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
     const currentPreview = type === "front" ? parentNidFrontPreview : parentNidBackPreview
     const setPreview = type === "front" ? setParentNidFrontPreview : setParentNidBackPreview
     const fieldName = type === "front" ? "parent_nid_front" : "parent_nid_back"
-    const label = type === "front" ? "Front NID image is required" : "Back NID image is required"
 
     if (currentPreview) URL.revokeObjectURL(currentPreview)
 
     if (file) {
       form.setValue(fieldName, file, { shouldValidate: true })
       setPreview(URL.createObjectURL(file))
+      form.clearErrors(fieldName)
       return
     }
 
     setPreview(null)
-    form.setError(fieldName, { message: label })
+    form.setValue(fieldName, undefined, { shouldValidate: true })
   }
 
   const closeForm = () => {
@@ -174,14 +202,18 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
 
   const onSubmit = async (values: SubmitValues) => {
     try {
+      if (!tenantId) {
+        throw new Error("Tenant information missing. Please log in again.")
+      }
+
       await createManualAdmission({
         student_name: values.full_name,
         student_email: values.email || undefined,
         student_phone: values.phone,
         class_id: values.class_id,
         batch_id: values.batch_id,
-        amount: String(values.amount),
-        discount: "0.00",
+        amount: values.amount.toFixed(2),
+        discount: values.discount.toFixed(2),
         payment_method: values.method,
         parent_phone: values.parent_phone,
       }).unwrap()
@@ -198,15 +230,21 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
     <Form {...form}>
       <form
         onSubmit={form.handleSubmit(onSubmit)}
-        className={mode === "page" ? "space-y-5 pb-28 md:pb-32" : "space-y-5"}
+        className={cn("space-y-5", mode === "page" ? "pb-28 md:pb-32" : "")}
       >
-        <div className={mode === "dialog" ? "max-h-[70vh] overflow-y-auto pr-1 pb-4" : ""}>
+        <div
+          className={cn(
+            isDialogMode
+              ? "max-h-[68vh] overflow-y-auto pr-2 [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400"
+              : ""
+          )}
+        >
           <div className="space-y-5">
-            <Card className="adm-card m-0">
-              <CardHeader><CardTitle className="text-base">Student Information</CardTitle></CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
+            <Card className={cn("adm-card m-0", isDialogMode && "border-slate-200 shadow-none")}>
+              <CardHeader className={cn(isDialogMode && "border-b bg-slate-50/70 px-5 py-4")}><CardTitle className="text-base">Student Information</CardTitle></CardHeader>
+              <CardContent className={cn("grid gap-4 md:grid-cols-2", isDialogMode && "px-5 py-5")}>
                 <FormField control={form.control} name="full_name" render={({ field }) => <FormItem><FormLabel>Full Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
-                <FormField control={form.control} name="dob" render={({ field }) => <FormItem><FormLabel>Date of Birth</FormLabel><FormControl><Input type="date" {...field} /></FormControl><FormMessage /></FormItem>} />
+                <FormField control={form.control} name="dob" render={({ field }) => <FormItem><FormLabel>Date of Birth</FormLabel><FormControl><Input type="date" max={yesterdayDate} {...field} /></FormControl><FormMessage /></FormItem>} />
                 <FormField control={form.control} name="gender" render={({ field }) => (
                   <FormItem className="md:col-span-2">
                     <FormLabel>Gender</FormLabel>
@@ -226,16 +264,16 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
               </CardContent>
             </Card>
 
-            <Card className="adm-card m-0">
-              <CardHeader><CardTitle className="text-base">Class & Batch</CardTitle></CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
+            <Card className={cn("adm-card m-0", isDialogMode && "border-slate-200 shadow-none")}>
+              <CardHeader className={cn(isDialogMode && "border-b bg-slate-50/70 px-5 py-4")}><CardTitle className="text-base">Class & Batch</CardTitle></CardHeader>
+              <CardContent className={cn("grid gap-4 md:grid-cols-2", isDialogMode && "px-5 py-5")}>
                 <FormField control={form.control} name="class_id" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Class</FormLabel>
                     <FormControl>
                       {isClassesLoading ? <Skeleton className="h-9 w-full" /> : (
-                        <Select value={field.value} onValueChange={field.onChange}>
-                          <option value="">Select class</option>
+                        <Select value={field.value} onValueChange={field.onChange} disabled={!tenantId || classes.length === 0}>
+                          <option value="">{tenantId ? "Select class" : "Tenant not found"}</option>
                           {classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                         </Select>
                       )}
@@ -248,7 +286,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
                     <FormLabel>Batch</FormLabel>
                     <FormControl>
                       {isBatchesLoading ? <Skeleton className="h-9 w-full" /> : (
-                        <Select value={field.value} onValueChange={field.onChange} disabled={!selectedClassId}>
+                        <Select value={field.value} onValueChange={field.onChange} disabled={!selectedClassId || batches.length === 0}>
                           <option value="">{selectedClassId ? "Select batch" : "Select class first"}</option>
                           {batches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
                         </Select>
@@ -260,15 +298,15 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
               </CardContent>
             </Card>
 
-            <Card className="adm-card m-0">
-              <CardHeader><CardTitle className="text-base">Parent Information & Documents</CardTitle></CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-2">
+            <Card className={cn("adm-card m-0", isDialogMode && "border-slate-200 shadow-none")}>
+              <CardHeader className={cn(isDialogMode && "border-b bg-slate-50/70 px-5 py-4")}><CardTitle className="text-base">Parent Information & Documents</CardTitle></CardHeader>
+              <CardContent className={cn("grid gap-4 md:grid-cols-2", isDialogMode && "px-5 py-5")}>
                 <FormField control={form.control} name="father_name" render={({ field }) => <FormItem><FormLabel>Father Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
                 <FormField control={form.control} name="mother_name" render={({ field }) => <FormItem><FormLabel>Mother Name</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
                 <FormField control={form.control} name="parent_phone" render={({ field }) => <FormItem><FormLabel>Parent Phone</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
                 <FormField control={form.control} name="parent_nid" render={({ field }) => <FormItem><FormLabel>Parent NID</FormLabel><FormControl><Input {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
                 <FormItem>
-                  <FormLabel>Parent NID Front Image</FormLabel>
+                  <FormLabel>Parent NID Front Image (Optional)</FormLabel>
                   <FormControl>
                     <Input type="file" accept="image/*" onChange={(event) => handleParentNidImageChange("front", event.target.files?.[0] ?? null)} />
                   </FormControl>
@@ -276,7 +314,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
                   <FormMessage>{form.formState.errors.parent_nid_front?.message}</FormMessage>
                 </FormItem>
                 <FormItem>
-                  <FormLabel>Parent NID Back Image</FormLabel>
+                  <FormLabel>Parent NID Back Image (Optional)</FormLabel>
                   <FormControl>
                     <Input type="file" accept="image/*" onChange={(event) => handleParentNidImageChange("back", event.target.files?.[0] ?? null)} />
                   </FormControl>
@@ -286,12 +324,21 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
               </CardContent>
             </Card>
 
-            <Card className="adm-card m-0">
-              <CardHeader><CardTitle className="text-base">Payment Details</CardTitle></CardHeader>
-              <CardContent className="grid gap-4 md:grid-cols-3">
+            <Card className={cn("adm-card m-0", isDialogMode && "border-slate-200 shadow-none")}>
+              <CardHeader className={cn(isDialogMode && "border-b bg-slate-50/70 px-5 py-4")}><CardTitle className="text-base">Payment Details</CardTitle></CardHeader>
+              <CardContent className={cn("grid gap-4 md:grid-cols-3", isDialogMode && "px-5 py-5")}>
                 <FormField control={form.control} name="amount" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Amount</FormLabel>
+                    <FormControl>
+                      <Input type="number" name={field.name} ref={field.ref} onBlur={field.onBlur} value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""} onChange={(event) => field.onChange(event.target.value)} />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )} />
+                <FormField control={form.control} name="discount" render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Discount</FormLabel>
                     <FormControl>
                       <Input type="number" name={field.name} ref={field.ref} onBlur={field.onBlur} value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""} onChange={(event) => field.onChange(event.target.value)} />
                     </FormControl>
@@ -305,9 +352,8 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
                       <Select value={field.value} onValueChange={field.onChange}>
                         <option value="">Select method</option>
                         <option value="CASH">CASH</option>
-                        <option value="MFS">MFS</option>
-                        <option value="POS">POS</option>
-                        <option value="ONLINE">ONLINE</option>
+                        <option value="BKASH">BKASH</option>
+                        <option value="CARD">CARD</option>
                       </Select>
                     </FormControl>
                     <FormMessage />
@@ -318,12 +364,12 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
                   name="transaction_id"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Transaction / Reference ID</FormLabel>
+                      <FormLabel>Transaction / Reference ID (Optional)</FormLabel>
                       <FormControl>
-                        <Input {...field} placeholder="Receipt no / bKash trx ID / POS slip no" />
+                        <Input {...field} placeholder="Receipt no / bKash trx ID / card slip no" />
                       </FormControl>
                       <p className="text-xs text-muted-foreground">
-                        Use the payment reference from cash receipt, mobile banking, POS, or online payment.
+                        Use the payment reference from cash receipt, bKash transaction, or card slip.
                       </p>
                       <FormMessage />
                     </FormItem>
@@ -334,10 +380,10 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
           </div>
         </div>
 
-        <div className={mode === "page" ? "fixed bottom-0 left-0 right-0 z-40 border-t bg-white/95 backdrop-blur" : "sticky bottom-0 border-t bg-background pt-4"}>
+        <div className={mode === "page" ? "fixed bottom-0 left-0 right-0 z-40 border-t bg-white/95 backdrop-blur" : "border-t pt-5"}>
           <div className={mode === "page" ? "mx-auto flex max-w-[1200px] flex-col-reverse gap-3 px-4 py-3 sm:flex-row sm:items-center sm:justify-between md:px-8" : "flex flex-col-reverse gap-3 sm:flex-row sm:items-center sm:justify-end"}>
             <Button type="button" variant="ghost" onClick={closeForm} className="w-full sm:w-auto">Cancel</Button>
-            <Button type="submit" disabled={form.formState.isSubmitting} className="w-full sm:w-auto">
+            <Button type="submit" disabled={form.formState.isSubmitting || !tenantId} className="w-full sm:w-auto">
               {form.formState.isSubmitting ? <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Creating...</> : "Create Admission"}
             </Button>
           </div>

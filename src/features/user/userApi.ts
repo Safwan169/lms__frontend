@@ -49,7 +49,6 @@ export type UpdateBatchRequest = {
 };
 
 export type ManualAdmissionRequest = {
-  student_id?: string;
   student_name: string;
   student_email?: string;
   student_phone: string;
@@ -57,7 +56,7 @@ export type ManualAdmissionRequest = {
   batch_id: string;
   amount: string;
   discount?: string;
-  payment_method: "CASH" | "MFS" | "POS" | "ONLINE";
+  payment_method: "CASH" | "BKASH" | "CARD";
   parent_phone?: string;
 };
 
@@ -68,6 +67,7 @@ export type GetAdmissionsParams = {
   student_id?: string;
   class_id?: string;
   batch_id?: string;
+  status?: string;
 };
 
 export type UpdateAdmissionRequest = {
@@ -210,7 +210,7 @@ export const userApi = baseApi.injectEndpoints({
       invalidatesTags: ["User"]
     }),
     getAdmissions: builder.query<any, GetAdmissionsParams>({
-      query: ({ page = 1, limit = 10, search, student_id, class_id, batch_id }) => {
+      query: ({ page = 1, limit = 10, search, student_id, class_id, batch_id, status }) => {
         const params = new URLSearchParams();
         params.set("page", String(page));
         params.set("limit", String(limit));
@@ -218,6 +218,7 @@ export const userApi = baseApi.injectEndpoints({
         if (student_id) params.set("student_id", student_id);
         if (class_id) params.set("class_id", class_id);
         if (batch_id) params.set("batch_id", batch_id);
+        if (status) params.set("status", status);
         return `/api/admissions?${params.toString()}`;
       },
       providesTags: ["User"]

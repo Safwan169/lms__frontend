@@ -358,7 +358,7 @@ export default function TeachersTable() {
       const mappedTeachers = rawItems.map(mapApiTeacher)
       setTeachers(mappedTeachers)
 
-      const filteredItems = mappedTeachers.filter((item) => {
+      const filteredItems = mappedTeachers.filter((item: Teacher) => {
         const depMatch = department === "all" || item.department === department
         const subjMatch = subject === "all" || item.subjects.includes(subject)
         const shiftMatch = shift === "all" || item.shift === shift
@@ -427,12 +427,12 @@ export default function TeachersTable() {
     },
   })
 
-  const rows = listQuery.data?.items ?? []
+  const rows: Teacher[] = listQuery.data?.items ?? []
   const total = listQuery.data?.total ?? 0
   const totalPages = listQuery.data?.totalPages ?? 1
   const safePage = listQuery.data?.page ?? 1
 
-  const allCheckedOnPage = rows.length > 0 && rows.every((row) => selectedIds.includes(row.id))
+  const allCheckedOnPage = rows.length > 0 && rows.every((row: Teacher) => selectedIds.includes(row.id))
 
   const resetFilters = () => {
     setSearchInput("")
@@ -443,7 +443,7 @@ export default function TeachersTable() {
   const exportTeachers = (format: "xlsx" | "pdf", onlySelected = false) => {
     const source =
       onlySelected
-        ? (listQuery.data?.all ?? []).filter((item) => selectedIds.includes(item.id))
+        ? (listQuery.data?.all ?? []).filter((item: Teacher) => selectedIds.includes(item.id))
         : listQuery.data?.all ?? []
 
     // API implementation intentionally commented for frontend-only flow.
@@ -457,7 +457,7 @@ export default function TeachersTable() {
       format === "xlsx"
         ? [
             "Teacher ID,Name,Department,Shift,Phone,Status",
-            ...source.map((item) => `${item.teacherId},${item.fullName},${item.department},${item.shift},${item.phone},${item.status}`),
+            ...source.map((item: Teacher) => `${item.teacherId},${item.fullName},${item.department},${item.shift},${item.phone},${item.status}`),
           ].join("\n")
         : `Teacher report (${onlySelected ? "selected" : "all"})\nTotal: ${source.length}`
 

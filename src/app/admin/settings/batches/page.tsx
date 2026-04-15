@@ -8,6 +8,7 @@ import { Archive, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
 import toast from "react-hot-toast"
 import { z } from "zod"
 
+import api from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { useCreateBatchMutation, useUpdateBatchMutation, useDeleteBatchMutation } from "@/features/user/userApi"
 import { Badge } from "@/components/ui/badge"
@@ -35,8 +36,6 @@ import {
 } from "@/components/ui/table-primitive"
 
 type BatchStatus = "ACTIVE" | "ARCHIVED"
-type BatchShift = "Morning" | "Day" | "Evening"
-
 type ClassOption = {
   id: string
   name: string
@@ -48,9 +47,10 @@ type BatchRow = {
   batch_name: string
   class_id: string
   class_name: string
-  shift: BatchShift
+  section: string
   capacity: number
   enrolled: number
+  fee?: string | null
   status: BatchStatus
   start_date?: string | null
   end_date?: string | null
@@ -59,10 +59,9 @@ type BatchRow = {
 const batchFormSchema = z.object({
   batch_name: z.string().trim().min(1, "Batch name is required"),
   class_id: z.string().trim().min(1, "Class is required"),
-  shift: z.enum(["Morning", "Day", "Evening"], {
-    message: "Shift is required",
-  }),
+  section: z.string().trim().min(1, "Section is required"),
   capacity: z.coerce.number().int().min(1, "Capacity must be at least 1"),
+  fee: z.string().trim().min(1, "Fee is required"),
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   status: z.boolean().default(true),
@@ -71,51 +70,17 @@ const batchFormSchema = z.object({
 type BatchFormValues = z.input<typeof batchFormSchema>
 type BatchSubmitValues = z.output<typeof batchFormSchema>
 
-const DUMMY_CLASSES: ClassOption[] = [
-  { id: "c-6", name: "Class 6", status: "ACTIVE" },
-  { id: "c-7", name: "Class 7", status: "ACTIVE" },
-  { id: "c-8", name: "Class 8", status: "INACTIVE" },
-  { id: "c-9", name: "Class 9", status: "ACTIVE" },
-]
+function toDateInputValue(value?: string | null) {
+  if (!value) return ""
 
-const DUMMY_BATCHES: BatchRow[] = [
-  {
-    id: "b-1",
-    batch_name: "Batch 2025",
-    class_id: "c-6",
-    class_name: "Class 6",
-    shift: "Morning",
-    capacity: 30,
-    enrolled: 18,
-    status: "ACTIVE",
-    start_date: "2026-01-01",
-    end_date: "2026-12-31",
-  },
-  {
-    id: "b-2",
-    batch_name: "Morning Group A",
-    class_id: "c-7",
-    class_name: "Class 7",
-    shift: "Day",
-    capacity: 30,
-    enrolled: 30,
-    status: "ACTIVE",
-    start_date: "2026-01-01",
-    end_date: null,
-  },
-  {
-    id: "b-3",
-    batch_name: "Evening Commerce",
-    class_id: "c-9",
-    class_name: "Class 9",
-    shift: "Evening",
-    capacity: 25,
-    enrolled: 12,
-    status: "ARCHIVED",
-    start_date: "2025-01-01",
-    end_date: "2025-12-31",
-  },
-]
+  const isoDateMatch = value.match(/^\d{4}-\d{2}-\d{2}/)
+  if (isoDateMatch) return isoDateMatch[0]
+
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ""
+
+  return parsed.toISOString().split("T")[0] ?? ""
+}
 
 export default function SettingsBatchesPage() {
   const { user } = useAuth()
@@ -126,8 +91,6 @@ export default function SettingsBatchesPage() {
 
   const [classFilter, setClassFilter] = useState<string>("All")
   const [statusFilter, setStatusFilter] = useState<string>("All")
-
-  const [batchesState, setBatchesState] = useState<BatchRow[]>(DUMMY_BATCHES)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [selectedRow, setSelectedRow] = useState<BatchRow | null>(null)
@@ -143,8 +106,9 @@ export default function SettingsBatchesPage() {
     defaultValues: {
       batch_name: "",
       class_id: "",
-      shift: "Morning",
+      section: "A",
       capacity: 1,
+      fee: "",
       start_date: "",
       end_date: "",
       status: true,
@@ -156,33 +120,34 @@ export default function SettingsBatchesPage() {
     queryFn: async (): Promise<ClassOption[]> => {
       if (!tenantId) return []
 
-      // API implementation intentionally commented for frontend-only flow.
-      // const response = await fetch("/admin/settings/classes", {
-      //   method: "GET",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //     "x-tenant-id": String(tenantId),
-      //   },
-      //   cache: "no-store",
-      // })
-      // if (!response.ok) throw new Error("Failed to load classes")
-      // const data = await response.json()
-      // const raw = Array.isArray(data?.data) ? data.data : []
-      // return raw.map((item: any) => ({
-      //   id: String(item.id),
-      //   name: String(item.class_name ?? item.name ?? `Class ${item.id}`),
-      //   status: String(item.status ?? "ACTIVE").toUpperCase() === "ACTIVE" ? "ACTIVE" : "INACTIVE",
-      // }))
+      const response = await api.get(`/api/tenants/${tenantId}/classes`, {
+        params: {
+          page: 1,
+          limit: 100,
+        },
+      })
 
-      await new Promise((resolve) => setTimeout(resolve, 180))
-      return DUMMY_CLASSES
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
+
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.id ?? item?.class_id ?? "").trim(),
+          name: String(item?.class_name ?? item?.name ?? `Class ${item?.id ?? ""}`).trim(),
+          status: String(item?.status ?? "ACTIVE").toUpperCase() === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+        }))
+        .filter((item: ClassOption) => item.id.length > 0)
     },
     enabled: !!tenantId,
   })
 
   const batchesQueryKey = useMemo(
-    () => ["settings-batches", tenantId, classFilter, statusFilter, batchesState] as const,
-    [tenantId, classFilter, statusFilter, batchesState]
+    () => ["settings-batches", tenantId, classFilter, statusFilter] as const,
+    [tenantId, classFilter, statusFilter]
   )
 
   const { data: rows = [], isLoading: isBatchesLoading } = useQuery({
@@ -190,29 +155,36 @@ export default function SettingsBatchesPage() {
     queryFn: async (): Promise<BatchRow[]> => {
       if (!tenantId) return []
 
-      // API implementation intentionally commented for frontend-only flow.
-      // const params = new URLSearchParams()
-      // if (classFilter !== "All") params.set("class_id", classFilter)
-      // if (statusFilter !== "All") params.set("status", statusFilter.toUpperCase())
-      // const response = await fetch(`/admin/settings/batches?${params.toString()}`, {
-      //   method: "GET",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //     "x-tenant-id": String(tenantId),
-      //   },
-      //   cache: "no-store",
-      // })
-      // if (!response.ok) throw new Error("Failed to load batches")
-      // const data = await response.json()
-      // return Array.isArray(data?.data) ? data.data : []
+      const params: Record<string, string | number> = {
+        page: 1,
+        limit: 100,
+      }
+      if (classFilter !== "All") params.class_id = classFilter
 
-      await new Promise((resolve) => setTimeout(resolve, 260))
+      const response = await api.get(`/api/tenants/${tenantId}/batches`, { params })
+      const payload = response?.data
+      const rawItems = Array.isArray(payload?.data)
+        ? payload.data
+        : Array.isArray(payload)
+          ? payload
+          : []
 
-      return batchesState.filter((item) => {
-        const classMatch = classFilter === "All" ? true : item.class_id === classFilter
-        const statusMatch = statusFilter === "All" ? true : item.status === statusFilter.toUpperCase()
-        return classMatch && statusMatch
-      })
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.id ?? item?.batch_id ?? "").trim(),
+          batch_name: String(item?.batch_name ?? item?.name ?? "Unnamed Batch").trim(),
+          class_id: String(item?.class_id ?? item?.class?.id ?? "").trim(),
+          class_name: String(item?.class_name ?? item?.class?.name ?? "Unknown Class").trim(),
+          section: String(item?.section ?? "-").trim(),
+          capacity: Number(item?.capacity ?? 0),
+          enrolled: Number(item?.enrolled ?? item?.enrolled_count ?? item?.student_count ?? 0),
+          fee: item?.fee != null ? String(item.fee) : null,
+          status: String(item?.status ?? "ACTIVE").toUpperCase() === "ARCHIVED" ? "ARCHIVED" : "ACTIVE",
+          start_date: item?.start_date ? String(item.start_date) : null,
+          end_date: item?.end_date ? String(item.end_date) : null,
+        }))
+        .filter((item: BatchRow) => item.id.length > 0)
+        .filter((item: BatchRow) => (statusFilter === "All" ? true : item.status === statusFilter.toUpperCase()))
     },
     enabled: !!tenantId,
   })
@@ -229,11 +201,12 @@ export default function SettingsBatchesPage() {
       const batchPayload = {
         class_id: values.class_id,
         name: values.batch_name,
-        section: values.shift,
+        section: values.section,
         capacity: values.capacity,
+        fee: values.fee,
         start_date: values.start_date ? new Date(values.start_date).toISOString() : undefined,
         end_date: values.end_date ? new Date(values.end_date).toISOString() : undefined,
-        status: values.status ? "ACTIVE" : "ARCHIVED",
+        status: (values.status ? "ACTIVE" : "ARCHIVED") as "ACTIVE" | "ARCHIVED",
       }
 
       if (isEditMode && selectedRow) {
@@ -247,35 +220,12 @@ export default function SettingsBatchesPage() {
           const maybeError = error as { data?: { message?: string }; message?: string }
           throw new Error(maybeError?.data?.message || maybeError?.message || "Failed to update batch")
         }
-        return {
-          id: selectedRow.id,
-          batch_name: values.batch_name,
-          class_id: values.class_id,
-          shift: values.shift,
-          capacity: values.capacity,
-          start_date: values.start_date || null,
-          end_date: values.end_date || null,
-          status: values.status ? "ACTIVE" : "ARCHIVED",
-          class_name: selectedClass.name,
-          enrolled: selectedRow.enrolled,
-        }
+        return
       }
 
-      // Create mode: Call RTK Query mutation
       try {
-        const result = await createBatchApiCall({ tenantId: tenantId || 1, batch: batchPayload }).unwrap()
-        return {
-          id: result?.id || `batch-${Date.now()}`,
-          batch_name: values.batch_name,
-          class_id: values.class_id,
-          shift: values.shift,
-          capacity: values.capacity,
-          start_date: values.start_date || null,
-          end_date: values.end_date || null,
-          status: values.status ? "ACTIVE" : "ARCHIVED",
-          class_name: selectedClass.name,
-          enrolled: 0,
-        }
+        await createBatchApiCall({ tenantId: tenantId || 1, batch: batchPayload }).unwrap()
+        return
       } catch (error: unknown) {
         const maybeError = error as { data?: { message?: string }; message?: string }
         throw new Error(
@@ -285,27 +235,7 @@ export default function SettingsBatchesPage() {
         )
       }
     },
-    onSuccess: (saved) => {
-      const mapped: BatchRow = {
-        id: String(saved.id),
-        batch_name: saved.batch_name,
-        class_id: saved.class_id,
-        class_name: saved.class_name,
-        shift: saved.shift,
-        capacity: saved.capacity,
-        enrolled: saved.enrolled,
-        status: saved.status === "ACTIVE" ? "ACTIVE" : "ARCHIVED",
-        start_date: saved.start_date,
-        end_date: saved.end_date,
-      }
-
-      setBatchesState((prev) => {
-        if (isEditMode && selectedRow) {
-          return prev.map((item) => (item.id === selectedRow.id ? mapped : item))
-        }
-        return [mapped, ...prev]
-      })
-
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings-batches", tenantId] })
       toast.success(isEditMode ? "Batch updated" : "Batch created")
       setDialogOpen(false)
@@ -314,8 +244,9 @@ export default function SettingsBatchesPage() {
       form.reset({
         batch_name: "",
         class_id: "",
-        shift: "Morning",
+        section: "A",
         capacity: 1,
+        fee: "",
         start_date: "",
         end_date: "",
         status: true,
@@ -337,8 +268,7 @@ export default function SettingsBatchesPage() {
       }
       return row.id
     },
-    onSuccess: (id) => {
-      setBatchesState((prev) => prev.filter((item) => item.id !== id))
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings-batches", tenantId] })
       toast.success("Batch deleted")
     },
@@ -348,28 +278,9 @@ export default function SettingsBatchesPage() {
   })
 
   const archiveMutation = useMutation({
-    mutationFn: async (row: BatchRow) => {
+    mutationFn: async (_row: BatchRow) => {
       if (!tenantId) throw new Error("Tenant information missing")
-      const nextStatus: BatchStatus = row.status === "ARCHIVED" ? "ACTIVE" : "ARCHIVED"
-
-      // API implementation intentionally commented for frontend-only flow.
-      // const response = await fetch(`/admin/settings/batches/${row.id}/archive`, {
-      //   method: "PUT",
-      //   headers: {
-      //     "Content-Type": "application/json",
-      //     "x-tenant-id": String(tenantId),
-      //   },
-      //   body: JSON.stringify({ tenant_id: tenantId, archived: nextStatus === "ARCHIVED" }),
-      // })
-      // if (!response.ok) throw new Error("Failed to update archive status")
-
-      await new Promise((resolve) => setTimeout(resolve, 200))
-      return { id: row.id, status: nextStatus }
-    },
-    onSuccess: ({ id, status }) => {
-      setBatchesState((prev) => prev.map((item) => (item.id === id ? { ...item, status } : item)))
-      queryClient.invalidateQueries({ queryKey: ["settings-batches", tenantId] })
-      toast.success(status === "ARCHIVED" ? "Batch archived" : "Batch restored")
+      throw new Error("Archive action is not connected to a backend endpoint yet")
     },
     onError: (error: any) => {
       toast.error(error?.message || "Failed to update batch")
@@ -382,8 +293,9 @@ export default function SettingsBatchesPage() {
     form.reset({
       batch_name: "",
       class_id: "",
-      shift: "Morning",
+      section: "A",
       capacity: 1,
+      fee: "",
       start_date: "",
       end_date: "",
       status: true,
@@ -397,10 +309,11 @@ export default function SettingsBatchesPage() {
     form.reset({
       batch_name: row.batch_name,
       class_id: row.class_id,
-      shift: row.shift,
+      section: row.section,
       capacity: row.capacity,
-      start_date: row.start_date || "",
-      end_date: row.end_date || "",
+      fee: row.fee ?? "",
+      start_date: toDateInputValue(row.start_date),
+      end_date: toDateInputValue(row.end_date),
       status: row.status === "ACTIVE",
     })
     setDialogOpen(true)
@@ -447,8 +360,9 @@ export default function SettingsBatchesPage() {
             <TableRow>
               <TableHead>Batch Name</TableHead>
               <TableHead>Class</TableHead>
-              <TableHead>Shift</TableHead>
+              <TableHead>Section</TableHead>
               <TableHead>Capacity</TableHead>
+              <TableHead>Fee</TableHead>
               <TableHead>Enrolled</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
@@ -463,13 +377,14 @@ export default function SettingsBatchesPage() {
                   <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-20" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="ml-auto h-8 w-20" /></TableCell>
                 </TableRow>
               ))
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
                   No batches found.
                 </TableCell>
               </TableRow>
@@ -480,8 +395,9 @@ export default function SettingsBatchesPage() {
                   <TableRow key={row.id} className={row.status === "ARCHIVED" ? "opacity-50" : ""}>
                     <TableCell className="font-medium">{row.batch_name}</TableCell>
                     <TableCell>{row.class_name}</TableCell>
-                    <TableCell>{row.shift}</TableCell>
+                    <TableCell>{row.section}</TableCell>
                     <TableCell className={isFull ? "text-red-600 font-medium" : ""}>{row.capacity}</TableCell>
+                    <TableCell>{row.fee ?? "-"}</TableCell>
                     <TableCell>
                       <div className="flex items-center gap-2">
                         <span className={isFull ? "text-red-600 font-medium" : ""}>{`${row.enrolled} / ${row.capacity}`}</span>
@@ -502,7 +418,7 @@ export default function SettingsBatchesPage() {
                           variant="ghost"
                           size="icon"
                           onClick={() => archiveMutation.mutate(row)}
-                          disabled={archiveMutation.isPending}
+                          disabled
                         >
                           <Archive className="h-4 w-4" />
                         </Button>
@@ -572,16 +488,12 @@ export default function SettingsBatchesPage() {
 
               <FormField
                 control={form.control}
-                name="shift"
+                name="section"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Shift</FormLabel>
+                    <FormLabel>Section</FormLabel>
                     <FormControl>
-                      <Select value={field.value} onValueChange={field.onChange}>
-                        <option value="Morning">Morning</option>
-                        <option value="Day">Day</option>
-                        <option value="Evening">Evening</option>
-                      </Select>
+                      <Input placeholder="A" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -604,6 +516,20 @@ export default function SettingsBatchesPage() {
                         value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""}
                         onChange={(event) => field.onChange(event.target.value)}
                       />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="fee"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Fee</FormLabel>
+                    <FormControl>
+                      <Input placeholder="2500.00" {...field} value={field.value ?? ""} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

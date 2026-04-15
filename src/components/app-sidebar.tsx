@@ -128,10 +128,10 @@ const navData: NavItem[] = [
     roles: ["teacher"],
   },
   {
-    title: "TimeTable",
+    title: "Timetable",
     url: "/dashboard/timetable",
     icon: CalendarDays,
-    roles: ["teacher", "student"],
+    roles: ["admin", "rektor", "superadmin", "teacher", "student"],
   },
   {
     title: "Self Attendance",
