@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import {
   AlertCircle,
@@ -346,7 +346,6 @@ function validateEntryDraft(draft: EntryDraft) {
   if (draft.startTime && draft.endTime && parseTimeToMinutes(draft.endTime) <= parseTimeToMinutes(draft.startTime)) {
     errors.endTime = "End time must be after start time"
   }
-  if (!draft.subjectId) errors.subjectId = "Subject is required"
   if (!draft.teacherId) errors.teacherId = "Teacher is required"
   if ((draft.deliveryMode === "ON_SITE" || draft.deliveryMode === "HYBRID") && !draft.roomId) {
     errors.roomId = "Room is required for this mode"
@@ -459,6 +458,144 @@ function mapScheduleTeacherOption(item: any): TeacherOption | null {
   ).trim()
   if (!id) return null
   return { id, name: name || id }
+}
+
+function normalizeRoutineStatus(value: any): RoutineStatus {
+  return String(value ?? "").toUpperCase() === "PUBLISHED" ? "PUBLISHED" : "DRAFT"
+}
+
+function normalizeEntryStatus(value: any, fallbackStatus: RoutineStatus = "DRAFT", isOverride = false): EntryStatus {
+  const normalized = String(value ?? "").toUpperCase()
+  if (normalized === "CANCELLED") return "CANCELLED"
+  if (normalized === "OVERRIDE" || isOverride) return "OVERRIDE"
+  if (normalized === "PUBLISHED") return "PUBLISHED"
+  return fallbackStatus === "PUBLISHED" ? "PUBLISHED" : "DRAFT"
+}
+
+function normalizeDeliveryMode(value: any): DeliveryMode {
+  const normalized = String(value ?? "").toUpperCase()
+  if (normalized === "LIVE_ONLINE") return "LIVE_ONLINE"
+  if (normalized === "RECORDED_SUPPORT") return "RECORDED_SUPPORT"
+  if (normalized === "HYBRID") return "HYBRID"
+  return "ON_SITE"
+}
+
+function normalizeDayOfWeekValue(value: any): DayOfWeek {
+  const normalized = String(value ?? "").toUpperCase()
+  if (FULL_WEEK_DAYS.includes(normalized as DayOfWeek)) return normalized as DayOfWeek
+  return "SATURDAY"
+}
+
+function extractResponseData(response: any) {
+  return response?.data?.data ?? response?.data ?? response
+}
+
+function mapRoutineEntry(item: any, routineStatus: RoutineStatus = "DRAFT"): ScheduleEntry | null {
+  const id = String(item?.id ?? item?.entry_id ?? "").trim()
+  const subjectId = String(item?.subject_id ?? item?.subject?.id ?? item?.subject_code ?? "").trim()
+  const teacherId = String(item?.teacher_id ?? item?.teacher?.id ?? item?.teacher?.user_id ?? "").trim()
+  const roomId = String(item?.room_id ?? item?.room?.id ?? "").trim()
+  const overrideDate = String(item?.override_date ?? item?.overrideDate ?? "").trim()
+  const isOverride = Boolean(item?.is_override ?? item?.isOverride ?? overrideDate)
+  if (!id) return null
+
+  return {
+    id,
+    batchId: String(item?.batch_id ?? item?.batch?.id ?? "").trim(),
+    dayOfWeek: normalizeDayOfWeekValue(item?.day_of_week ?? item?.dayOfWeek),
+    startTime: String(item?.start_time ?? item?.startTime ?? "").trim(),
+    endTime: String(item?.end_time ?? item?.endTime ?? "").trim(),
+    subjectId,
+    subjectName: String(item?.subject_name ?? item?.subject?.name ?? subjectId ?? "Class Session").trim() || "Class Session",
+    teacherId,
+    teacherName: String(item?.teacher_name ?? item?.teacher?.name ?? teacherId ?? "").trim(),
+    deliveryMode: normalizeDeliveryMode(item?.delivery_mode ?? item?.deliveryMode),
+    roomId: roomId || undefined,
+    roomName: String(item?.room_name ?? item?.room?.name ?? "").trim() || undefined,
+    liveSessionRef: String(item?.live_session_ref ?? item?.liveSessionRef ?? "").trim() || undefined,
+    notes: String(item?.notes ?? "").trim() || undefined,
+    status: normalizeEntryStatus(item?.status, routineStatus, isOverride),
+    isOverride,
+    overrideDate: overrideDate || undefined,
+    reason: String(item?.reason ?? "").trim() || undefined,
+  }
+}
+
+function mapRoutineRecord(item: any, batches: BatchOption[]): RoutineRecord | null {
+  const id = String(item?.id ?? item?.routine_id ?? "").trim()
+  const batchId = String(item?.batch_id ?? item?.batch?.id ?? "").trim()
+  if (!id || !batchId) return null
+
+  const routineStatus = normalizeRoutineStatus(item?.status)
+  const batch = batches.find((option) => option.id === batchId)
+  const entryCandidates =
+    item?.entries ??
+    item?.schedule_entries ??
+    item?.routine_entries ??
+    []
+
+  const entries = getRawItems(entryCandidates)
+    .map((entry: any) => mapRoutineEntry({ ...entry, batch_id: entry?.batch_id ?? batchId }, routineStatus))
+    .filter((entry: any): entry is ScheduleEntry => Boolean(entry))
+
+  return {
+    id,
+    batchId,
+    batchName: String(item?.batch_name ?? item?.batch?.name ?? batch?.name ?? batchId),
+    status: routineStatus,
+    entries,
+  }
+}
+
+function groupTeacherScheduleRecords(items: any[], batches: BatchOption[]): RoutineRecord[] {
+  const grouped = new Map<string, RoutineRecord>()
+
+  items.forEach((item) => {
+    const batchId = String(item?.batch_id ?? item?.batch?.id ?? "").trim()
+    if (!batchId) return
+
+    const routineId = String(item?.routine_id ?? item?.routine?.id ?? `teacher-routine-${batchId}`).trim()
+    const routineStatus = normalizeRoutineStatus(item?.routine_status ?? item?.routine?.status ?? item?.status)
+    const batch = batches.find((option) => option.id === batchId)
+    const nextEntry = mapRoutineEntry(item, routineStatus)
+    if (!nextEntry) return
+
+    if (!grouped.has(batchId)) {
+      grouped.set(batchId, {
+        id: routineId,
+        batchId,
+        batchName: String(item?.batch_name ?? item?.batch?.name ?? batch?.name ?? batchId),
+        status: routineStatus,
+        entries: [],
+      })
+    }
+
+    grouped.get(batchId)?.entries.push(nextEntry)
+  })
+
+  return Array.from(grouped.values())
+}
+
+async function fetchRoutineForBatch(batchId: string, batches: BatchOption[]) {
+  const response = await api.get(`/api/batches/${batchId}/routine`)
+  const payload = extractResponseData(response)
+  return mapRoutineRecord(payload, batches)
+}
+
+async function fetchTeacherSchedule(teacherId: string, batches: BatchOption[]) {
+  const response = await api.get(`/api/teachers/${teacherId}/schedule`)
+  const payload = extractResponseData(response)
+  const items =
+    getRawItems(payload?.entries ?? payload?.schedule ?? payload?.items ?? payload)
+  return groupTeacherScheduleRecords(items, batches)
+}
+
+function getRoutineDateWindow() {
+  const now = new Date()
+  return {
+    effective_from: toDateInput(now),
+    effective_to: `${now.getFullYear()}-12-31`,
+  }
 }
 
 async function detectConflicts(
@@ -690,6 +827,14 @@ export default function ScheduleWorkspace({
   const isAdmin = ["admin", "superadmin", "rektor"].includes(normalizedRole)
   const isRestrictedViewer = ["teacher", "student"].includes(normalizedRole)
   const showListView = isAdmin && !minimalView
+  const teacherScopeId = String(
+    (user as any)?.teacher_id ??
+      (user as any)?.teacherId ??
+      (user as any)?.teacher?.id ??
+      (user as any)?.user_id ??
+      (user as any)?.id ??
+      ""
+  ).trim()
   const userBatchId = String(
     (user as any)?.batch_id ??
       (user as any)?.batchId ??
@@ -823,7 +968,6 @@ export default function ScheduleWorkspace({
 
   useEffect(() => {
     if (!bootstrapQuery.data) return
-    setRoutines(bootstrapQuery.data.routines)
     setNotifications(bootstrapQuery.data.notifications)
   }, [bootstrapQuery.data])
 
@@ -904,6 +1048,43 @@ export default function ScheduleWorkspace({
   const debouncedDraft = useDebounce(entryDraft, 250)
   const conflictRequestRef = useRef(0)
 
+  const reloadRoutines = useCallback(async () => {
+    if (!tenantId || tenantId === "demo-tenant") {
+      setRoutines(bootstrapQuery.data?.routines ?? FALLBACK_DATA.routines)
+      return
+    }
+
+    if (normalizedRole === "teacher" && teacherScopeId) {
+      try {
+        const teacherRoutines = await fetchTeacherSchedule(teacherScopeId, batches)
+        setRoutines(teacherRoutines)
+        return
+      } catch {
+        setRoutines([])
+        return
+      }
+    }
+
+    if (availableBatches.length === 0) {
+      setRoutines([])
+      return
+    }
+
+    const results = await Promise.allSettled(
+      availableBatches.map((batch: BatchOption) => fetchRoutineForBatch(batch.id, batches))
+    )
+
+    const nextRoutines = results
+      .map((result) => (result.status === "fulfilled" ? result.value : null))
+      .filter((routine): routine is RoutineRecord => Boolean(routine))
+
+    setRoutines(nextRoutines)
+  }, [tenantId, bootstrapQuery.data?.routines, normalizedRole, teacherScopeId, availableBatches, batches])
+
+  useEffect(() => {
+    void reloadRoutines()
+  }, [reloadRoutines])
+
   useEffect(() => {
     const validationErrors = validateEntryDraft(debouncedDraft)
     setEntryErrors(validationErrors)
@@ -925,55 +1106,40 @@ export default function ScheduleWorkspace({
 
   const saveEntryMutation = useMutation({
     mutationFn: async (payload: EntryDraft) => {
-      await new Promise((resolve) => setTimeout(resolve, 220))
-      return payload
-    },
-    onSuccess: (payload) => {
-      const subject = subjects.find((item: any) => item.id === payload.subjectId)
-      const teacher = teachers.find((item: any) => item.id === payload.teacherId)
-      const room = rooms.find((item: any) => item.id === payload.roomId)
-      const nextEntry: ScheduleEntry = {
-        id: editingEntryId ?? `entry-${Date.now()}`,
-        batchId: payload.batchId,
-        dayOfWeek: payload.dayOfWeek,
-        startTime: payload.startTime,
-        endTime: payload.endTime,
-        subjectId: payload.subjectId,
-        subjectName: subject?.name ?? payload.subjectId,
-        teacherId: payload.teacherId,
-        teacherName: teacher?.name ?? payload.teacherId,
-        deliveryMode: payload.deliveryMode,
-        roomId: payload.roomId || undefined,
-        roomName: room?.name,
-        liveSessionRef: payload.liveSessionRef || undefined,
-        notes: payload.notes || undefined,
-        status: currentRoutine?.status === "PUBLISHED" ? "PUBLISHED" : "DRAFT",
+      const entryPayload = {
+        day_of_week: payload.dayOfWeek,
+        start_time: payload.startTime,
+        end_time: payload.endTime,
+        ...(payload.subjectId ? { subject_id: payload.subjectId } : {}),
+        teacher_id: payload.teacherId,
+        delivery_mode: payload.deliveryMode,
+        ...(payload.roomId ? { room_id: payload.roomId } : {}),
+        ...(payload.liveSessionRef ? { live_session_ref: payload.liveSessionRef } : {}),
+        ...(payload.notes ? { notes: payload.notes } : {}),
       }
 
-      setRoutines((prev) => {
-        const existingRoutine = prev.find((routine) => routine.batchId === payload.batchId)
-        if (!existingRoutine) {
-          const batch = batches.find((item: any) => item.id === payload.batchId)
-          return [
-            ...prev,
-            {
-              id: `routine-${Date.now()}`,
-              batchId: payload.batchId,
-              batchName: batch?.name ?? "Selected Batch",
-              status: "DRAFT",
-              entries: [nextEntry],
-            },
-          ]
-        }
-        return prev.map((routine) => {
-          if (routine.batchId !== payload.batchId) return routine
-          const entries = editingEntryId
-            ? routine.entries.map((entry) => (entry.id === editingEntryId ? nextEntry : entry))
-            : [...routine.entries, nextEntry]
-          return { ...routine, entries }
-        })
-      })
+      if (editingEntryId) {
+        await api.put(`/api/entries/${editingEntryId}`, entryPayload)
+        return payload.batchId
+      }
 
+      let routineId = currentRoutine?.id
+      if (!routineId) {
+        const response = await api.post("/api/routines", {
+          batch_id: payload.batchId,
+          ...getRoutineDateWindow(),
+        })
+        const createdRoutine = mapRoutineRecord(extractResponseData(response), batches)
+        routineId = createdRoutine?.id ?? String(extractResponseData(response)?.id ?? "").trim()
+      }
+
+      if (!routineId) throw new Error("Failed to create routine for this batch")
+
+      await api.post(`/api/routines/${routineId}/entries`, entryPayload)
+      return payload.batchId
+    },
+    onSuccess: async () => {
+      await reloadRoutines()
       toast.success(editingEntryId ? "Schedule entry updated" : "Class added to routine")
       setEntrySheetOpen(false)
       setEditingEntryId(null)
@@ -984,29 +1150,11 @@ export default function ScheduleWorkspace({
   const publishMutation = useMutation({
     mutationFn: async () => {
       if (!currentRoutine) throw new Error("Routine not found")
-      await new Promise((resolve) => setTimeout(resolve, 260))
-      try {
-        await api.post(`/routines/${currentRoutine.id}/publish`)
-      } catch {
-        // Local state still completes the frontend publish flow when the API is unavailable.
-      }
-      return currentRoutine.id
+      await api.post(`/api/routines/${currentRoutine.id}/publish`)
+      return currentRoutine.batchId
     },
-    onSuccess: (routineId) => {
-      setRoutines((prev) =>
-        prev.map((routine) =>
-          routine.id === routineId
-            ? {
-                ...routine,
-                status: "PUBLISHED",
-                entries: routine.entries.map((entry) => ({
-                  ...entry,
-                  status: entry.isOverride ? entry.status : "PUBLISHED",
-                })),
-              }
-            : routine
-        )
-      )
+    onSuccess: async () => {
+      await reloadRoutines()
       toast.success("Routine published successfully")
       setPublishDialogOpen(false)
     },
@@ -1018,66 +1166,49 @@ export default function ScheduleWorkspace({
   const overrideMutation = useMutation({
     mutationFn: async () => {
       if (!overrideTarget) throw new Error("No entry selected")
-      await new Promise((resolve) => setTimeout(resolve, 220))
-      return true
-    },
-    onSuccess: () => {
-      if (!overrideTarget) return
-      const teacher = teachers.find((item: any) => item.id === overrideDraft.newTeacherId)
-      const room = rooms.find((item: any) => item.id === overrideDraft.newRoomId)
-      const effectiveStart = overrideDraft.newStartTime || overrideTarget.startTime
-      const effectiveEnd = overrideDraft.newEndTime || overrideTarget.endTime
-      const effectiveMode = overrideDraft.newMode || overrideTarget.deliveryMode
-      const overrideEntry: ScheduleEntry = {
-        ...overrideTarget,
-        id: `${overrideTarget.id}__override__${overrideDraft.overrideDate}`,
-        startTime: effectiveStart,
-        endTime: effectiveEnd,
-        teacherId: overrideDraft.newTeacherId || overrideTarget.teacherId,
-        teacherName: teacher?.name ?? overrideTarget.teacherName,
-        deliveryMode: effectiveMode,
-        roomId: overrideDraft.newRoomId || overrideTarget.roomId,
-        roomName: room?.name ?? overrideTarget.roomName,
-        liveSessionRef: overrideDraft.newLiveSessionRef || overrideTarget.liveSessionRef,
-        status: overrideDraft.status === "CANCELLED" ? "CANCELLED" : "OVERRIDE",
-        isOverride: true,
-        overrideDate: overrideDraft.overrideDate,
-        reason: overrideDraft.reason || undefined,
+      if (overrideMode === "FUTURE") {
+        await api.put(`/api/entries/${overrideTarget.id}`, {
+          day_of_week: overrideTarget.dayOfWeek,
+          start_time: overrideDraft.newStartTime || overrideTarget.startTime,
+          end_time: overrideDraft.newEndTime || overrideTarget.endTime,
+          subject_id: overrideTarget.subjectId,
+          teacher_id: overrideDraft.newTeacherId || overrideTarget.teacherId,
+          delivery_mode: overrideDraft.newMode || overrideTarget.deliveryMode,
+          room_id: overrideDraft.newRoomId || overrideTarget.roomId,
+          live_session_ref: overrideDraft.newLiveSessionRef || overrideTarget.liveSessionRef,
+          notes: overrideDraft.reason || overrideTarget.notes,
+        })
+        return
       }
 
-      setRoutines((prev) =>
-        prev.map((routine) => {
-          if (routine.batchId !== overrideTarget.batchId) return routine
-          if (overrideMode === "FUTURE") {
-            return {
-              ...routine,
-              entries: routine.entries.map((entry) =>
-                entry.id === overrideTarget.id
-                  ? {
-                      ...entry,
-                      startTime: effectiveStart,
-                      endTime: effectiveEnd,
-                      teacherId: overrideDraft.newTeacherId || entry.teacherId,
-                      teacherName: teacher?.name ?? entry.teacherName,
-                      deliveryMode: effectiveMode,
-                      roomId: overrideDraft.newRoomId || entry.roomId,
-                      roomName: room?.name ?? entry.roomName,
-                      liveSessionRef: overrideDraft.newLiveSessionRef || entry.liveSessionRef,
-                      notes: overrideDraft.reason || entry.notes,
-                    }
-                  : entry
-              ),
-            }
-          }
-          const withoutExistingOverride = routine.entries.filter((entry) => entry.id !== overrideEntry.id)
-          return { ...routine, entries: [...withoutExistingOverride, overrideEntry] }
-        })
-      )
-
+      await api.post(`/api/entries/${overrideTarget.id}/override`, {
+        override_date: overrideDraft.overrideDate,
+        start_time: overrideDraft.newStartTime || overrideTarget.startTime,
+        end_time: overrideDraft.newEndTime || overrideTarget.endTime,
+        teacher_id: overrideDraft.newTeacherId || overrideTarget.teacherId,
+        delivery_mode: overrideDraft.newMode || overrideTarget.deliveryMode,
+        room_id: overrideDraft.newRoomId || overrideTarget.roomId,
+        live_session_ref: overrideDraft.newLiveSessionRef || overrideTarget.liveSessionRef,
+        status: overrideDraft.status,
+        reason: overrideDraft.reason,
+      })
+    },
+    onSuccess: async () => {
+      await reloadRoutines()
       toast.success(overrideMode === "FUTURE" ? "Future routine updated" : "Override saved")
       setOverrideDialogOpen(false)
       setOverrideTarget(null)
       setEntryActionTarget(null)
+    },
+  })
+
+  const deleteEntryMutation = useMutation({
+    mutationFn: async (entryId: string) => {
+      await api.delete(`/api/entries/${entryId}`)
+    },
+    onSuccess: async () => {
+      await reloadRoutines()
+      toast.success("Schedule entry deleted")
     },
   })
 
@@ -1786,8 +1917,12 @@ export default function ScheduleWorkspace({
                             <Button variant="ghost" size="sm" onClick={(event) => { event.stopPropagation(); setEntryActionTarget(row) }}>Override</Button>
                             <Button variant="ghost" size="sm" className="text-red-600" onClick={(event) => {
                               event.stopPropagation()
-                              setRoutines((prev) => prev.map((routine) => ({ ...routine, entries: routine.entries.map((entry) => entry.id === row.id ? { ...entry, status: "CANCELLED" } : entry) })))
-                            }}>Cancel</Button>
+                              if (row.routineStatus === "PUBLISHED") {
+                                setEntryActionTarget(row)
+                                return
+                              }
+                              deleteEntryMutation.mutate(row.id)
+                            }}>{deleteEntryMutation.isPending ? "Deleting..." : row.routineStatus === "PUBLISHED" ? "Override" : "Delete"}</Button>
                           </div>
                         ) : <Button variant="ghost" size="sm">View</Button>}
                       </TableCell>
@@ -1828,12 +1963,11 @@ export default function ScheduleWorkspace({
             <SheetTitle>{editingEntryId ? "Edit Schedule Entry" : "Add Schedule Entry"}</SheetTitle>
             <SheetDescription>{currentRoutine?.status === "PUBLISHED" ? "Future updates should use the override flow." : "Changes are checked for conflicts after every field update."}</SheetDescription>
           </SheetHeader>
-          <div className="space-y-4 px-4 pb-4">
+            <div className="space-y-4 px-4 pb-4">
             {entryConflicts.some((item) => item.severity === "SOFT") ? <Alert className="border-amber-200 bg-amber-50 text-amber-950"><AlertTitle>Soft conflict detected</AlertTitle><AlertDescription className="space-y-2">{entryConflicts.filter((item) => item.severity === "SOFT").map((conflict) => <div key={conflict.id} className="flex items-start gap-2"><AlertCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{conflict.message}</span></div>)}</AlertDescription></Alert> : null}
             {entryConflicts.some((item) => item.severity === "HARD") ? <Alert variant="destructive"><AlertTitle>Hard conflict detected</AlertTitle><AlertDescription className="space-y-2">{entryConflicts.filter((item) => item.severity === "HARD").map((conflict) => <div key={conflict.id} className="flex items-start gap-2"><XCircle className="mt-0.5 h-4 w-4 shrink-0" /><span>{conflict.message}</span></div>)}</AlertDescription></Alert> : null}
             <div className="grid gap-4 md:grid-cols-2">
               <div><FieldLabel label="Day of Week" required /><Select value={entryDraft.dayOfWeek} onValueChange={(value) => setEntryDraft((current) => ({ ...current, dayOfWeek: value as DayOfWeek }))}>{FULL_WEEK_DAYS.map((day) => <option key={day} value={day}>{DAY_LONG_LABELS[day]}</option>)}</Select><FieldError message={entryErrors.dayOfWeek} /></div>
-              <div><FieldLabel label="Subject" required /><SearchableInput listId="subject-options-list" value={entryDraft.subjectId} onChange={(value) => setEntryDraft((current) => ({ ...current, subjectId: value }))} options={subjects} placeholder="Search subject" /><FieldError message={entryErrors.subjectId} /></div>
               <div><FieldLabel label="Start Time" required /><Input type="time" value={entryDraft.startTime} onChange={(event) => setEntryDraft((current) => ({ ...current, startTime: event.target.value }))} /><FieldError message={entryErrors.startTime} /></div>
               <div><FieldLabel label="End Time" required /><Input type="time" value={entryDraft.endTime} onChange={(event) => setEntryDraft((current) => ({ ...current, endTime: event.target.value }))} /><FieldError message={entryErrors.endTime} /></div>
               <div><FieldLabel label="Teacher" required /><SearchableInput listId="teacher-options-list" value={entryDraft.teacherId} onChange={(value) => setEntryDraft((current) => ({ ...current, teacherId: value }))} options={teachers} placeholder="Search teacher" /><FieldError message={entryErrors.teacherId} /></div>

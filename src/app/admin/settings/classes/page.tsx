@@ -66,8 +66,14 @@ type ClassApiItem = {
   status?: "ACTIVE" | "INACTIVE"
   class_subjects?: Array<{
     id?: string
+    subject_id?: string
     name?: string
     code?: string
+    subject?: {
+      id?: string
+      name?: string
+      code?: string
+    }
     is_global?: boolean
     is_active?: boolean
     is_mandatory?: boolean
@@ -85,7 +91,6 @@ const classFormSchema = z.object({
   class_name: z.string().trim().min(1, "Class name is required"),
   code: z.string().trim().min(1, "Class code is required"),
   description: z.string().trim().min(1, "Description is required"),
-  subject: z.string().trim().min(1, "Subject is required"),
   level: z.string().trim().min(1, "Level is required"),
   subject_ids: z.array(z.string().trim().min(1)).min(1, "Select at least one subject"),
   sections: z.array(z.enum(["Science", "Commerce", "Arts", "General"])).min(1, "Select at least one section"),
@@ -97,6 +102,14 @@ type ClassFormValues = z.input<typeof classFormSchema>
 type ClassSubmitValues = z.output<typeof classFormSchema>
 
 const SECTION_OPTIONS: ClassSection[] = ["Science", "Commerce", "Arts", "General"]
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+}
+
+function normalizeSubjectIds(values: string[]) {
+  return values.map((value) => String(value).trim()).filter((value) => isUuid(value))
+}
 
 const DUMMY_CLASSES: ClassRow[] = [
   { id: "c-6", class_name: "Class 6", sections: ["General"], capacity: 120, status: "ACTIVE", subject_ids: [], subject_names: [] },
@@ -128,7 +141,6 @@ export default function SettingsClassesPage() {
       class_name: "",
       code: "",
       description: "",
-      subject: "General",
       level: "Beginner",
       subject_ids: [],
       sections: ["General"],
@@ -167,7 +179,7 @@ export default function SettingsClassesPage() {
         name: String(item?.name ?? "Unnamed Subject"),
         code: String(item?.code ?? "-"),
         is_active: item?.is_active !== false,
-      })).filter((item: SubjectOption) => item.id)
+      })).filter((item: SubjectOption) => isUuid(item.id))
     },
     enabled: !!tenantId,
   })
@@ -197,12 +209,14 @@ export default function SettingsClassesPage() {
           : []
 
         const subjectNames = classSubjects
-          .map((subject) => String(subject?.name ?? "").trim())
+          .map((subject) => String(subject?.subject?.name ?? subject?.name ?? "").trim())
           .filter(Boolean)
 
-        const subjectIds = classSubjects
-          .map((subject) => String(subject?.id ?? "").trim())
-          .filter(Boolean)
+        const subjectIds = normalizeSubjectIds(
+          classSubjects.map((subject) =>
+            String(subject?.subject_id ?? subject?.subject?.id ?? subject?.id ?? "").trim()
+          )
+        )
 
         const normalizedSections = subjectNames.filter((name): name is ClassSection =>
           SECTION_OPTIONS.includes(name as ClassSection)
@@ -230,9 +244,8 @@ export default function SettingsClassesPage() {
         name: values.class_name,
         code: values.code,
         description: values.description,
-        subject: values.subject,
         level: values.level,
-        subject_ids: values.subject_ids,
+        subject_ids: normalizeSubjectIds(values.subject_ids),
       }
 
       if (isEditMode && selectedRow) {
@@ -315,7 +328,6 @@ export default function SettingsClassesPage() {
         class_name: "",
         code: "",
         description: "",
-        subject: "General",
         level: "Beginner",
         subject_ids: [],
         sections: ["General"],
@@ -364,7 +376,6 @@ export default function SettingsClassesPage() {
       class_name: "",
       code: "",
       description: "",
-      subject: "General",
       level: "Beginner",
       subject_ids: [],
       sections: ["General"],
@@ -381,7 +392,6 @@ export default function SettingsClassesPage() {
       class_name: row.class_name,
       code: "",
       description: "",
-      subject: row.sections[0] ?? "General",
       level: "Beginner",
       subject_ids: row.subject_ids,
       sections: row.sections,
@@ -528,20 +538,6 @@ export default function SettingsClassesPage() {
                     <FormLabel>Description</FormLabel>
                     <FormControl>
                       <Input placeholder="Science group for SSC exam preparation." {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="subject"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Subject</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Science" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
