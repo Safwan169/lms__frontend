@@ -23,7 +23,7 @@ const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
     title: "Routine published for Science Morning A",
     message: "The published routine is now visible to teachers and students.",
     time: "2m ago",
-    href: "/dashboard/timetable",
+    href: "/dashboard/my-class",
     unread: true,
   },
   {
@@ -31,7 +31,7 @@ const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
     title: "Class cancelled on 16 Apr for Physics",
     message: "A date-specific override marked the class as cancelled.",
     time: "1h ago",
-    href: "/dashboard/timetable",
+    href: "/dashboard/my-class",
     unread: true,
   },
   {
@@ -39,7 +39,7 @@ const DEFAULT_NOTIFICATIONS: NotificationItem[] = [
     title: "Teacher changed for Accounting on 18 Apr",
     message: "The override updated the assigned teacher for the session.",
     time: "Yesterday",
-    href: "/dashboard/timetable",
+    href: "/dashboard/my-class",
     unread: false,
   },
 ]

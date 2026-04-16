@@ -82,6 +82,8 @@ const COLUMN_OPTIONS = [
 ] as const
 
 type ColumnKey = (typeof COLUMN_OPTIONS)[number]["key"]
+type ClassOption = { id: string; name: string; color?: string }
+type BatchOption = { id: string; classId: string; name: string; capacity?: number }
 
 function useDebouncedValue(value: string, delay = 400) {
   const [debounced, setDebounced] = useState(value)
@@ -315,8 +317,8 @@ export default function StudentsListPage() {
     [debouncedSearch, classId, batchId, status, page, limit, students]
   )
 
-  const classes = classesQuery.data ?? CLASSES
-  const batchOptions = batchesQuery.data ?? getBatchesByClass(classId)
+  const classes: ClassOption[] = (classesQuery.data ?? CLASSES) as ClassOption[]
+  const batchOptions: BatchOption[] = (batchesQuery.data ?? getBatchesByClass(classId)) as BatchOption[]
   const baseRows: Student[] = useApiData ? apiRows : ((listQuery as any).data?.items ?? fallbackList.items)
   const rows = useMemo(() => {
     return baseRows.filter((row) => {
@@ -482,7 +484,9 @@ export default function StudentsListPage() {
     setPromoteDialogOpen(true)
   }
 
-  const promoteTargetBatches = (batchesQuery.data ?? BATCHES).filter((item) => item.classId === promotionForm.toClassId)
+  const promoteTargetBatches: BatchOption[] = ((batchesQuery.data ?? BATCHES) as BatchOption[]).filter(
+    (item) => item.classId === promotionForm.toClassId
+  )
 
   const applyPromotion = () => {
     if (!promotionForm.toClassId || !promotionForm.toBatchId) {

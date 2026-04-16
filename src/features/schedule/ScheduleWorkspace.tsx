@@ -152,6 +152,14 @@ type OverrideDraft = {
 
 type ViewMode = "builder" | "weekly" | "daily" | "list"
 
+type ScheduleWorkspaceProps = {
+  initialViewMode?: ViewMode
+  pageTitle?: string
+  pageDescription?: string
+  hideBuilder?: boolean
+  minimalView?: boolean
+}
+
 const BUILDER_DAYS: DayOfWeek[] = ["SATURDAY", "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"]
 const FULL_WEEK_DAYS: DayOfWeek[] = ["SATURDAY", "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -534,7 +542,7 @@ function applyOverridesForWeek(routine: RoutineRecord | undefined, weekStart: Da
     const date = toDateInput(addDays(weekStart, index))
     const baseEntries = routine.entries.filter((entry) => entry.dayOfWeek === day && !entry.isOverride)
     const overrideEntries = routine.entries.filter((entry) => entry.isOverride && entry.overrideDate === date)
-    return baseEntries.flatMap((entry) => {
+    return baseEntries.flatMap((entry:any) => {
       const override = overrideEntries.find((item) => item.id.startsWith(`${entry.id}__override`))
       if (!override) return [{ ...entry, status: routine.status === "PUBLISHED" ? "PUBLISHED" : entry.status }]
       if (override.status === "CANCELLED") {
@@ -658,7 +666,13 @@ function ScheduleCard({ entry, onClick }: { entry: ScheduleEntry; onClick?: () =
   )
 }
 
-export default function ScheduleWorkspace() {
+export default function ScheduleWorkspace({
+  initialViewMode,
+  pageTitle = "Class Scheduling System",
+  pageDescription = "Build, review, publish, and monitor weekly routines for admins, teachers, and students from one workspace.",
+  hideBuilder = false,
+  minimalView = false,
+}: ScheduleWorkspaceProps = {}) {
   const { user } = useAuth()
   const isMobile = useIsMobile()
   const tenantId =
@@ -674,7 +688,35 @@ export default function ScheduleWorkspace() {
   ).toLowerCase()
 
   const isAdmin = ["admin", "superadmin", "rektor"].includes(normalizedRole)
-  const [viewMode, setViewMode] = useState<ViewMode>(isAdmin ? "builder" : "weekly")
+  const isRestrictedViewer = ["teacher", "student"].includes(normalizedRole)
+  const showListView = isAdmin && !minimalView
+  const userBatchId = String(
+    (user as any)?.batch_id ??
+      (user as any)?.batchId ??
+      (user as any)?.batch?.id ??
+      (user as any)?.student?.batch_id ??
+      (user as any)?.studentProfile?.batch_id ??
+      ""
+  ).trim()
+  const userClassId = String(
+    (user as any)?.class_id ??
+      (user as any)?.classId ??
+      (user as any)?.class?.id ??
+      (user as any)?.student?.class_id ??
+      (user as any)?.studentProfile?.class_id ??
+      ""
+  ).trim()
+  const userSection = String(
+    (user as any)?.section ??
+      (user as any)?.batch?.section ??
+      (user as any)?.student?.section ??
+      (user as any)?.studentProfile?.section ??
+      ""
+  )
+    .trim()
+    .toLowerCase()
+  const defaultViewMode = initialViewMode ?? (isAdmin && !hideBuilder ? "builder" : "weekly")
+  const [viewMode, setViewMode] = useState<ViewMode>(defaultViewMode)
   const [selectedBatchId, setSelectedBatchId] = useState("")
   const [routines, setRoutines] = useState<RoutineRecord[]>([])
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
@@ -732,7 +774,7 @@ export default function ScheduleWorkspace() {
       })
       return getRawItems(response?.data)
         .map(mapScheduleClassOption)
-        .filter((item): item is ClassOption => Boolean(item))
+        .filter((item:any): item is ClassOption => Boolean(item))
     },
     staleTime: 60_000,
   })
@@ -746,7 +788,7 @@ export default function ScheduleWorkspace() {
       })
       return getRawItems(response?.data)
         .map(mapScheduleBatchOption)
-        .filter((item): item is BatchOption => Boolean(item))
+        .filter((item:any): item is BatchOption => Boolean(item))
     },
     staleTime: 60_000,
   })
@@ -760,7 +802,7 @@ export default function ScheduleWorkspace() {
       })
       return getRawItems(response?.data)
         .map(mapScheduleSubjectOption)
-        .filter((item): item is SubjectOption => Boolean(item))
+        .filter((item:any): item is SubjectOption => Boolean(item))
     },
     staleTime: 60_000,
   })
@@ -774,7 +816,7 @@ export default function ScheduleWorkspace() {
       })
       return getRawItems(response?.data)
         .map(mapScheduleTeacherOption)
-        .filter((item): item is TeacherOption => Boolean(item))
+        .filter((item:any): item is TeacherOption => Boolean(item))
     },
     staleTime: 60_000,
   })
@@ -786,16 +828,6 @@ export default function ScheduleWorkspace() {
   }, [bootstrapQuery.data])
 
   useEffect(() => {
-    const initialBatchId =
-      batchesQuery.data?.[0]?.id ??
-      bootstrapQuery.data?.batches?.[0]?.id ??
-      ""
-
-    if (!initialBatchId) return
-    setSelectedBatchId((current) => current || initialBatchId)
-  }, [batchesQuery.data, bootstrapQuery.data])
-
-  useEffect(() => {
     if (!selectedBatchId) {
       setEntryDraft(buildDefaultDraft(""))
       return
@@ -803,12 +835,54 @@ export default function ScheduleWorkspace() {
     setEntryDraft((current) => ({ ...current, batchId: selectedBatchId }))
   }, [selectedBatchId])
 
+  useEffect(() => {
+    if (hideBuilder && viewMode === "builder") {
+      setViewMode(initialViewMode ?? "daily")
+    }
+  }, [hideBuilder, initialViewMode, viewMode])
+
+  useEffect(() => {
+    if (!showListView && viewMode === "list") {
+      setViewMode("daily")
+    }
+  }, [showListView, viewMode])
+
   const batches = batchesQuery.data ?? bootstrapQuery.data?.batches ?? []
   const classes = classesQuery.data ?? bootstrapQuery.data?.classes ?? []
   const subjects =
     tenantId && tenantId !== "demo-tenant"
       ? (subjectsQuery.data ?? [])
       : (bootstrapQuery.data?.subjects ?? [])
+  const availableBatches = useMemo(() => {
+    if (!isRestrictedViewer) return batches
+
+    if (userBatchId) {
+      const exactMatches = batches.filter((batch: BatchOption) => batch.id === userBatchId)
+      if (exactMatches.length > 0) return exactMatches
+    }
+
+    let scopedBatches = userClassId
+      ? batches.filter((batch: BatchOption) => batch.classId === userClassId)
+      : batches
+
+    if (userSection) {
+      const sectionMatches = scopedBatches.filter((batch: BatchOption) =>
+        batch.name.toLowerCase().includes(userSection)
+      )
+      if (sectionMatches.length > 0) return sectionMatches
+    }
+
+    return scopedBatches.length > 0 ? [scopedBatches[0]] : []
+  }, [batches, isRestrictedViewer, userBatchId, userClassId, userSection])
+  useEffect(() => {
+    const initialBatchId = availableBatches[0]?.id ?? ""
+
+    if (!initialBatchId) return
+    setSelectedBatchId((current) =>
+      current && availableBatches.some((batch: BatchOption) => batch.id === current) ? current : initialBatchId
+    )
+  }, [availableBatches])
+
   const teachers =
     tenantId && tenantId !== "demo-tenant"
       ? (teachersQuery.data ?? [])
@@ -855,9 +929,9 @@ export default function ScheduleWorkspace() {
       return payload
     },
     onSuccess: (payload) => {
-      const subject = subjects.find((item) => item.id === payload.subjectId)
-      const teacher = teachers.find((item) => item.id === payload.teacherId)
-      const room = rooms.find((item) => item.id === payload.roomId)
+      const subject = subjects.find((item: any) => item.id === payload.subjectId)
+      const teacher = teachers.find((item: any) => item.id === payload.teacherId)
+      const room = rooms.find((item: any) => item.id === payload.roomId)
       const nextEntry: ScheduleEntry = {
         id: editingEntryId ?? `entry-${Date.now()}`,
         batchId: payload.batchId,
@@ -879,7 +953,7 @@ export default function ScheduleWorkspace() {
       setRoutines((prev) => {
         const existingRoutine = prev.find((routine) => routine.batchId === payload.batchId)
         if (!existingRoutine) {
-          const batch = batches.find((item) => item.id === payload.batchId)
+          const batch = batches.find((item: any) => item.id === payload.batchId)
           return [
             ...prev,
             {
@@ -949,8 +1023,8 @@ export default function ScheduleWorkspace() {
     },
     onSuccess: () => {
       if (!overrideTarget) return
-      const teacher = teachers.find((item) => item.id === overrideDraft.newTeacherId)
-      const room = rooms.find((item) => item.id === overrideDraft.newRoomId)
+      const teacher = teachers.find((item: any) => item.id === overrideDraft.newTeacherId)
+      const room = rooms.find((item: any) => item.id === overrideDraft.newRoomId)
       const effectiveStart = overrideDraft.newStartTime || overrideTarget.startTime
       const effectiveEnd = overrideDraft.newEndTime || overrideTarget.endTime
       const effectiveMode = overrideDraft.newMode || overrideTarget.deliveryMode
@@ -1009,7 +1083,7 @@ export default function ScheduleWorkspace() {
 
   const filteredBatches = useMemo(() => {
     if (filters.classId === "ALL") return batches
-    return batches.filter((batch) => batch.classId === filters.classId)
+    return batches.filter((batch: any) => batch.classId === filters.classId)
   }, [batches, filters.classId])
 
   const weeklyReadEntries = useMemo(() => applyOverridesForWeek(currentRoutine, currentWeekStart), [currentRoutine, currentWeekStart])
@@ -1024,12 +1098,12 @@ export default function ScheduleWorkspace() {
   )
 
   const listRows = useMemo(() => {
-    const targetBatchIds = filters.batchId === "ALL" ? new Set(filteredBatches.map((batch) => batch.id)) : new Set([filters.batchId])
+    const targetBatchIds = filters.batchId === "ALL" ? new Set(filteredBatches.map((batch: BatchOption) => batch.id)) : new Set([filters.batchId])
     return routines
       .filter((routine) => targetBatchIds.has(routine.batchId))
       .flatMap((routine) =>
         routine.entries.map((entry) => {
-          const batch = batches.find((item) => item.id === routine.batchId)
+          const batch = batches.find((item: any) => item.id === routine.batchId)
           return {
             ...entry,
             routineStatus: routine.status,
@@ -1166,7 +1240,7 @@ export default function ScheduleWorkspace() {
 
   if (bootstrapQuery.isLoading) {
     return (
-      <div className="space-y-6 p-6">
+      <div className="space-y-6 p-4 md:p-6">
         <Skeleton className="h-12 w-64" />
         <div className="grid gap-4 lg:grid-cols-[300px_1fr]">
           <Skeleton className="h-[220px] rounded-3xl" />
@@ -1178,7 +1252,7 @@ export default function ScheduleWorkspace() {
 
   if (bootstrapQuery.isError) {
     return (
-      <div className="space-y-4 p-6">
+      <div className="space-y-4 p-4 md:p-6">
         <Alert variant="destructive">
           <AlertTitle>Could not load schedule workspace</AlertTitle>
           <AlertDescription className="flex items-center justify-between gap-3">
@@ -1194,58 +1268,116 @@ export default function ScheduleWorkspace() {
 
   return (
     <div className="space-y-6 p-4 md:p-6">
-      <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_58%,#38bdf8_100%)] text-white shadow-lg">
-        <div className="grid gap-6 p-6 lg:grid-cols-[1.3fr_0.7fr]">
-          <div className="space-y-4">
-            <Badge className="bg-white/15 text-white">Bangladesh Standard Time (UTC+6)</Badge>
+      {minimalView ? (
+        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="space-y-2">
-              <h1 className="text-3xl font-semibold tracking-tight">Class Scheduling System</h1>
-              <p className="max-w-2xl text-sm text-blue-100">
-                Build, review, publish, and monitor weekly routines for admins, teachers, and students from one workspace.
-              </p>
+              <Badge variant="outline" className="w-fit">
+                Bangladesh Standard Time (UTC+6)
+              </Badge>
+              <div className="space-y-1">
+                <h1 className="text-2xl font-semibold tracking-tight text-slate-900">{pageTitle}</h1>
+                <p className="max-w-2xl text-sm text-slate-500">
+                  {pageDescription}
+                </p>
+              </div>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Button variant={viewMode === "builder" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "builder" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("builder")} disabled={!isAdmin}>
-                <LayoutGrid className="mr-2 h-4 w-4" />
-                Routine Builder
-              </Button>
-              <Button variant={viewMode === "weekly" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "weekly" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("weekly")}>
+              {!hideBuilder ? (
+                <Button
+                  variant={viewMode === "builder" ? "secondary" : "outline"}
+                  onClick={() => setViewMode("builder")}
+                  disabled={!isAdmin}
+                >
+                  <LayoutGrid className="mr-2 h-4 w-4" />
+                  Routine Builder
+                </Button>
+              ) : null}
+              <Button
+                variant={viewMode === "weekly" ? "secondary" : "outline"}
+                onClick={() => setViewMode("weekly")}
+              >
                 <Eye className="mr-2 h-4 w-4" />
                 Weekly View
               </Button>
-              <Button variant={viewMode === "daily" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "daily" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("daily")}>
+              <Button
+                variant={viewMode === "daily" ? "secondary" : "outline"}
+                onClick={() => setViewMode("daily")}
+              >
                 <CalendarDays className="mr-2 h-4 w-4" />
                 Daily View
               </Button>
-              <Button variant={viewMode === "list" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "list" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("list")}>
-                <ListFilter className="mr-2 h-4 w-4" />
-                List View
-              </Button>
+              {showListView ? (
+                <Button
+                  variant={viewMode === "list" ? "secondary" : "outline"}
+                  onClick={() => setViewMode("list")}
+                >
+                  <ListFilter className="mr-2 h-4 w-4" />
+                  List View
+                </Button>
+              ) : null}
             </div>
           </div>
-          <div className="grid gap-3 rounded-[24px] bg-white/10 p-4 backdrop-blur">
-            <div className="flex items-start justify-between gap-3 rounded-2xl bg-white/10 p-4">
-              <div>
-                <p className="text-xs uppercase tracking-[0.2em] text-blue-100">Active Batch</p>
-                <p className="mt-1 text-lg font-semibold">{batches.find((batch) => batch.id === selectedBatchId)?.name ?? "Choose batch"}</p>
+        </section>
+      ) : null}
+      {!minimalView ? (
+        <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_58%,#38bdf8_100%)] text-white shadow-lg">
+          <div className="grid gap-6 p-6 lg:grid-cols-[1.3fr_0.7fr]">
+            <div className="space-y-4">
+              <Badge className="bg-white/15 text-white">Bangladesh Standard Time (UTC+6)</Badge>
+              <div className="space-y-2">
+                <h1 className="text-3xl font-semibold tracking-tight">{pageTitle}</h1>
+                <p className="max-w-2xl text-sm text-blue-100">
+                  {pageDescription}
+                </p>
               </div>
-              {currentRoutine ? <Badge {...getStatusBadgeProps(currentRoutine.status)}>{currentRoutine.status}</Badge> : <Badge variant="warning">No routine yet</Badge>}
+              <div className="flex flex-wrap gap-2">
+                {!hideBuilder ? (
+                  <Button variant={viewMode === "builder" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "builder" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("builder")} disabled={!isAdmin}>
+                    <LayoutGrid className="mr-2 h-4 w-4" />
+                    Routine Builder
+                  </Button>
+                ) : null}
+                <Button variant={viewMode === "weekly" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "weekly" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("weekly")}>
+                  <Eye className="mr-2 h-4 w-4" />
+                  Weekly View
+                </Button>
+                <Button variant={viewMode === "daily" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "daily" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("daily")}>
+                  <CalendarDays className="mr-2 h-4 w-4" />
+                  Daily View
+                </Button>
+                {showListView ? (
+                  <Button variant={viewMode === "list" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "list" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("list")}>
+                    <ListFilter className="mr-2 h-4 w-4" />
+                    List View
+                  </Button>
+                ) : null}
+              </div>
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
-              <div className="rounded-2xl bg-white/10 p-4">
-                <p className="text-xs text-blue-100">Unread schedule alerts</p>
-                <p className="mt-2 text-2xl font-semibold">{notifications.filter((item) => item.unread).length}</p>
+            <div className="grid gap-3 rounded-[24px] bg-white/10 p-4 backdrop-blur">
+              <div className="flex items-start justify-between gap-3 rounded-2xl bg-white/10 p-4">
+                <div>
+                  <p className="text-xs uppercase tracking-[0.2em] text-blue-100">Active Batch</p>
+                  <p className="mt-1 text-lg font-semibold">{batches.find((batch: any) => batch.id === selectedBatchId)?.name ?? "Choose batch"}</p>
+                </div>
+                {currentRoutine ? <Badge {...getStatusBadgeProps(currentRoutine.status)}>{currentRoutine.status}</Badge> : <Badge variant="warning">No routine yet</Badge>}
               </div>
-              <div className="rounded-2xl bg-white/10 p-4">
-                <p className="text-xs text-blue-100">Routine entries</p>
-                <p className="mt-2 text-2xl font-semibold">{currentRoutineEntries.filter((entry) => !entry.isOverride).length}</p>
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="rounded-2xl bg-white/10 p-4">
+                  <p className="text-xs text-blue-100">Unread schedule alerts</p>
+                  <p className="mt-2 text-2xl font-semibold">{notifications.filter((item) => item.unread).length}</p>
+                </div>
+                <div className="rounded-2xl bg-white/10 p-4">
+                  <p className="text-xs text-blue-100">Routine entries</p>
+                  <p className="mt-2 text-2xl font-semibold">{currentRoutineEntries.filter((entry) => !entry.isOverride).length}</p>
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : null}
       <section className="space-y-6">
-        {viewMode !== "list" ? (
+        {!minimalView && viewMode !== "list" ? (
           <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
               <div className="space-y-3">
@@ -1255,14 +1387,14 @@ export default function ScheduleWorkspace() {
                 </div>
                 <div>
                   <FieldLabel label="Batch" required />
-                  <Select value={selectedBatchId} onValueChange={setSelectedBatchId}>
-                    {batches.map((batch) => (
+                  <Select value={selectedBatchId} onValueChange={setSelectedBatchId} disabled={isRestrictedViewer}>
+                    {availableBatches.map((batch: BatchOption) => (
                       <option key={batch.id} value={batch.id}>{batch.name} ({batch.className})</option>
                     ))}
                   </Select>
                 </div>
                 <div className="rounded-xl bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:bg-slate-900 dark:text-slate-300">
-                  <p className="font-medium text-slate-900 dark:text-white">{batches.find((batch) => batch.id === selectedBatchId)?.name ?? "No batch selected"}</p>
+                  <p className="font-medium text-slate-900 dark:text-white">{batches.find((batch: any) => batch.id === selectedBatchId)?.name ?? "No batch selected"}</p>
                   <p className="mt-1">Active routine context</p>
                 </div>
               </div>
@@ -1296,7 +1428,7 @@ export default function ScheduleWorkspace() {
           </div>
         ) : null}
 
-        {isAdmin && currentRoutine && routineHardConflicts.length > 0 ? (
+        {!minimalView && isAdmin && currentRoutine && routineHardConflicts.length > 0 ? (
           <Alert variant="destructive">
             <AlertTitle>Unresolved hard conflicts</AlertTitle>
             <AlertDescription className="space-y-2">
@@ -1366,11 +1498,11 @@ export default function ScheduleWorkspace() {
                       ...BUILDER_DAYS.map((day) => {
                         const entry = currentRoutineEntries.find((item) => !item.isOverride && item.dayOfWeek === day && matchesSlot(item, slot))
                         return (
-                          <div key={`${day}-${slot}`} className="min-h-[128px] rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-2">
+                          <div key={`${day}-${slot}`} className="min-h-32 rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-2">
                             {entry ? (
                               <ScheduleCard entry={entry} onClick={() => handleCellAction(day, slot, entry)} />
                             ) : (
-                              <button type="button" onClick={() => handleCellAction(day, slot)} className="flex h-full min-h-[112px] w-full flex-col items-center justify-center rounded-2xl border border-transparent text-center text-slate-500 transition hover:border-slate-300 hover:bg-white">
+                              <button type="button" onClick={() => handleCellAction(day, slot)} className="flex h-full min-h-28 w-full flex-col items-center justify-center rounded-2xl border border-transparent text-center text-slate-500 transition hover:border-slate-300 hover:bg-white">
                                 <Plus className="mb-2 h-4 w-4" />
                                 <span className="text-sm font-medium">Add Class</span>
                                 <span className="text-xs">Click to schedule this slot</span>
@@ -1462,8 +1594,8 @@ export default function ScheduleWorkspace() {
                         const date = toDateInput(addDays(currentWeekStart, index))
                         const entry = weeklyReadEntries.find((item) => (item.overrideDate ? item.overrideDate === date : item.dayOfWeek === day) && matchesSlot(item, slot))
                         return (
-                          <div key={`${day}-${slot}-read`} className="min-h-[128px] rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                            {entry ? <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} /> : <div className="flex h-full min-h-[112px] items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">No class</div>}
+                          <div key={`${day}-${slot}-read`} className="min-h-32 rounded-2xl border border-slate-200 bg-slate-50 p-2">
+                            {entry ? <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} /> : <div className="flex h-full min-h-28 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">No class</div>}
                           </div>
                         )
                       }),
@@ -1543,29 +1675,35 @@ export default function ScheduleWorkspace() {
                 </div>
               ) : (
                 <div className="space-y-3">
-                  {TIME_SLOTS.map((slot) => {
-                    const entry = dailyReadEntries.find((item) => matchesSlot(item, slot))
-                    return (
-                      <div key={`daily-${slot}`} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[120px_1fr] md:items-start">
-                        <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700">
-                          {formatTime(slot)}
-                        </div>
-                        {entry ? (
+                  {minimalView
+                    ? dailyReadEntries.map((entry) => (
+                        <div key={entry.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
                           <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} />
-                        ) : (
-                          <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-400">
-                            No class in this slot
+                        </div>
+                      ))
+                    : TIME_SLOTS.map((slot) => {
+                        const entry = dailyReadEntries.find((item) => matchesSlot(item, slot))
+                        return (
+                          <div key={`daily-${slot}`} className="grid gap-3 rounded-3xl border border-slate-200 bg-slate-50 p-3 md:grid-cols-[120px_1fr] md:items-start">
+                            <div className="rounded-2xl bg-white px-4 py-3 text-sm font-semibold text-slate-700">
+                              {formatTime(slot)}
+                            </div>
+                            {entry ? (
+                              <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} />
+                            ) : (
+                              <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-400">
+                                No class in this slot
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    )
-                  })}
+                        )
+                      })}
                 </div>
               )}
             </div>
         ) : null}
 
-        {viewMode === "list" ? (
+        {showListView && viewMode === "list" ? (
             <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -1575,8 +1713,8 @@ export default function ScheduleWorkspace() {
                 <Badge variant="muted">{listRows.length} results</Badge>
               </div>
               <div className="grid gap-3 rounded-[24px] border border-slate-200 bg-slate-50 p-4 md:grid-cols-2 xl:grid-cols-3">
-                <div><FieldLabel label="Class" /><Select value={filters.classId} onValueChange={(value) => setFilters((current) => ({ ...current, classId: value, batchId: "ALL" }))}><option value="ALL">All classes</option>{classes.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
-                <div><FieldLabel label="Batch" /><Select value={filters.batchId} onValueChange={(value) => setFilters((current) => ({ ...current, batchId: value }))}><option value="ALL">All batches</option>{filteredBatches.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
+                <div><FieldLabel label="Class" /><Select value={filters.classId} onValueChange={(value) => setFilters((current) => ({ ...current, classId: value, batchId: "ALL" }))}><option value="ALL">All classes</option>{classes.map((item: ClassOption) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
+                <div><FieldLabel label="Batch" /><Select value={filters.batchId} onValueChange={(value) => setFilters((current) => ({ ...current, batchId: value }))}><option value="ALL">All batches</option>{filteredBatches.map((item: BatchOption) => <option key={item.id} value={item.id}>{item.name}</option>)}</Select></div>
                 <div>
                   <FieldLabel label="Teacher" />
                   <Select value={filters.teacherId} onValueChange={(value) => setFilters((current) => ({ ...current, teacherId: value || "ALL" }))}>
@@ -1600,7 +1738,7 @@ export default function ScheduleWorkspace() {
             </div>
         ) : null}
       </section>
-      {viewMode === "list" ? (
+      {showListView && viewMode === "list" ? (
         <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
           <div className="hidden overflow-hidden rounded-3xl border border-slate-200 lg:block">
             <Table>

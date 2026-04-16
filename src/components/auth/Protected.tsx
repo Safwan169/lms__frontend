@@ -25,7 +25,7 @@ function isAllowedDashboardPath(role: string, pathname: string) {
       "/dashboard/dashboard-empty",
       "/dashboard/teacher-students",
       "/dashboard/classrooms",
-      "/dashboard/timetable",
+      "/dashboard/my-class",
       "/dashboard/self-attendance",
       "/dashboard/profile",
     ].includes(pathname);
@@ -35,7 +35,7 @@ function isAllowedDashboardPath(role: string, pathname: string) {
     return [
       "/dashboard",
       "/dashboard/class-access",
-      "/dashboard/timetable",
+      "/dashboard/my-class",
       "/dashboard/self-attendance",
       "/dashboard/profile",
     ].includes(pathname);

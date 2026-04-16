@@ -128,22 +128,22 @@ const navData: NavItem[] = [
     roles: ["teacher"],
   },
   {
+    title: "My Class",
+    url: "/dashboard/my-class",
+    icon: CalendarDays,
+    roles: ["teacher", "student"],
+  },
+  {
     title: "Timetable",
     url: "/dashboard/timetable",
     icon: CalendarDays,
-    roles: ["admin", "rektor", "superadmin", "teacher", "student"],
+    roles: ["admin", "rektor", "superadmin"],
   },
   {
     title: "Self Attendance",
     url: "/dashboard/self-attendance",
     icon: ClipboardCheck,
     roles: ["teacher", "student"],
-  },
-  {
-    title: "Classes",
-    url: "/dashboard/class-access",
-    icon: BookOpen,
-    roles: ["student"],
   },
   
   // {

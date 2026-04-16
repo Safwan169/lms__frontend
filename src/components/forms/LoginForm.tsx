@@ -4,21 +4,25 @@
 import React from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
-import { loginSchema, LoginSchema } from "@/utils/validators";
+import { loginSchema, type LoginFormData } from "@/schemas";
 import { useLoginMutation } from "@/features/user/userApi";
 import { useAuth } from "@/context/AuthContext";
 
 export default function LoginForm() {
-  const { register, handleSubmit, formState } = useForm<LoginSchema>({
+  const { register, handleSubmit, formState } = useForm<LoginFormData>({
     resolver: zodResolver(loginSchema)
   });
 
   const [loginApi, { isLoading }] = useLoginMutation();
   const { login } = useAuth();
 
-  const onSubmit = async (data: LoginSchema) => {
+  const onSubmit = async (data: LoginFormData) => {
     try {
-      const res = await loginApi(data).unwrap();
+      const payload = data.identifier.includes("@")
+        ? { email: data.identifier, password: data.password }
+        : { phone: data.identifier, password: data.password };
+
+      const res = await loginApi(payload).unwrap();
       // expected response: { token, user }
       login({ token: res.token, user: res.user });
     } catch (err) {
@@ -29,9 +33,9 @@ export default function LoginForm() {
   return (
     <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 max-w-md">
       <div>
-        <label>Email</label>
-        <input {...register("email")} className="w-full p-2 border rounded" />
-        {formState.errors.email && <p className="text-red-500">{formState.errors.email.message}</p>}
+        <label>Email or Phone</label>
+        <input {...register("identifier")} className="w-full p-2 border rounded" />
+        {formState.errors.identifier && <p className="text-red-500">{formState.errors.identifier.message}</p>}
       </div>
       <div>
         <label>Password</label>
