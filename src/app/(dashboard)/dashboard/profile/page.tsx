@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { type FieldErrors, useForm } from "react-hook-form"
 import { Loader2, Upload, UserRound } from "lucide-react"
@@ -33,10 +33,39 @@ const profileSchema = z.object({
   guardian_name: z.string().trim().optional(),
   guardian_phone: z.string().trim().optional(),
   school_name: z.string().trim().optional(),
+  qualification: z.string().trim().optional(),
+  experience: z.string().trim().optional(),
+  nid_number: z.string().trim().optional(),
+  bank_account: z.string().trim().optional(),
   avatar_url: z.string().trim().optional(),
 })
 
 type ProfileFormValues = z.infer<typeof profileSchema>
+
+type UserProfileRecord = Partial<{
+  address: string
+  date_of_birth: string
+  gender: string
+  blood_group: string
+  guardian_name: string
+  guardian_phone: string
+  school_name: string
+  qualification: string
+  experience: string | number
+  nid_number: string
+  bank_account: string
+  avatar_url: string
+}>
+
+type UserProfileApiPayload = Partial<{
+  avatar_url: string
+  profile: UserProfileRecord
+  adminProfile: UserProfileRecord
+  teacherProfile: UserProfileRecord
+  studentProfile: UserProfileRecord
+  accountantProfile: UserProfileRecord
+  superAdminProfile: UserProfileRecord
+}>
 
 type MediaUploadResponse = {
   id?: string
@@ -206,11 +235,14 @@ async function createCroppedAvatarFile(
 }
 
 function cleanPayload(values: ProfileFormValues) {
-  const payload: Record<string, string> = {}
+  const payload: Record<string, string | number> = {}
 
   const addIfPresent = (key: keyof ProfileFormValues) => {
     const rawValue = values[key]
-    const value = key === "avatar_url" ? sanitizeAvatarUrl(rawValue) : rawValue
+    const value =
+      key === "avatar_url" && typeof rawValue === "string"
+        ? sanitizeAvatarUrl(rawValue)
+        : rawValue
     if (typeof value === "string" && value.trim().length > 0) {
       payload[key] = value.trim()
     }
@@ -224,8 +256,73 @@ function cleanPayload(values: ProfileFormValues) {
   addIfPresent("guardian_name")
   addIfPresent("guardian_phone")
   addIfPresent("school_name")
+  addIfPresent("qualification")
+  addIfPresent("nid_number")
+  addIfPresent("bank_account")
+
+  if (typeof values.experience === "string" && values.experience.trim().length > 0) {
+    const parsedExperience = Number(values.experience)
+    if (Number.isFinite(parsedExperience) && parsedExperience >= 0) {
+      payload.experience = parsedExperience
+    }
+  }
 
   return payload
+}
+
+function buildProfileFormValues(profile?: UserProfileRecord | null, sessionUser?: any): ProfileFormValues {
+  const source = profile ?? {}
+  const fallback = sessionUser ?? {}
+  const fallbackProfile = fallback?.profile ?? {}
+
+  return {
+    address: String(source.address ?? fallback.address ?? fallbackProfile.address ?? ""),
+    date_of_birth: toDateInputValue(
+      String(source.date_of_birth ?? fallback.date_of_birth ?? fallbackProfile.date_of_birth ?? "")
+    ),
+    gender: String(source.gender ?? fallback.gender ?? fallbackProfile.gender ?? ""),
+    blood_group: String(source.blood_group ?? fallback.blood_group ?? fallbackProfile.blood_group ?? ""),
+    guardian_name: String(source.guardian_name ?? fallback.guardian_name ?? fallbackProfile.guardian_name ?? ""),
+    guardian_phone: String(source.guardian_phone ?? fallback.guardian_phone ?? fallbackProfile.guardian_phone ?? ""),
+    school_name: String(source.school_name ?? fallback.school_name ?? fallbackProfile.school_name ?? ""),
+    qualification: String(source.qualification ?? fallback.qualification ?? fallbackProfile.qualification ?? ""),
+    experience: String(source.experience ?? fallback.experience ?? fallbackProfile.experience ?? ""),
+    nid_number: String(source.nid_number ?? fallback.nid_number ?? fallbackProfile.nid_number ?? ""),
+    bank_account: String(source.bank_account ?? fallback.bank_account ?? fallbackProfile.bank_account ?? ""),
+    avatar_url: sanitizeAvatarUrl(
+      source.avatar_url ??
+      fallback.avatar_url ??
+      fallback.avatarUrl ??
+      fallbackProfile.avatar_url ??
+      ""
+    ),
+  }
+}
+
+function extractUserProfile(data: any): UserProfileRecord | null {
+  const payload = data?.data?.data ?? data?.data ?? data
+
+  if (!payload || typeof payload !== "object") return null
+  const normalizedPayload = (Array.isArray(payload) ? payload[0] : payload) as UserProfileApiPayload
+  if (!normalizedPayload || typeof normalizedPayload !== "object") return null
+
+  const nestedProfile =
+    normalizedPayload.profile ??
+    normalizedPayload.adminProfile ??
+    normalizedPayload.teacherProfile ??
+    normalizedPayload.studentProfile ??
+    normalizedPayload.accountantProfile ??
+    normalizedPayload.superAdminProfile ??
+    {}
+
+  return {
+    ...nestedProfile,
+    avatar_url: sanitizeAvatarUrl(
+      normalizedPayload.avatar_url ??
+      nestedProfile.avatar_url ??
+      ""
+    ),
+  }
 }
 
 export default function ProfileManagementPage() {
@@ -245,6 +342,7 @@ export default function ProfileManagementPage() {
   const [isApplyingCrop, setIsApplyingCrop] = useState(false)
   const [isSaving, setIsSaving] = useState(false)
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false)
+  const [isProfileLoading, setIsProfileLoading] = useState(false)
 
   const tenantId =
     (user as any)?.tenant_id ??
@@ -268,6 +366,13 @@ export default function ProfileManagementPage() {
   ).toLowerCase()
 
   const isStudent = normalizedRole === "student"
+  const isTeacher = normalizedRole === "teacher"
+  const isAccountant = normalizedRole === "accountant"
+  const isAdmin = ["admin", "rektor"].includes(normalizedRole)
+  const isSuperAdmin = ["super-admin", "superadmin", "super_admin"].includes(normalizedRole)
+  const showsProfessionalProfile = isTeacher || isAccountant || isAdmin
+  const showsQualificationField = isTeacher || isAccountant
+  const showsExperienceField = isTeacher
   const displayName = String((user as any)?.name ?? "User")
   const displayEmail = String((user as any)?.email ?? "-")
   const displayPhone = String((user as any)?.phone ?? "-")
@@ -283,18 +388,7 @@ export default function ProfileManagementPage() {
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
-    defaultValues: {
-      address: String((user as any)?.address ?? (user as any)?.profile?.address ?? ""),
-      date_of_birth: toDateInputValue(
-        (user as any)?.date_of_birth ?? (user as any)?.profile?.date_of_birth ?? ""
-      ),
-      gender: String((user as any)?.gender ?? (user as any)?.profile?.gender ?? ""),
-      blood_group: String((user as any)?.blood_group ?? (user as any)?.profile?.blood_group ?? ""),
-      guardian_name: String((user as any)?.guardian_name ?? (user as any)?.profile?.guardian_name ?? ""),
-      guardian_phone: String((user as any)?.guardian_phone ?? (user as any)?.profile?.guardian_phone ?? ""),
-      school_name: String((user as any)?.school_name ?? (user as any)?.profile?.school_name ?? ""),
-      avatar_url: sanitizeAvatarUrl(currentAvatarUrl),
-    },
+    defaultValues: buildProfileFormValues(undefined, user),
   })
 
   const previewAvatar = avatarFile ? avatarPreview || currentAvatar || "" : currentAvatar || avatarPreview || ""
@@ -309,6 +403,74 @@ export default function ProfileManagementPage() {
   const cropPreviewLayout = cropImageSize
     ? getCropLayout(cropImageSize.width, cropImageSize.height, 256, cropZoom, cropX, cropY)
     : null
+
+  useEffect(() => {
+    form.reset(buildProfileFormValues(undefined, user))
+    const sessionAvatar = sanitizeAvatarUrl(
+      (user as any)?.avatar_url ??
+      (user as any)?.avatarUrl ??
+      (user as any)?.profile?.avatar_url ??
+      ""
+    )
+    setCurrentAvatarUrl(sessionAvatar)
+  }, [form, tenantId, userId])
+
+  useEffect(() => {
+    let isMounted = true
+
+    const loadProfile = async () => {
+      if (!userId || !tenantId) return
+
+      setIsProfileLoading(true)
+      try {
+        const response = await api.get("/api/user-profiles", {
+          params: {
+            tenantId,
+            userId,
+          },
+        })
+
+        if (!isMounted) return
+
+        const profile = extractUserProfile(response)
+        const nextValues = buildProfileFormValues(profile, user)
+        form.reset(nextValues)
+
+        const nextAvatar = sanitizeAvatarUrl(nextValues.avatar_url)
+        if (nextAvatar) {
+          setCurrentAvatarUrl(nextAvatar)
+        }
+
+        updateUser({
+          ...(nextAvatar
+            ? {
+                avatar_url: nextAvatar,
+                avatarUrl: nextAvatar,
+              }
+            : {}),
+          profile: {
+            ...(user as any)?.profile,
+            ...profile,
+            ...(nextAvatar ? { avatar_url: nextAvatar } : {}),
+          },
+        })
+
+      } catch (error: any) {
+        if (!isMounted) return
+        toast.error(error?.message || "Failed to load profile data")
+      } finally {
+        if (isMounted) {
+          setIsProfileLoading(false)
+        }
+      }
+    }
+
+    void loadProfile()
+
+    return () => {
+      isMounted = false
+    }
+  }, [form, tenantId, userId])
 
   const handleCropPointerDown = (clientX: number, clientY: number) => {
     setIsDraggingCrop(true)
@@ -518,7 +680,7 @@ export default function ProfileManagementPage() {
         },
       })
 
-      if (payload.avatar_url) {
+      if (typeof payload.avatar_url === "string" && payload.avatar_url.length > 0) {
         setCurrentAvatarUrl(payload.avatar_url)
         if (avatarPreview) {
           URL.revokeObjectURL(avatarPreview)
@@ -584,7 +746,7 @@ export default function ProfileManagementPage() {
                 type="file"
                 accept="image/*"
                 onChange={(event) => handleAvatarChange(event.target.files?.[0] ?? null)}
-                disabled={isSaving}
+                disabled={isSaving || isProfileLoading}
               />
               <p className="text-xs text-muted-foreground">
                 Choose an image, crop it to a square avatar, then save your profile.
@@ -598,7 +760,9 @@ export default function ProfileManagementPage() {
             <Card>
               <CardHeader>
                 <CardTitle className="text-base">Basic Profile</CardTitle>
-                <CardDescription>These fields are sent to the unified profile update API</CardDescription>
+                <CardDescription>
+                  {isProfileLoading ? "Loading profile data from /api/user-profiles..." : "These shared fields are loaded from and saved to the unified profile API"}
+                </CardDescription>
               </CardHeader>
               <CardContent className="grid gap-4 md:grid-cols-2">
                 <FormField
@@ -620,43 +784,47 @@ export default function ProfileManagementPage() {
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="blood_group"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Blood Group</FormLabel>
-                      <FormControl>
-                        <Select value={field.value ?? ""} onValueChange={field.onChange}>
-                          <option value="">Select blood group</option>
-                          <option value="A+">A+</option>
-                          <option value="A-">A-</option>
-                          <option value="B+">B+</option>
-                          <option value="B-">B-</option>
-                          <option value="AB+">AB+</option>
-                          <option value="AB-">AB-</option>
-                          <option value="O+">O+</option>
-                          <option value="O-">O-</option>
-                        </Select>
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                {isStudent ? (
+                  <>
+                    <FormField
+                      control={form.control}
+                      name="blood_group"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Blood Group</FormLabel>
+                          <FormControl>
+                            <Select value={field.value ?? ""} onValueChange={field.onChange}>
+                              <option value="">Select blood group</option>
+                              <option value="A+">A+</option>
+                              <option value="A-">A-</option>
+                              <option value="B+">B+</option>
+                              <option value="B-">B-</option>
+                              <option value="AB+">AB+</option>
+                              <option value="AB-">AB-</option>
+                              <option value="O+">O+</option>
+                              <option value="O-">O-</option>
+                            </Select>
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
 
-                <FormField
-                  control={form.control}
-                  name="date_of_birth"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Date of Birth</FormLabel>
-                      <FormControl>
-                        <Input type="date" {...field} value={field.value ?? ""} />
-                      </FormControl>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                    <FormField
+                      control={form.control}
+                      name="date_of_birth"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Date of Birth</FormLabel>
+                          <FormControl>
+                            <Input type="date" {...field} value={field.value ?? ""} />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </>
+                ) : null}
 
                 <FormField
                   control={form.control}
@@ -671,7 +839,7 @@ export default function ProfileManagementPage() {
                     </FormItem>
                   )}
                 />
-              </CardContent>
+                </CardContent>
             </Card>
 
             {isStudent ? (
@@ -723,18 +891,130 @@ export default function ProfileManagementPage() {
                   />
                 </CardContent>
               </Card>
-            ) : (
+            ) : null}
+
+            {showsProfessionalProfile ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">
+                    {isTeacher ? "Teacher Profile Details" : isAccountant ? "Accountant Profile Details" : "Admin Profile Details"}
+                  </CardTitle>
+                  <CardDescription>
+                    {isAdmin
+                      ? "NID and bank account fields supported for admin profile updates."
+                      : isTeacher
+                        ? "Qualification, experience, NID, and bank account fields supported for this role."
+                        : "Qualification, NID, and bank account fields supported for this role."}
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-2">
+                  {showsQualificationField ? (
+                    <FormField
+                      control={form.control}
+                      name="qualification"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Qualification</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              value={field.value ?? ""}
+                              placeholder={isTeacher ? "MSc in Mathematics" : "BBA in Accounting"}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : null}
+
+                  {showsExperienceField ? (
+                    <FormField
+                      control={form.control}
+                      name="experience"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Experience (Years)</FormLabel>
+                          <FormControl>
+                            <Input
+                              type="number"
+                              min="0"
+                              value={field.value ?? ""}
+                              onChange={field.onChange}
+                              placeholder="5"
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  ) : null}
+
+                  <FormField
+                    control={form.control}
+                    name="nid_number"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>NID Number</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} placeholder={isTeacher ? "1996303123456" : "1234567890"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="bank_account"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Bank Account</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} placeholder={isTeacher ? "12345678901234" : "112233445566"} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            ) : null}
+
+            {isSuperAdmin ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Super Admin Profile Details</CardTitle>
+                  <CardDescription>NID and address fields are available for super admin profile updates.</CardDescription>
+                </CardHeader>
+                <CardContent className="grid gap-4 md:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="nid_number"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>NID Number</FormLabel>
+                        <FormControl>
+                          <Input {...field} value={field.value ?? ""} placeholder="SAD12345" />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </CardContent>
+              </Card>
+            ) : !isStudent && !showsProfessionalProfile ? (
               <Card>
                 <CardHeader>
                   <CardTitle className="text-base">Notes</CardTitle>
                 </CardHeader>
                 <CardContent>
                   <p className="text-sm text-muted-foreground">
-                    This profile form currently saves the shared fields supported across roles, plus student-specific fields when the logged-in role is student.
+                    This profile form saves role-specific profile fields based on the currently logged-in account type.
                   </p>
                 </CardContent>
               </Card>
-            )}
+            ) : null}
           </form>
         </Form>
       </div>
@@ -746,6 +1026,11 @@ export default function ProfileManagementPage() {
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 {isUploadingAvatar ? "Uploading image..." : "Saving..."}
+              </>
+            ) : isProfileLoading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Loading profile...
               </>
             ) : (
               <>

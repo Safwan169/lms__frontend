@@ -30,7 +30,7 @@ const buildNotifications = (href: string) => [
 
 export default function DashboardTopbar() {
   const { theme, setTheme } = useTheme();
-  const { user } = useAuth();
+  const { user, logout } = useAuth();
 
   const router = useRouter();
   const normalizedRole = String(
@@ -54,8 +54,18 @@ export default function DashboardTopbar() {
   const avatarInitial = displayName.trim().charAt(0).toUpperCase() || "A";
 
   const [profileAnchor, setProfileAnchor] = useState<null | HTMLElement>(null);
-  const handleLogout = () => {
-    router.push("/login");
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
+
+  const handleLogout = async () => {
+    if (isLoggingOut) return
+
+    setProfileAnchor(null);
+    setIsLoggingOut(true);
+    try {
+      await logout();
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (
@@ -136,11 +146,13 @@ export default function DashboardTopbar() {
             </MenuItem>
           ) : null}
           <Divider />
-          <MenuItem sx={{ gap: 1.5, fontSize: 13, color: "error.main" }}>
+          <MenuItem
+            sx={{ gap: 1.5, fontSize: 13, color: "error.main" }}
+            onClick={handleLogout}
+            disabled={isLoggingOut}
+          >
             <ListItemIcon><LogoutIcon fontSize="small" sx={{ color: "error.main" }} /></ListItemIcon>
-            <div onClick={handleLogout} className="cursor-pointer">
-              Logout
-            </div>
+            {isLoggingOut ? "Logging out..." : "Logout"}
           </MenuItem>
         </Menu>
       </div>

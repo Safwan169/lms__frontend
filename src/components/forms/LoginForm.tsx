@@ -24,7 +24,7 @@ export default function LoginForm() {
 
       const res = await loginApi(payload).unwrap();
       // expected response: { token, user }
-      login({ token: res.token, user: res.user });
+      await login({ token: res.token, user: res.user, tenant: res.tenant });
     } catch (err) {
       // RTK Query will surface error and axios/toast will handle showing message
     }

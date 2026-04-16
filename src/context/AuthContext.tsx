@@ -10,12 +10,103 @@ import { useLogoutMutation } from "@/features/user/userApi";
 interface AuthContextType {
   user: any | null;
   isAuthReady: boolean;
-  login: (payload: { token: string; user: any; tenant?: any }) => void;
+  login: (payload: { token: string; user: any; tenant?: any }) => Promise<void>;
   updateUser: (updates: Record<string, any>) => void;
   logout: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+function extractNestedProfile(user: any) {
+  if (!user || typeof user !== "object") return {}
+
+  return (
+    user.profile ??
+    user.adminProfile ??
+    user.teacherProfile ??
+    user.studentProfile ??
+    user.accountantProfile ??
+    user.superAdminProfile ??
+    {}
+  )
+}
+
+function normalizeRole(user: any) {
+  return String(
+    user?.role ??
+      (Array.isArray(user?.roles) ? user.roles[0] : user?.roles) ??
+      ""
+  ).toLowerCase()
+}
+
+function getDefaultRouteForRole(role: string) {
+  if (role === "superadmin") return "/dashboard/admins"
+  if (role === "teacher") return "/dashboard/dashboard-empty"
+  if (role === "student") return "/dashboard"
+  return "/dashboard"
+}
+
+function normalizeSessionUser(user: any, tenant?: any) {
+  const nestedProfile = extractNestedProfile(user)
+  const resolvedTenant = tenant ?? user?.tenant ?? null
+
+  return {
+    ...user,
+    tenant_id: resolvedTenant?.id ?? user?.tenant_id ?? user?.tenantId ?? user?.tenant_id_fk ?? null,
+    tenant: resolvedTenant,
+    role: user?.role ?? (Array.isArray(user?.roles) ? user.roles[0] : user?.roles) ?? null,
+    avatar_url: user?.avatar_url ?? user?.avatarUrl ?? nestedProfile?.avatar_url ?? "",
+    profile: {
+      ...nestedProfile,
+      ...(user?.avatar_url || user?.avatarUrl || nestedProfile?.avatar_url
+        ? {
+            avatar_url: user?.avatar_url ?? user?.avatarUrl ?? nestedProfile?.avatar_url ?? "",
+          }
+        : {}),
+    },
+  };
+}
+
+async function fetchUnifiedProfile(token: string, tenantId: string | number | null, userId: string | number | null) {
+  if (!token || !tenantId || !userId) return null
+
+  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089"
+  const params = new URLSearchParams({
+    tenantId: String(tenantId),
+    userId: String(userId),
+  })
+
+  const response = await fetch(`${baseUrl}/api/user-profiles?${params.toString()}`, {
+    headers: {
+      accept: "application/json",
+      Authorization: `Bearer ${token}`,
+    },
+    cache: "no-store",
+  })
+
+  if (!response.ok) {
+    throw new Error(`Profile fetch failed with status ${response.status}`)
+  }
+
+  const data = await response.json().catch(() => null)
+  const payload = data?.data?.data ?? data?.data ?? data
+  const record = Array.isArray(payload) ? payload[0] : payload
+  if (!record || typeof record !== "object") return null
+
+  const nestedProfile =
+    record.profile ??
+    record.adminProfile ??
+    record.teacherProfile ??
+    record.studentProfile ??
+    record.accountantProfile ??
+    record.superAdminProfile ??
+    {}
+
+  return {
+    ...nestedProfile,
+    ...(record.avatar_url ? { avatar_url: record.avatar_url } : {}),
+  }
+}
 
 export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [user, setLocalUser] = useState<any | null>(null);
@@ -25,36 +116,82 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [logoutApi] = useLogoutMutation();
 
   useEffect(() => {
-    try {
+    const bootstrapAuth = async () => {
       const token = localStorage.getItem("access_token");
       const storedUser = localStorage.getItem("user");
       if (token && storedUser) {
-        const parsed = JSON.parse(storedUser);
-        setLocalUser(parsed);
-        dispatch(setUser({ ...parsed, token }));
+        const parsed = normalizeSessionUser(JSON.parse(storedUser));
+
+        let nextUser = parsed;
+        try {
+          const profile = await fetchUnifiedProfile(token, parsed?.tenant_id, parsed?.user_id ?? parsed?.userId ?? parsed?.id ?? parsed?.uuid ?? null)
+          if (profile) {
+            nextUser = {
+              ...parsed,
+              ...(profile?.avatar_url
+                ? {
+                    avatar_url: profile.avatar_url,
+                    avatarUrl: profile.avatar_url,
+                  }
+                : {}),
+              profile: {
+                ...(parsed?.profile ?? {}),
+                ...profile,
+              },
+            }
+            localStorage.setItem("user", JSON.stringify(nextUser));
+          }
+        } catch {
+          // Keep local auth session usable even if profile hydration fails on boot.
+        }
+
+        setLocalUser(nextUser);
+        dispatch(setUser({ ...nextUser, token }));
       }
-    } catch {
+    };
+
+    bootstrapAuth().catch(() => {
       localStorage.removeItem("access_token");
       localStorage.removeItem("user");
-    } finally {
+    }).finally(() => {
       setIsAuthReady(true);
-    }
+    });
   }, [dispatch]);
 
-  const login = (payload: { token: string; user: any; tenant?: any }) => {
-    const normalizedUser = {
-      ...payload.user,
-      // Flatten tenant info onto user so tenantId lookups work everywhere
-      tenant_id: payload.tenant?.id ?? payload.user?.tenant_id ?? null,
-      tenant: payload.tenant ?? payload.user?.tenant ?? null,
-      // Normalize roles array to single role string for legacy checks
-      role: payload.user?.role ?? (Array.isArray(payload.user?.roles) ? payload.user.roles[0] : payload.user?.roles) ?? null,
-    };
+  const login = async (payload: { token: string; user: any; tenant?: any }) => {
+    let normalizedUser = normalizeSessionUser(payload.user, payload.tenant);
+
+    try {
+      const profile = await fetchUnifiedProfile(
+        payload.token,
+        normalizedUser?.tenant_id,
+        normalizedUser?.user_id ?? normalizedUser?.userId ?? normalizedUser?.id ?? normalizedUser?.uuid ?? null
+      );
+
+      if (profile) {
+        normalizedUser = {
+          ...normalizedUser,
+          ...(profile?.avatar_url
+            ? {
+                avatar_url: profile.avatar_url,
+                avatarUrl: profile.avatar_url,
+              }
+            : {}),
+          profile: {
+            ...(normalizedUser?.profile ?? {}),
+            ...profile,
+          },
+        };
+      }
+    } catch {
+      // Login should still succeed even if profile hydration fails.
+    }
+
     localStorage.setItem("access_token", payload.token);
     localStorage.setItem("user", JSON.stringify(normalizedUser));
     setLocalUser(normalizedUser);
     dispatch(setUser({ ...normalizedUser, token: payload.token }));
-    router.push("/");
+    router.push(getDefaultRouteForRole(normalizeRole(normalizedUser)));
   };
 
   const updateUser = (updates: Record<string, any>) => {
