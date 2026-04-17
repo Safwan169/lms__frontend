@@ -25,6 +25,41 @@ import { Textarea } from "@/components/ui/textarea"
 type ClassOption = { id: string; name: string }
 type BatchOption = { id: string; name: string }
 const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split("T")[0] ?? ""
+const bdPhoneRegex = /^(?:\+8801\d{9}|8801\d{9}|01\d{9})$/
+const manualAdmissionFieldMap = {
+  student_name: "full_name",
+  student_email: "email",
+  student_phone: "phone",
+  parent_phone: "parent_phone",
+  class_id: "class_id",
+  batch_id: "batch_id",
+  amount: "amount",
+  discount: "discount",
+  payment_method: "method",
+} as const
+
+function normalizeEmail(value?: string) {
+  const normalized = value?.trim().toLowerCase() ?? ""
+  return normalized.length > 0 ? normalized : undefined
+}
+
+function normalizeBdPhone(value: string) {
+  const digitsOnly = value.replace(/[^\d+]/g, "")
+
+  if (digitsOnly.startsWith("+880")) {
+    return digitsOnly
+  }
+
+  if (digitsOnly.startsWith("880")) {
+    return `+${digitsOnly}`
+  }
+
+  if (digitsOnly.startsWith("01")) {
+    return `+880${digitsOnly.slice(1)}`
+  }
+
+  return digitsOnly
+}
 
 const formSchema = z.object({
   full_name: z.string().trim().min(1, "Full name is required"),
@@ -35,14 +70,30 @@ const formSchema = z.object({
       message: "Date of birth must be before today",
     }),
   gender: z.enum(["Male", "Female", "Other"], { message: "Gender is required" }).optional(),
-  phone: z.string().trim().min(1, "Phone is required"),
-  email: z.string().trim().email("Enter a valid email").optional().or(z.literal("")),
+  phone: z
+    .string()
+    .trim()
+    .min(1, "Phone is required")
+    .refine((value) => bdPhoneRegex.test(normalizeBdPhone(value)), {
+      message: "Enter a valid Bangladeshi phone number",
+    }),
+  email: z
+    .string()
+    .trim()
+    .min(1, "Email is required")
+    .email("Enter a valid email"),
   address: z.string().optional(),
   class_id: z.string().min(1, "Class is required"),
   batch_id: z.string().min(1, "Batch is required"),
   father_name: z.string().optional(),
   mother_name: z.string().optional(),
-  parent_phone: z.string().trim().min(1, "Parent phone is required"),
+  parent_phone: z
+    .string()
+    .trim()
+    .min(1, "Parent phone is required")
+    .refine((value) => bdPhoneRegex.test(normalizeBdPhone(value)), {
+      message: "Enter a valid Bangladeshi phone number",
+    }),
   parent_nid: z.string().optional(),
   parent_nid_front: z.custom<File | undefined>((value) => value == null || value instanceof File),
   parent_nid_back: z.custom<File | undefined>((value) => value == null || value instanceof File),
@@ -54,6 +105,7 @@ const formSchema = z.object({
 
 type FormValues = z.input<typeof formSchema>
 type SubmitValues = z.output<typeof formSchema>
+type ManualAdmissionFieldName = keyof SubmitValues
 
 type ManualAdmissionFormProps = {
   mode?: "page" | "dialog"
@@ -206,23 +258,55 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
         throw new Error("Tenant information missing. Please log in again.")
       }
 
-      await createManualAdmission({
+      form.clearErrors()
+
+      const normalizedEmail = normalizeEmail(values.email)
+      const normalizedStudentPhone = normalizeBdPhone(values.phone)
+      const normalizedParentPhone = normalizeBdPhone(values.parent_phone)
+      const payload = {
         student_name: values.full_name,
-        student_email: values.email || undefined,
-        student_phone: values.phone,
+        student_phone: normalizedStudentPhone,
         class_id: values.class_id,
         batch_id: values.batch_id,
         amount: values.amount.toFixed(2),
         discount: values.discount.toFixed(2),
         payment_method: values.method,
-        parent_phone: values.parent_phone,
-      }).unwrap()
+        parent_phone: normalizedParentPhone,
+        student_email: normalizedEmail ?? values.email.trim().toLowerCase(),
+      }
+
+      await createManualAdmission(payload).unwrap()
       toast.success("Student admitted successfully")
       if (onSuccess) return onSuccess()
       setTimeout(() => router.push("/dashboard/admissions"), 1500)
     } catch (error: unknown) {
-      const maybeError = error as { data?: { message?: string }; message?: string }
-      toast.error(maybeError?.data?.message || maybeError?.message || "Failed to create admission")
+      const maybeError = error as {
+        data?: { message?: string; errors?: string[] }
+        message?: string
+      }
+      const serverErrors = Array.isArray(maybeError?.data?.errors) ? maybeError.data.errors : []
+      let mappedFieldErrorCount = 0
+
+      for (const serverError of serverErrors) {
+        const matchedField = Object.entries(manualAdmissionFieldMap).find(([apiField]) =>
+          serverError.toLowerCase().includes(apiField.toLowerCase())
+        )?.[1] as ManualAdmissionFieldName | undefined
+
+        if (matchedField) {
+          form.setError(matchedField, {
+            type: "server",
+            message: serverError,
+          })
+          mappedFieldErrorCount += 1
+        }
+      }
+
+      if (mappedFieldErrorCount === 0) {
+        toast.error(maybeError?.data?.message || maybeError?.message || "Failed to create admission")
+        return
+      }
+
+      toast.error("Please fix the highlighted fields and try again.")
     }
   }
 
@@ -232,13 +316,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
         onSubmit={form.handleSubmit(onSubmit)}
         className={cn("space-y-5", mode === "page" ? "pb-28 md:pb-32" : "")}
       >
-        <div
-          className={cn(
-            isDialogMode
-              ? "max-h-[68vh] overflow-y-auto pr-2 [scrollbar-gutter:stable] [scrollbar-width:thin] [&::-webkit-scrollbar]:w-2 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-full [&::-webkit-scrollbar-thumb]:bg-slate-300 hover:[&::-webkit-scrollbar-thumb]:bg-slate-400"
-              : ""
-          )}
-        >
+        <div>
           <div className="space-y-5">
             <Card className={cn("adm-card m-0", isDialogMode && "border-slate-200 shadow-none")}>
               <CardHeader className={cn(isDialogMode && "border-b bg-slate-50/70 px-5 py-4")}><CardTitle className="text-base">Student Information</CardTitle></CardHeader>

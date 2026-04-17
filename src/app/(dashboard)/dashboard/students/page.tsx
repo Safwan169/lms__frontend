@@ -163,6 +163,7 @@ export default function StudentsListPage() {
 
   const classId = searchParams.get("classId") ?? "all"
   const batchId = searchParams.get("batchId") ?? "all"
+  const userId = searchParams.get("userId") ?? ""
   const status = searchParams.get("status") ?? "all"
   const page = Number(searchParams.get("page") ?? "1")
   const limit = Number(searchParams.get("limit") ?? "20")
@@ -259,11 +260,25 @@ export default function StudentsListPage() {
       page,
       limit,
       search: debouncedSearch || undefined,
+      classId: classId !== "all" ? classId : undefined,
+      batchId: batchId !== "all" ? batchId : undefined,
+      userId: userId || undefined,
     },
     { skip: !tenantId || tenantId === "demo-tenant" }
   )
 
-  const apiRows: Student[] = (listQuery.data?.data ?? listQuery.data?.items ?? []).map((item: any) => ({
+  const apiPayload = listQuery.data as any
+  const apiItems = Array.isArray(apiPayload?.data)
+    ? apiPayload.data
+    : Array.isArray(apiPayload?.items)
+      ? apiPayload.items
+      : Array.isArray(apiPayload?.students)
+        ? apiPayload.students
+        : Array.isArray(apiPayload)
+          ? apiPayload
+          : []
+
+  const apiRows: Student[] = apiItems.map((item: any) => ({
     id: String(item.id ?? item.user_id ?? ""),
     name: String(item.full_name ?? item.student_name ?? item.name ?? ""),
     studentId: String(item.student_id ?? item.roll_number ?? ""),
@@ -319,7 +334,7 @@ export default function StudentsListPage() {
 
   const classes: ClassOption[] = (classesQuery.data ?? CLASSES) as ClassOption[]
   const batchOptions: BatchOption[] = (batchesQuery.data ?? getBatchesByClass(classId)) as BatchOption[]
-  const baseRows: Student[] = useApiData ? apiRows : ((listQuery as any).data?.items ?? fallbackList.items)
+  const baseRows: Student[] = useApiData ? apiRows : fallbackList.items
   const rows = useMemo(() => {
     return baseRows.filter((row) => {
       const classMatch = classId === "all" ? true : row.classId === classId
@@ -328,9 +343,26 @@ export default function StudentsListPage() {
       return classMatch && batchMatch && statusMatch
     })
   }, [baseRows, classId, batchId, status])
-  const total = useApiData ? rows.length : (listQuery as any).data?.total ?? fallbackList.total
-  const totalPages = useApiData ? 1 : (listQuery as any).data?.totalPages ?? fallbackList.totalPages
-  const currentPage = useApiData ? page : (listQuery as any).data?.page ?? fallbackList.page
+  const apiTotal = Number(
+    apiPayload?.total ??
+      apiPayload?.pagination?.total ??
+      apiPayload?.meta?.total ??
+      apiPayload?.count ??
+      apiRows.length
+  )
+  const apiCurrentPage = Number(
+    apiPayload?.page ?? apiPayload?.pagination?.page ?? apiPayload?.meta?.page ?? page
+  )
+  const apiTotalPages = Number(
+    apiPayload?.totalPages ??
+      apiPayload?.pagination?.totalPages ??
+      apiPayload?.meta?.totalPages ??
+      Math.max(1, Math.ceil(apiTotal / Math.max(1, limit)))
+  )
+
+  const total = useApiData ? apiTotal : fallbackList.total
+  const totalPages = useApiData ? apiTotalPages : fallbackList.totalPages
+  const currentPage = useApiData ? apiCurrentPage : fallbackList.page
 
   const summaryQuery = useQuery({
     queryKey: ["student-summary", tenantId, quickViewId, rows, students],

@@ -181,6 +181,7 @@ const DAY_LONG_LABELS: Record<DayOfWeek, string> = {
   FRIDAY: "Friday",
 }
 const TIME_SLOTS = ["08:00", "09:00", "10:00", "11:00", "12:00", "13:00", "14:00", "15:00", "16:00", "17:00", "18:00"]
+const API_DAY_ORDER: DayOfWeek[] = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"]
 
 const FALLBACK_DATA: ScheduleBootstrap = {
   classes: [
@@ -298,8 +299,12 @@ function toDateInput(date: Date) {
 
 function getDayFromDate(value: string): DayOfWeek {
   const date = new Date(`${value}T00:00:00+06:00`)
-  const map = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"] as const
-  return map[date.getDay()] as DayOfWeek
+  return API_DAY_ORDER[date.getDay()] as DayOfWeek
+}
+
+function dayOfWeekToApiValue(value: DayOfWeek) {
+  const index = API_DAY_ORDER.indexOf(value)
+  return index >= 0 ? index : 6
 }
 
 function getStatusBadgeProps(status: EntryStatus | RoutineStatus) {
@@ -346,6 +351,7 @@ function validateEntryDraft(draft: EntryDraft) {
   if (draft.startTime && draft.endTime && parseTimeToMinutes(draft.endTime) <= parseTimeToMinutes(draft.startTime)) {
     errors.endTime = "End time must be after start time"
   }
+  if (!draft.subjectId) errors.subjectId = "Subject is required"
   if (!draft.teacherId) errors.teacherId = "Teacher is required"
   if ((draft.deliveryMode === "ON_SITE" || draft.deliveryMode === "HYBRID") && !draft.roomId) {
     errors.roomId = "Room is required for this mode"
@@ -460,6 +466,13 @@ function mapScheduleTeacherOption(item: any): TeacherOption | null {
   return { id, name: name || id }
 }
 
+function mapScheduleRoomOption(item: any): RoomOption | null {
+  const id = String(item?.id ?? item?.room_id ?? "").trim()
+  const name = String(item?.name ?? item?.room_name ?? item?.title ?? "").trim()
+  if (!id) return null
+  return { id, name: name || id }
+}
+
 function normalizeRoutineStatus(value: any): RoutineStatus {
   return String(value ?? "").toUpperCase() === "PUBLISHED" ? "PUBLISHED" : "DRAFT"
 }
@@ -481,6 +494,15 @@ function normalizeDeliveryMode(value: any): DeliveryMode {
 }
 
 function normalizeDayOfWeekValue(value: any): DayOfWeek {
+  if (typeof value === "number" && Number.isInteger(value)) {
+    return API_DAY_ORDER[value] ?? "SATURDAY"
+  }
+
+  const numericValue = Number(value)
+  if (!Number.isNaN(numericValue) && Number.isInteger(numericValue)) {
+    return API_DAY_ORDER[numericValue] ?? "SATURDAY"
+  }
+
   const normalized = String(value ?? "").toUpperCase()
   if (FULL_WEEK_DAYS.includes(normalized as DayOfWeek)) return normalized as DayOfWeek
   return "SATURDAY"
@@ -522,28 +544,68 @@ function mapRoutineEntry(item: any, routineStatus: RoutineStatus = "DRAFT"): Sch
 }
 
 function mapRoutineRecord(item: any, batches: BatchOption[]): RoutineRecord | null {
-  const id = String(item?.id ?? item?.routine_id ?? "").trim()
-  const batchId = String(item?.batch_id ?? item?.batch?.id ?? "").trim()
+  const routineSource = item?.routine ?? item
+  const id = String(routineSource?.id ?? routineSource?.routine_id ?? "").trim()
+  const batchId = String(routineSource?.batch_id ?? routineSource?.batch?.id ?? "").trim()
   if (!id || !batchId) return null
 
-  const routineStatus = normalizeRoutineStatus(item?.status)
+  const routineStatus = normalizeRoutineStatus(routineSource?.status ?? item?.routine_status)
   const batch = batches.find((option) => option.id === batchId)
-  const entryCandidates =
+  const baseEntryCandidates =
     item?.entries ??
+    routineSource?.entries ??
     item?.schedule_entries ??
     item?.routine_entries ??
     []
 
-  const entries = getRawItems(entryCandidates)
+  const baseEntries = getRawItems(baseEntryCandidates)
     .map((entry: any) => mapRoutineEntry({ ...entry, batch_id: entry?.batch_id ?? batchId }, routineStatus))
+    .filter((entry: any): entry is ScheduleEntry => Boolean(entry))
+
+  const baseEntryMap = new Map(baseEntries.map((entry) => [entry.id, entry]))
+  const overrideEntries = getRawItems(item?.overrides ?? routineSource?.overrides ?? [])
+    .map((override: any) => {
+      const scheduleEntryId = String(override?.schedule_entry_id ?? "").trim()
+      const baseEntry = baseEntryMap.get(scheduleEntryId)
+      if (!baseEntry) return null
+
+      const overrideDate = String(override?.override_date ?? "").trim()
+      if (!overrideDate) return null
+
+      return mapRoutineEntry(
+        {
+          ...baseEntry,
+          id: `${baseEntry.id}__override__${overrideDate}`,
+          is_override: true,
+          override_date: overrideDate,
+          start_time: override?.new_start_time ?? baseEntry.startTime,
+          end_time: override?.new_end_time ?? baseEntry.endTime,
+          teacher_id: override?.new_teacher_id ?? baseEntry.teacherId,
+          delivery_mode: override?.new_mode ?? baseEntry.deliveryMode,
+          room_id: override?.new_room_id ?? baseEntry.roomId,
+          live_session_ref: override?.new_live_session_ref ?? baseEntry.liveSessionRef,
+          notes: override?.reason ?? baseEntry.notes,
+          status: override?.status ?? "OVERRIDE",
+          reason: override?.reason,
+        },
+        routineStatus
+      )
+    })
     .filter((entry: any): entry is ScheduleEntry => Boolean(entry))
 
   return {
     id,
     batchId,
-    batchName: String(item?.batch_name ?? item?.batch?.name ?? batch?.name ?? batchId),
+    batchName: String(
+      routineSource?.batch_name ??
+        routineSource?.batch?.name ??
+        item?.batch_name ??
+        item?.batch?.name ??
+        batch?.name ??
+        batchId
+    ),
     status: routineStatus,
-    entries,
+    entries: [...baseEntries, ...overrideEntries],
   }
 }
 
@@ -652,8 +714,9 @@ async function detectConflicts(
 
 function computeRoutineConflicts(routine: RoutineRecord) {
   const hardConflicts: Array<{ entryId: string; message: string }> = []
-  routine.entries.forEach((entry, index) => {
-    routine.entries.slice(index + 1).forEach((other) => {
+  const baseEntries = routine.entries.filter((entry) => !entry.isOverride)
+  baseEntries.forEach((entry, index) => {
+    baseEntries.slice(index + 1).forEach((other) => {
       if (entry.dayOfWeek !== other.dayOfWeek) return
       if (!overlaps(entry.startTime, entry.endTime, other.startTime, other.endTime)) return
       if (entry.teacherId === other.teacherId) {
@@ -966,6 +1029,18 @@ export default function ScheduleWorkspace({
     staleTime: 60_000,
   })
 
+  const roomsQuery = useQuery({
+    queryKey: ["schedule-rooms"],
+    enabled: !!tenantId && tenantId !== "demo-tenant",
+    queryFn: async () => {
+      const response = await api.get("/api/rooms")
+      return getRawItems(response?.data)
+        .map(mapScheduleRoomOption)
+        .filter((item: any): item is RoomOption => Boolean(item))
+    },
+    staleTime: 60_000,
+  })
+
   useEffect(() => {
     if (!bootstrapQuery.data) return
     setNotifications(bootstrapQuery.data.notifications)
@@ -997,6 +1072,10 @@ export default function ScheduleWorkspace({
     tenantId && tenantId !== "demo-tenant"
       ? (subjectsQuery.data ?? [])
       : (bootstrapQuery.data?.subjects ?? [])
+  const rooms =
+    tenantId && tenantId !== "demo-tenant"
+      ? (roomsQuery.data ?? [])
+      : (bootstrapQuery.data?.rooms ?? [])
   const availableBatches = useMemo(() => {
     if (!isRestrictedViewer) return batches
 
@@ -1031,7 +1110,6 @@ export default function ScheduleWorkspace({
     tenantId && tenantId !== "demo-tenant"
       ? (teachersQuery.data ?? [])
       : (bootstrapQuery.data?.teachers ?? [])
-  const rooms = bootstrapQuery.data?.rooms ?? []
 
   const teacherFilterOptions = useMemo(
     () => [{ id: "ALL", name: teachersQuery.isLoading ? "Loading teachers..." : "All teachers" }, ...teachers],
@@ -1107,7 +1185,7 @@ export default function ScheduleWorkspace({
   const saveEntryMutation = useMutation({
     mutationFn: async (payload: EntryDraft) => {
       const entryPayload = {
-        day_of_week: payload.dayOfWeek,
+        day_of_week: dayOfWeekToApiValue(payload.dayOfWeek),
         start_time: payload.startTime,
         end_time: payload.endTime,
         ...(payload.subjectId ? { subject_id: payload.subjectId } : {}),
@@ -1119,27 +1197,93 @@ export default function ScheduleWorkspace({
       }
 
       if (editingEntryId) {
-        await api.put(`/api/entries/${editingEntryId}`, entryPayload)
-        return payload.batchId
+        const response = await api.put(`/api/entries/${editingEntryId}`, entryPayload)
+        const responsePayload = extractResponseData(response)
+        const nextEntry = mapRoutineEntry(
+          {
+            ...(responsePayload?.entry ?? responsePayload),
+            batch_id: payload.batchId,
+          },
+          currentRoutine?.status ?? "DRAFT"
+        )
+        return {
+          batchId: payload.batchId,
+          routineId: currentRoutine?.id ?? "",
+          routineStatus: currentRoutine?.status ?? "DRAFT",
+          entry: nextEntry,
+        }
       }
 
       let routineId = currentRoutine?.id
+      let routineStatus: RoutineStatus = currentRoutine?.status ?? "DRAFT"
       if (!routineId) {
         const response = await api.post("/api/routines", {
           batch_id: payload.batchId,
           ...getRoutineDateWindow(),
         })
-        const createdRoutine = mapRoutineRecord(extractResponseData(response), batches)
-        routineId = createdRoutine?.id ?? String(extractResponseData(response)?.id ?? "").trim()
+        const routinePayload = extractResponseData(response)
+        const createdRoutine = mapRoutineRecord(routinePayload, batches)
+        routineId =
+          createdRoutine?.id ??
+          String(routinePayload?.routine?.id ?? routinePayload?.id ?? "").trim()
+        routineStatus = createdRoutine?.status ?? routineStatus
       }
 
       if (!routineId) throw new Error("Failed to create routine for this batch")
 
-      await api.post(`/api/routines/${routineId}/entries`, entryPayload)
-      return payload.batchId
+      const response = await api.post(`/api/routines/${routineId}/entries`, entryPayload)
+      const responsePayload = extractResponseData(response)
+      const nextEntry = mapRoutineEntry(
+        {
+          ...(responsePayload?.entry ?? responsePayload),
+          batch_id: payload.batchId,
+        },
+        routineStatus
+      )
+
+      return {
+        batchId: payload.batchId,
+        routineId,
+        routineStatus,
+        entry: nextEntry,
+      }
     },
-    onSuccess: async () => {
-      await reloadRoutines()
+    onSuccess: (result) => {
+      setRoutines((current) => {
+        const next = [...current]
+        const targetIndex = next.findIndex((routine) => routine.batchId === result.batchId)
+        const batch = batches.find((item: BatchOption) => item.id === result.batchId)
+
+        const existing =
+          targetIndex >= 0
+            ? next[targetIndex]
+            : {
+                id: result.routineId || `draft-routine-${result.batchId}`,
+                batchId: result.batchId,
+                batchName: batch?.name ?? result.batchId,
+                status: result.routineStatus as RoutineStatus,
+                entries: [] as ScheduleEntry[],
+              }
+
+        const dedupedEntries = result.entry
+          ? [...existing.entries.filter((entry) => entry.id !== result.entry.id), result.entry]
+          : existing.entries
+
+        const updatedRoutine: RoutineRecord = {
+          ...existing,
+          id: result.routineId || existing.id,
+          status: (result.routineStatus as RoutineStatus) ?? existing.status,
+          entries: dedupedEntries,
+        }
+
+        if (targetIndex >= 0) {
+          next[targetIndex] = updatedRoutine
+        } else {
+          next.push(updatedRoutine)
+        }
+
+        return next
+      })
       toast.success(editingEntryId ? "Schedule entry updated" : "Class added to routine")
       setEntrySheetOpen(false)
       setEditingEntryId(null)
@@ -1168,7 +1312,7 @@ export default function ScheduleWorkspace({
       if (!overrideTarget) throw new Error("No entry selected")
       if (overrideMode === "FUTURE") {
         await api.put(`/api/entries/${overrideTarget.id}`, {
-          day_of_week: overrideTarget.dayOfWeek,
+          day_of_week: dayOfWeekToApiValue(overrideTarget.dayOfWeek),
           start_time: overrideDraft.newStartTime || overrideTarget.startTime,
           end_time: overrideDraft.newEndTime || overrideTarget.endTime,
           subject_id: overrideTarget.subjectId,
@@ -1205,9 +1349,17 @@ export default function ScheduleWorkspace({
   const deleteEntryMutation = useMutation({
     mutationFn: async (entryId: string) => {
       await api.delete(`/api/entries/${entryId}`)
+      return entryId
     },
-    onSuccess: async () => {
-      await reloadRoutines()
+    onSuccess: (entryId) => {
+      setRoutines((current) =>
+        current.map((routine) => ({
+          ...routine,
+          entries: routine.entries.filter(
+            (entry) => entry.id !== entryId && !entry.id.startsWith(`${entryId}__override__`)
+          ),
+        }))
+      )
       toast.success("Schedule entry deleted")
     },
   })
@@ -1398,7 +1550,7 @@ export default function ScheduleWorkspace({
   }
 
   return (
-    <div className="space-y-6 p-4 md:p-6">
+    <div className="min-w-0 space-y-6 overflow-x-hidden p-4 md:p-6">
       {minimalView ? (
         <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -1453,32 +1605,32 @@ export default function ScheduleWorkspace({
       ) : null}
       {!minimalView ? (
         <section className="overflow-hidden rounded-[28px] border border-slate-200 bg-[linear-gradient(135deg,#0f172a_0%,#1d4ed8_58%,#38bdf8_100%)] text-white shadow-lg">
-          <div className="grid gap-6 p-6 lg:grid-cols-[1.3fr_0.7fr]">
+          <div className="grid gap-6 p-4 sm:p-6 lg:grid-cols-[1.3fr_0.7fr]">
             <div className="space-y-4">
               <Badge className="bg-white/15 text-white">Bangladesh Standard Time (UTC+6)</Badge>
               <div className="space-y-2">
-                <h1 className="text-3xl font-semibold tracking-tight">{pageTitle}</h1>
+                <h1 className="text-2xl font-semibold tracking-tight sm:text-3xl">{pageTitle}</h1>
                 <p className="max-w-2xl text-sm text-blue-100">
                   {pageDescription}
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid gap-2 sm:flex sm:flex-wrap">
                 {!hideBuilder ? (
-                  <Button variant={viewMode === "builder" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "builder" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("builder")} disabled={!isAdmin}>
+                  <Button variant={viewMode === "builder" ? "secondary" : "outline"} className={cn("w-full border-white/20 sm:w-auto", viewMode === "builder" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("builder")} disabled={!isAdmin}>
                     <LayoutGrid className="mr-2 h-4 w-4" />
                     Routine Builder
                   </Button>
                 ) : null}
-                <Button variant={viewMode === "weekly" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "weekly" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("weekly")}>
+                <Button variant={viewMode === "weekly" ? "secondary" : "outline"} className={cn("w-full border-white/20 sm:w-auto", viewMode === "weekly" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("weekly")}>
                   <Eye className="mr-2 h-4 w-4" />
                   Weekly View
                 </Button>
-                <Button variant={viewMode === "daily" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "daily" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("daily")}>
+                <Button variant={viewMode === "daily" ? "secondary" : "outline"} className={cn("w-full border-white/20 sm:w-auto", viewMode === "daily" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("daily")}>
                   <CalendarDays className="mr-2 h-4 w-4" />
                   Daily View
                 </Button>
                 {showListView ? (
-                  <Button variant={viewMode === "list" ? "secondary" : "outline"} className={cn("border-white/20", viewMode === "list" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("list")}>
+                  <Button variant={viewMode === "list" ? "secondary" : "outline"} className={cn("w-full border-white/20 sm:w-auto", viewMode === "list" ? "" : "bg-white/10 text-white hover:bg-white/20")} onClick={() => setViewMode("list")}>
                     <ListFilter className="mr-2 h-4 w-4" />
                     List View
                   </Button>
@@ -1509,7 +1661,7 @@ export default function ScheduleWorkspace({
       ) : null}
       <section className="space-y-6">
         {!minimalView && viewMode !== "list" ? (
-          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-950">
+            <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5 dark:border-slate-800 dark:bg-slate-950">
             <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_240px]">
               <div className="space-y-3">
                 <div>
@@ -1574,7 +1726,7 @@ export default function ScheduleWorkspace({
         ) : null}
 
         {viewMode === "builder" ? (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900">Weekly Routine Builder</h2>
@@ -1651,16 +1803,20 @@ export default function ScheduleWorkspace({
         ) : null}
 
         {viewMode === "weekly" ? (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900">Weekly Schedule View</h2>
                   <p className="text-sm text-slate-500">Read-only schedule for teachers and students with overrides applied automatically.</p>
                 </div>
-                <div className="flex items-center gap-2">
-                  <Button variant="outline" size="icon-sm" onClick={() => setCurrentWeekStart((value) => addDays(value, -7))}><ChevronLeft className="h-4 w-4" /></Button>
-                  <div className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">{formatDateLabel(toDateInput(currentWeekStart))} - {formatDateLabel(toDateInput(addDays(currentWeekStart, 6)))}</div>
-                  <Button variant="outline" size="icon-sm" onClick={() => setCurrentWeekStart((value) => addDays(value, 7))}><ChevronRight className="h-4 w-4" /></Button>
+                <div className="flex w-full items-center gap-2 sm:w-auto">
+                  <Button variant="outline" size="icon-sm" className="shrink-0" onClick={() => setCurrentWeekStart((value) => addDays(value, -7))}><ChevronLeft className="h-4 w-4" /></Button>
+                  <div className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 sm:flex-none sm:rounded-full sm:px-4">
+                    <span className="block truncate sm:inline">{formatDateLabel(toDateInput(currentWeekStart))}</span>
+                    <span className="hidden sm:inline"> - </span>
+                    <span className="block truncate sm:inline">{formatDateLabel(toDateInput(addDays(currentWeekStart, 6)))}</span>
+                  </div>
+                  <Button variant="outline" size="icon-sm" className="shrink-0" onClick={() => setCurrentWeekStart((value) => addDays(value, 7))}><ChevronRight className="h-4 w-4" /></Button>
                 </div>
               </div>
               <div className="mb-4 flex flex-wrap gap-2">
@@ -1739,16 +1895,17 @@ export default function ScheduleWorkspace({
         ) : null}
 
         {viewMode === "daily" ? (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
-              <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
+              <div className="mb-5 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900">Daily Calendar View</h2>
                   <p className="text-sm text-slate-500">Single-day schedule timeline for quicker reading on desktop and mobile.</p>
                 </div>
-                <div className="flex items-center gap-2">
+                <div className="flex w-full items-center gap-2 sm:w-auto">
                   <Button
                     variant="outline"
                     size="icon-sm"
+                    className="shrink-0"
                     onClick={() => {
                       if (selectedDayIndex === 0) {
                         setCurrentWeekStart((value) => addDays(value, -7))
@@ -1760,12 +1917,15 @@ export default function ScheduleWorkspace({
                   >
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
-                  <div className="rounded-full border border-slate-200 px-4 py-2 text-sm font-medium text-slate-700">
-                    {DAY_LONG_LABELS[selectedDailyDay]} • {formatDateLabel(selectedDailyDate)}
+                  <div className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 sm:flex-none sm:rounded-full sm:px-4">
+                    <span className="block truncate sm:inline">{DAY_LONG_LABELS[selectedDailyDay]}</span>
+                    <span className="hidden sm:inline"> • </span>
+                    <span className="block truncate sm:inline">{formatDateLabel(selectedDailyDate)}</span>
                   </div>
                   <Button
                     variant="outline"
                     size="icon-sm"
+                    className="shrink-0"
                     onClick={() => {
                       if (selectedDayIndex === 6) {
                         setCurrentWeekStart((value) => addDays(value, 7))
@@ -1835,7 +1995,7 @@ export default function ScheduleWorkspace({
         ) : null}
 
         {showListView && viewMode === "list" ? (
-            <div className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
               <div className="mb-5 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <h2 className="text-xl font-semibold text-slate-900">Schedule Entry List</h2>
@@ -1870,7 +2030,7 @@ export default function ScheduleWorkspace({
         ) : null}
       </section>
       {showListView && viewMode === "list" ? (
-        <section className="rounded-[28px] border border-slate-200 bg-white p-5 shadow-sm">
+        <section className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm sm:p-5">
           <div className="hidden overflow-hidden rounded-3xl border border-slate-200 lg:block">
             <Table>
               <TableHeader>
@@ -1970,6 +2130,7 @@ export default function ScheduleWorkspace({
               <div><FieldLabel label="Day of Week" required /><Select value={entryDraft.dayOfWeek} onValueChange={(value) => setEntryDraft((current) => ({ ...current, dayOfWeek: value as DayOfWeek }))}>{FULL_WEEK_DAYS.map((day) => <option key={day} value={day}>{DAY_LONG_LABELS[day]}</option>)}</Select><FieldError message={entryErrors.dayOfWeek} /></div>
               <div><FieldLabel label="Start Time" required /><Input type="time" value={entryDraft.startTime} onChange={(event) => setEntryDraft((current) => ({ ...current, startTime: event.target.value }))} /><FieldError message={entryErrors.startTime} /></div>
               <div><FieldLabel label="End Time" required /><Input type="time" value={entryDraft.endTime} onChange={(event) => setEntryDraft((current) => ({ ...current, endTime: event.target.value }))} /><FieldError message={entryErrors.endTime} /></div>
+              <div><FieldLabel label="Subject" required /><SearchableInput listId="subject-options-list" value={entryDraft.subjectId} onChange={(value) => setEntryDraft((current) => ({ ...current, subjectId: value }))} options={subjects} placeholder="Search subject" /><FieldError message={entryErrors.subjectId} /></div>
               <div><FieldLabel label="Teacher" required /><SearchableInput listId="teacher-options-list" value={entryDraft.teacherId} onChange={(value) => setEntryDraft((current) => ({ ...current, teacherId: value }))} options={teachers} placeholder="Search teacher" /><FieldError message={entryErrors.teacherId} /></div>
               <div>
                 <FieldLabel label="Delivery Mode" required />

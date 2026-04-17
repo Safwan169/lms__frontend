@@ -49,8 +49,10 @@ type ClassSection = "Science" | "Commerce" | "Arts" | "General"
 type ClassRow = {
   id: string
   class_name: string
+  code: string
+  description: string
+  level: string
   sections: ClassSection[]
-  capacity: number
   status: "ACTIVE" | "INACTIVE"
   subject_ids: string[]
   subject_names: string[]
@@ -94,7 +96,6 @@ const classFormSchema = z.object({
   level: z.string().trim().min(1, "Level is required"),
   subject_ids: z.array(z.string().trim().min(1)).min(1, "Select at least one subject"),
   sections: z.array(z.enum(["Science", "Commerce", "Arts", "General"])).min(1, "Select at least one section"),
-  capacity: z.coerce.number().int().min(1, "Capacity must be at least 1"),
   status: z.boolean().default(true),
 })
 
@@ -111,19 +112,12 @@ function normalizeSubjectIds(values: string[]) {
   return values.map((value) => String(value).trim()).filter((value) => isUuid(value))
 }
 
-const DUMMY_CLASSES: ClassRow[] = [
-  { id: "c-6", class_name: "Class 6", sections: ["General"], capacity: 120, status: "ACTIVE", subject_ids: [], subject_names: [] },
-  { id: "c-7", class_name: "Class 7", sections: ["Science", "General"], capacity: 100, status: "ACTIVE", subject_ids: [], subject_names: [] },
-  { id: "c-8", class_name: "Class 8", sections: ["Commerce", "Arts"], capacity: 80, status: "INACTIVE", subject_ids: [], subject_names: [] },
-]
-
 export default function SettingsClassesPage() {
   const { user } = useAuth()
   const queryClient = useQueryClient()
   const [createClassApiCall] = useCreateClassMutation()
   const [updateClassApiCall] = useUpdateClassMutation()
 
-  const [classesState, setClassesState] = useState<ClassRow[]>(DUMMY_CLASSES)
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [selectedRow, setSelectedRow] = useState<ClassRow | null>(null)
@@ -144,7 +138,6 @@ export default function SettingsClassesPage() {
       level: "Beginner",
       subject_ids: [],
       sections: ["General"],
-      capacity: 1,
       status: true,
     },
   })
@@ -225,8 +218,10 @@ export default function SettingsClassesPage() {
         return {
           id: String(item?.id ?? `class-${Date.now()}`),
           class_name: String(item?.name ?? "Unnamed Class"),
+          code: String(item?.code ?? ""),
+          description: String(item?.description ?? ""),
+          level: String(item?.level ?? "Beginner"),
           sections: normalizedSections.length > 0 ? normalizedSections : ["General"],
-          capacity: 0,
           status: item?.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
           subject_ids: subjectIds,
           subject_names: subjectNames,
@@ -259,8 +254,10 @@ export default function SettingsClassesPage() {
           return {
             id: result?.id || selectedRow.id,
             class_name: values.class_name,
+            code: values.code,
+            description: values.description,
+            level: values.level,
             sections: values.sections,
-            capacity: values.capacity,
             status: values.status ? "ACTIVE" : "INACTIVE",
             subject_ids: values.subject_ids,
             subject_names: subjectOptions
@@ -283,8 +280,10 @@ export default function SettingsClassesPage() {
         return {
           id: result?.id || `cls-${Date.now()}`,
           class_name: values.class_name,
+          code: values.code,
+          description: values.description,
+          level: values.level,
           sections: values.sections,
-          capacity: values.capacity,
           status: values.status ? "ACTIVE" : "INACTIVE",
           subject_ids: values.subject_ids,
           subject_names: subjectOptions
@@ -300,24 +299,7 @@ export default function SettingsClassesPage() {
         )
       }
     },
-    onSuccess: (savedRow) => {
-      const mapped: ClassRow = {
-        id: String(savedRow.id),
-        class_name: savedRow.class_name,
-        sections: savedRow.sections,
-        capacity: savedRow.capacity,
-        status: savedRow.status === "ACTIVE" ? "ACTIVE" : "INACTIVE",
-        subject_ids: savedRow.subject_ids,
-        subject_names: savedRow.subject_names,
-      }
-
-      setClassesState((prev) => {
-        if (isEditMode && selectedRow) {
-          return prev.map((item) => (item.id === selectedRow.id ? mapped : item))
-        }
-        return [mapped, ...prev]
-      })
-
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings-classes", tenantId] })
       toast.success(isEditMode ? "Class updated" : "Class created")
 
@@ -331,7 +313,6 @@ export default function SettingsClassesPage() {
         level: "Beginner",
         subject_ids: [],
         sections: ["General"],
-        capacity: 1,
         status: true,
       })
     },
@@ -358,8 +339,7 @@ export default function SettingsClassesPage() {
       await new Promise((resolve) => setTimeout(resolve, 250))
       return row.id
     },
-    onSuccess: (deletedId) => {
-      setClassesState((prev) => prev.filter((item) => item.id !== deletedId))
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["settings-classes", tenantId] })
       toast.success("Class deleted")
       setDeleteTarget(null)
@@ -379,7 +359,6 @@ export default function SettingsClassesPage() {
       level: "Beginner",
       subject_ids: [],
       sections: ["General"],
-      capacity: 1,
       status: true,
     })
     setDialogOpen(true)
@@ -390,12 +369,11 @@ export default function SettingsClassesPage() {
     setSelectedRow(row)
     form.reset({
       class_name: row.class_name,
-      code: "",
-      description: "",
-      level: "Beginner",
+      code: row.code,
+      description: row.description,
+      level: row.level,
       subject_ids: row.subject_ids,
       sections: row.sections,
-      capacity: row.capacity,
       status: row.status === "ACTIVE",
     })
     setDialogOpen(true)
@@ -426,7 +404,6 @@ export default function SettingsClassesPage() {
               <TableHead>Class Name</TableHead>
               <TableHead>Sections</TableHead>
               <TableHead>Subjects</TableHead>
-              <TableHead>Capacity</TableHead>
               <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
@@ -438,14 +415,13 @@ export default function SettingsClassesPage() {
                   <TableCell><Skeleton className="h-4 w-24" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-36" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-16" /></TableCell>
                   <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="ml-auto h-8 w-20" /></TableCell>
                 </TableRow>
               ))
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={6} className="py-12 text-center">
+                <TableCell colSpan={5} className="py-12 text-center">
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">No classes yet. Add your first class.</p>
                     <Button size="sm" onClick={openAddDialog}>
@@ -461,7 +437,6 @@ export default function SettingsClassesPage() {
                   <TableCell className="font-medium">{row.class_name}</TableCell>
                   <TableCell>{row.sections.join(", ")}</TableCell>
                   <TableCell>{row.subject_names.length > 0 ? row.subject_names.join(", ") : "-"}</TableCell>
-                  <TableCell>{row.capacity}</TableCell>
                   <TableCell>
                     <Badge
                       className={row.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}
@@ -634,28 +609,6 @@ export default function SettingsClassesPage() {
                           )
                         })}
                       </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="capacity"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Capacity</FormLabel>
-                    <FormControl>
-                      <Input
-                        type="number"
-                        min={1}
-                        name={field.name}
-                        ref={field.ref}
-                        onBlur={field.onBlur}
-                        value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""}
-                        onChange={(event) => field.onChange(event.target.value)}
-                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

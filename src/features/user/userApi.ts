@@ -81,8 +81,9 @@ export type GetStudentProfilesParams = {
   page?: number;
   limit?: number;
   search?: string;
-  user_id?: string;
-  student_id?: string;
+  classId?: string;
+  batchId?: string;
+  userId?: string;
 };
 
 export type UpdateStudentProfileRequest = {
@@ -228,14 +229,15 @@ export const userApi = baseApi.injectEndpoints({
       invalidatesTags: ["User"]
     }),
     getStudentProfiles: builder.query<any, GetStudentProfilesParams>({
-      query: ({ tenantId, page = 1, limit = 10, search, user_id, student_id }) => {
+      query: ({ tenantId, page = 1, limit = 10, search, classId, batchId, userId }) => {
         const params = new URLSearchParams();
         params.set("page", String(page));
         params.set("limit", String(limit));
         if (search) params.set("search", search);
-        if (user_id) params.set("user_id", user_id);
-        if (student_id) params.set("student_id", student_id);
-        return `/api/tenants/${tenantId}/student-profiles?${params.toString()}`;
+        if (classId) params.set("classId", classId);
+        if (batchId) params.set("batchId", batchId);
+        if (userId) params.set("userId", userId);
+        return `/api/tenants/${tenantId}/students?${params.toString()}`;
       },
       providesTags: ["User"]
     }),

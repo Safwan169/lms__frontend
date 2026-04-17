@@ -484,12 +484,12 @@ export default function AdminAdmissionsPage() {
       </AlertDialog>
 
       <Dialog open={newAdmissionOpen} onOpenChange={setNewAdmissionOpen}>
-        <DialogContent className="max-h-[90vh] max-w-5xl overflow-y-auto p-0">
+        <DialogContent className="max-h-[90vh] max-w-5xl overflow-hidden p-0">
           <DialogHeader className="border-b px-6 pt-6">
             <DialogTitle>New Admission</DialogTitle>
             <DialogDescription>Create a new admission without leaving this page.</DialogDescription>
           </DialogHeader>
-          <div className="px-6 pb-6 pt-4">
+          <div className="max-h-[calc(90vh-88px)] overflow-y-auto px-6 pb-6 pt-4">
             <ManualAdmissionForm
               mode="dialog"
               onCancel={() => setNewAdmissionOpen(false)}

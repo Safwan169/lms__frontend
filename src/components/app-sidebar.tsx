@@ -140,10 +140,16 @@ const navData: NavItem[] = [
     roles: ["admin", "rektor", "superadmin"],
   },
   {
+    title: "Attendance",
+    url: "/dashboard/attendance",
+    icon: ClipboardCheck,
+    roles: ["admin", "rektor", "teacher"],
+  },
+  {
     title: "Self Attendance",
     url: "/dashboard/self-attendance",
     icon: ClipboardCheck,
-    roles: ["teacher", "student"],
+    roles: ["student"],
   },
   
   // {
