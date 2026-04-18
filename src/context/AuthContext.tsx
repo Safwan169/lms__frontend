@@ -70,13 +70,14 @@ function normalizeSessionUser(user: any, tenant?: any) {
 async function fetchUnifiedProfile(token: string, tenantId: string | number | null, userId: string | number | null) {
   if (!token || !tenantId || !userId) return null
 
-  const baseUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089"
+  const baseUrl = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089").replace(/\/+$/, "")
+  const profilePath = /\/api$/i.test(baseUrl) ? "/user-profiles" : "/api/user-profiles"
   const params = new URLSearchParams({
     tenantId: String(tenantId),
     userId: String(userId),
   })
 
-  const response = await fetch(`${baseUrl}/api/user-profiles?${params.toString()}`, {
+  const response = await fetch(`${baseUrl}${profilePath}?${params.toString()}`, {
     headers: {
       accept: "application/json",
       Authorization: `Bearer ${token}`,

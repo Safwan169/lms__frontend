@@ -7,7 +7,7 @@ import { AlertCircle, Loader2, MessageSquare, ShieldCheck } from "lucide-react"
 import toast from "react-hot-toast"
 
 import { useAuth } from "@/context/AuthContext"
-import { getMyAttendanceRecords, getMyAttendanceSummary, sendAttendanceSms } from "@/features/attendance/api"
+import { getMyAttendanceDateStatusList, getMyAttendanceSummary, sendAttendanceSms } from "@/features/attendance/api"
 import { formatDateLabel, formatTimeLabel, getErrorMessage, normalizeRole, sourceVariant, statusVariant, todayIsoDate } from "@/features/attendance/utils"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
@@ -34,7 +34,7 @@ export default function AttendanceSelfService() {
     enabled: isStudent,
     queryFn: () => {
       const [year, monthValue] = month.split("-").map(Number)
-      return getMyAttendanceRecords({ month: monthValue, year, sort: "DESC" })
+      return getMyAttendanceDateStatusList({ month: monthValue, year })
     },
   })
 

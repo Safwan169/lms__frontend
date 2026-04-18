@@ -198,6 +198,7 @@ export function normalizeAttendanceRecord(value: unknown, fallbackBatchId = "", 
     ).trim(),
     rollNumber: String(
       root.roll_no ??
+        root.student_roll ??
         root.rollNumber ??
         profile.student_id ??
         student.student_id ??
@@ -206,8 +207,8 @@ export function normalizeAttendanceRecord(value: unknown, fallbackBatchId = "", 
     ).trim(),
     status: normalizeStatus(root.status),
     source: normalizeSource(root.source),
-    firstEntry: asNullableString(root.first_entry ?? root.firstEntry),
-    lastExit: asNullableString(root.last_exit ?? root.lastExit),
+    firstEntry: asNullableString(root.first_entry ?? root.firstEntry ?? root.check_in_time),
+    lastExit: asNullableString(root.last_exit ?? root.lastExit ?? root.check_out_time),
     overridden: Boolean(root.overridden),
     overriddenBy: asNullableString(root.overridden_by ?? root.overriddenBy),
     note: asNullableString(root.note),

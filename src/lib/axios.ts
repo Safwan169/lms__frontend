@@ -15,8 +15,24 @@ function resolveErrorMessage(error: any) {
   return data?.message ?? error?.message ?? "Something went wrong"
 }
 
+function resolveApiBaseUrl() {
+  const raw = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089"
+  const trimmed = raw.replace(/\/+$/, "")
+  return trimmed.replace(/\/api$/i, "")
+}
+
+function normalizeApiPath(url: string) {
+  if (!url) return url
+  if (/^https?:\/\//i.test(url)) return url
+
+  const normalized = `/${url.replace(/^\/+/, "")}`
+  if (normalized === "/api") return "/api"
+  if (normalized.startsWith("/api/")) return normalized.replace(/^\/api\/api\//i, "/api/")
+  return `/api${normalized}`
+}
+
 const instance = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089",
+  baseURL: resolveApiBaseUrl(),
   headers: { "Content-Type": "application/json" }
 });
 
@@ -42,6 +58,10 @@ instance.interceptors.request.use(
       if (typeof window !== "undefined") {
         const token = localStorage.getItem("access_token");
         if (token) config.headers = { ...config.headers, Authorization: `Bearer ${token}` };
+      }
+
+      if (typeof config?.url === "string") {
+        config.url = normalizeApiPath(config.url)
       }
     } catch (e) { /* ignore */ }
     return config;

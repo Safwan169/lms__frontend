@@ -508,6 +508,24 @@ function isUuidLike(value: string) {
   )
 }
 
+function resolveDisplayName(
+  rawName: string | undefined,
+  fallbackId: string | undefined,
+  options: Array<{ id: string; name: string }>
+) {
+  const normalizedName = String(rawName ?? "").trim()
+  const normalizedId = String(fallbackId ?? "").trim()
+  const matched = normalizedId ? options.find((option) => option.id === normalizedId) : undefined
+
+  if (matched && (!normalizedName || normalizedName === normalizedId || isUuidLike(normalizedName))) {
+    return matched.name
+  }
+
+  if (normalizedName) return normalizedName
+  if (matched?.name) return matched.name
+  return normalizedId
+}
+
 function resolveOptionId(options: Array<{ id: string; name: string }>, rawValue: string) {
   const normalizedValue = String(rawValue ?? "").trim()
   if (!normalizedValue) return ""
@@ -527,45 +545,182 @@ function extractResponseData(response: any) {
   return response?.data?.data ?? response?.data ?? response
 }
 
+function normalizeLooseText(value: any) {
+  return String(value ?? "").trim().toLowerCase()
+}
+
+function resolveBatchContext(
+  item: any,
+  batches: BatchOption[],
+  fallback?: {
+    batchId?: string
+    batchName?: string
+    className?: string
+    routineId?: string
+  }
+) {
+  const directBatchId = String(
+    item?.batch_id ??
+      item?.batch?.id ??
+      item?.routine?.batch_id ??
+      fallback?.batchId ??
+      ""
+  ).trim()
+  if (directBatchId) {
+    const matched = batches.find((batch) => batch.id === directBatchId)
+    return {
+      batchId: directBatchId,
+      batchName: matched?.name ?? String(item?.batch_name ?? item?.batch?.name ?? fallback?.batchName ?? directBatchId),
+      className: matched?.className ?? String(item?.class_name ?? item?.batch?.class?.name ?? fallback?.className ?? ""),
+    }
+  }
+
+  const batchName = String(item?.batch_name ?? item?.batch?.name ?? fallback?.batchName ?? "").trim()
+  const className = String(item?.class_name ?? item?.batch?.class?.name ?? fallback?.className ?? "").trim()
+  const normalizedBatch = normalizeLooseText(batchName)
+  const normalizedClass = normalizeLooseText(className)
+  const matchedByName = batches.find((batch) => {
+    if (normalizeLooseText(batch.name) !== normalizedBatch) return false
+    if (!normalizedClass) return true
+    return normalizeLooseText(batch.className) === normalizedClass
+  })
+
+  if (matchedByName) {
+    return {
+      batchId: matchedByName.id,
+      batchName: matchedByName.name,
+      className: matchedByName.className,
+    }
+  }
+
+  const fallbackRoutineId = String(item?.routine_id ?? item?.routine?.id ?? fallback?.routineId ?? "").trim()
+  const syntheticBatchId = fallbackRoutineId ? `virtual-batch-${fallbackRoutineId}` : "virtual-batch-unknown"
+  return {
+    batchId: syntheticBatchId,
+    batchName: batchName || "My Batch",
+    className: className || "",
+  }
+}
+
 function mapRoutineEntry(item: any, routineStatus: RoutineStatus = "DRAFT"): ScheduleEntry | null {
   const id = String(item?.id ?? item?.entry_id ?? "").trim()
   const subjectId = String(item?.subject_id ?? item?.subject?.id ?? item?.subject_code ?? "").trim()
-  const teacherId = String(item?.teacher_id ?? item?.teacher?.id ?? item?.teacher?.user_id ?? "").trim()
-  const roomId = String(item?.room_id ?? item?.room?.id ?? "").trim()
-  const overrideDate = String(item?.override_date ?? item?.overrideDate ?? "").trim()
-  const isOverride = Boolean(item?.is_override ?? item?.isOverride ?? overrideDate)
+  const overrideMeta = item?.override
+  const effectiveStatus = String(item?.effective_status ?? "").trim().toUpperCase()
+  const teacherId = String(
+    item?.effective_teacher_id ??
+      overrideMeta?.new_teacher_id ??
+      item?.teacher_id ??
+      item?.teacher?.id ??
+      item?.teacher?.user_id ??
+      ""
+  ).trim()
+  const roomId = String(
+    item?.effective_room_id ??
+      overrideMeta?.new_room_id ??
+      item?.room_id ??
+      item?.room?.id ??
+      ""
+  ).trim()
+  const overrideDate = String(
+    item?.override_date ??
+      item?.overrideDate ??
+      overrideMeta?.override_date ??
+      ""
+  ).trim()
+  const explicitOverrideRow = Boolean(item?.is_override || item?.isOverride || overrideDate)
+  const hasAppliedOverride = Boolean(
+    item?.override ||
+      item?.effective_start_time ||
+      item?.effective_end_time ||
+      item?.effective_teacher_id ||
+      item?.effective_delivery_mode ||
+      item?.effective_room_id ||
+      item?.effective_live_session_ref ||
+      effectiveStatus === "CANCELLED"
+  )
+  const isOverride = explicitOverrideRow
+  const startTime = String(
+    item?.effective_start_time ??
+      overrideMeta?.new_start_time ??
+      item?.start_time ??
+      item?.startTime ??
+      ""
+  ).trim()
+  const endTime = String(
+    item?.effective_end_time ??
+      overrideMeta?.new_end_time ??
+      item?.end_time ??
+      item?.endTime ??
+      ""
+  ).trim()
+  const deliveryModeRaw =
+    item?.effective_delivery_mode ??
+    overrideMeta?.new_mode ??
+    item?.delivery_mode ??
+    item?.deliveryMode
   if (!id) return null
+
+  let status: EntryStatus
+  if (effectiveStatus === "CANCELLED") {
+    status = "CANCELLED"
+  } else if (explicitOverrideRow || hasAppliedOverride) {
+    status = "OVERRIDE"
+  } else {
+    status = normalizeEntryStatus(item?.status, routineStatus, false)
+  }
 
   return {
     id,
-    batchId: String(item?.batch_id ?? item?.batch?.id ?? "").trim(),
+    batchId: String(item?.batch_id ?? item?.batch?.id ?? item?.routine?.batch_id ?? "").trim(),
     dayOfWeek: normalizeDayOfWeekValue(item?.day_of_week ?? item?.dayOfWeek),
-    startTime: String(item?.start_time ?? item?.startTime ?? "").trim(),
-    endTime: String(item?.end_time ?? item?.endTime ?? "").trim(),
+    startTime,
+    endTime,
     subjectId,
     subjectName: String(item?.subject_name ?? item?.subject?.name ?? subjectId ?? "Class Session").trim() || "Class Session",
     teacherId,
     teacherName: String(item?.teacher_name ?? item?.teacher?.name ?? teacherId ?? "").trim(),
-    deliveryMode: normalizeDeliveryMode(item?.delivery_mode ?? item?.deliveryMode),
+    deliveryMode: normalizeDeliveryMode(deliveryModeRaw),
     roomId: roomId || undefined,
     roomName: String(item?.room_name ?? item?.room?.name ?? "").trim() || undefined,
-    liveSessionRef: String(item?.live_session_ref ?? item?.liveSessionRef ?? "").trim() || undefined,
-    notes: String(item?.notes ?? "").trim() || undefined,
-    status: normalizeEntryStatus(item?.status, routineStatus, isOverride),
+    liveSessionRef:
+      String(
+        item?.effective_live_session_ref ??
+          overrideMeta?.new_live_session_ref ??
+          item?.live_session_ref ??
+          item?.liveSessionRef ??
+          ""
+      ).trim() || undefined,
+    notes: String(item?.notes ?? overrideMeta?.reason ?? "").trim() || undefined,
+    status,
     isOverride,
     overrideDate: overrideDate || undefined,
-    reason: String(item?.reason ?? "").trim() || undefined,
+    reason: String(item?.reason ?? overrideMeta?.reason ?? "").trim() || undefined,
   }
 }
 
 function mapRoutineRecord(item: any, batches: BatchOption[]): RoutineRecord | null {
   const routineSource = item?.routine ?? item
   const id = String(routineSource?.id ?? routineSource?.routine_id ?? "").trim()
-  const batchId = String(routineSource?.batch_id ?? routineSource?.batch?.id ?? "").trim()
-  if (!id || !batchId) return null
+  if (!id) return null
+
+  const resolvedBatch = resolveBatchContext(item, batches, {
+    batchId: routineSource?.batch_id ?? routineSource?.batch?.id,
+    batchName:
+      routineSource?.batch_name ??
+      routineSource?.batch?.name ??
+      item?.batch_name ??
+      item?.batch?.name,
+    className:
+      routineSource?.class_name ??
+      routineSource?.batch?.class?.name ??
+      item?.class_name ??
+      item?.batch?.class?.name,
+    routineId: id,
+  })
+  const batchId = resolvedBatch.batchId
 
   const routineStatus = normalizeRoutineStatus(routineSource?.status ?? item?.routine_status)
-  const batch = batches.find((option) => option.id === batchId)
   const baseEntryCandidates =
     item?.entries ??
     routineSource?.entries ??
@@ -613,14 +768,7 @@ function mapRoutineRecord(item: any, batches: BatchOption[]): RoutineRecord | nu
   return {
     id,
     batchId,
-    batchName: String(
-      routineSource?.batch_name ??
-        routineSource?.batch?.name ??
-        item?.batch_name ??
-        item?.batch?.name ??
-        batch?.name ??
-        batchId
-    ),
+    batchName: resolvedBatch.batchName || batchId,
     status: routineStatus,
     entries: [...baseEntries, ...overrideEntries],
   }
@@ -630,20 +778,23 @@ function groupTeacherScheduleRecords(items: any[], batches: BatchOption[]): Rout
   const grouped = new Map<string, RoutineRecord>()
 
   items.forEach((item) => {
-    const batchId = String(item?.batch_id ?? item?.batch?.id ?? "").trim()
-    if (!batchId) return
-
-    const routineId = String(item?.routine_id ?? item?.routine?.id ?? `teacher-routine-${batchId}`).trim()
+    const routineId = String(item?.routine_id ?? item?.routine?.id ?? "").trim()
+    const resolvedBatch = resolveBatchContext(item, batches, {
+      routineId,
+      batchName: item?.batch_name ?? item?.routine?.batch_name,
+      className: item?.class_name ?? item?.routine?.class_name,
+    })
+    const effectiveRoutineId = routineId || `teacher-routine-${resolvedBatch.batchId}`
+    const batchId = resolvedBatch.batchId
     const routineStatus = normalizeRoutineStatus(item?.routine_status ?? item?.routine?.status ?? item?.status)
-    const batch = batches.find((option) => option.id === batchId)
-    const nextEntry = mapRoutineEntry(item, routineStatus)
+    const nextEntry = mapRoutineEntry({ ...item, batch_id: item?.batch_id ?? resolvedBatch.batchId }, routineStatus)
     if (!nextEntry) return
 
     if (!grouped.has(batchId)) {
       grouped.set(batchId, {
-        id: routineId,
+        id: effectiveRoutineId,
         batchId,
-        batchName: String(item?.batch_name ?? item?.batch?.name ?? batch?.name ?? batchId),
+        batchName: resolvedBatch.batchName || batchId,
         status: routineStatus,
         entries: [],
       })
@@ -698,7 +849,25 @@ async function fetchMyStudentSchedule(batches: BatchOption[]) {
   const response = await api.get("/api/students/me/schedule")
   const payload = extractResponseData(response)
   const mappedRoutine = mapRoutineRecord(payload, batches)
-  return mappedRoutine ? [mappedRoutine] : []
+  if (mappedRoutine) return [mappedRoutine]
+
+  const scheduleItems = getRawItems(payload?.schedule ?? payload?.entries ?? payload?.items ?? payload)
+  if (!scheduleItems.length) return []
+
+  const fallback = resolveBatchContext({}, batches, {
+    batchId: payload?.batch_id,
+    batchName: payload?.batch_name,
+    className: payload?.class_name,
+    routineId: payload?.routine?.id,
+  })
+  const enrichedItems = scheduleItems.map((item: any) => ({
+    ...item,
+    batch_id: item?.batch_id ?? fallback.batchId,
+    batch_name: item?.batch_name ?? fallback.batchName,
+    class_name: item?.class_name ?? fallback.className,
+  }))
+
+  return groupTeacherScheduleRecords(enrichedItems, batches)
 }
 
 function getRoutineDateWindow() {
@@ -1171,6 +1340,42 @@ export default function ScheduleWorkspace({
       current && availableBatches.some((batch: BatchOption) => batch.id === current) ? current : initialBatchId
     )
   }, [availableBatches, routines])
+
+  useEffect(() => {
+    if (routines.length === 0) return
+    if (subjects.length === 0 && teachers.length === 0 && rooms.length === 0) return
+
+    let hasChanges = false
+    const nextRoutines = routines.map((routine) => {
+      const nextEntries = routine.entries.map((entry) => {
+        const nextSubjectName = resolveDisplayName(entry.subjectName, entry.subjectId, subjects)
+        const nextTeacherName = resolveDisplayName(entry.teacherName, entry.teacherId, teachers)
+        const nextRoomName = resolveDisplayName(entry.roomName, entry.roomId, rooms)
+
+        if (
+          nextSubjectName === entry.subjectName &&
+          nextTeacherName === entry.teacherName &&
+          nextRoomName === entry.roomName
+        ) {
+          return entry
+        }
+
+        hasChanges = true
+        return {
+          ...entry,
+          subjectName: nextSubjectName,
+          teacherName: nextTeacherName,
+          roomName: nextRoomName,
+        }
+      })
+
+      return nextEntries === routine.entries ? routine : { ...routine, entries: nextEntries }
+    })
+
+    if (hasChanges) {
+      setRoutines(nextRoutines)
+    }
+  }, [routines, subjects, teachers, rooms])
 
   const teacherFilterOptions = useMemo(
     () => [{ id: "ALL", name: teachersQuery.isLoading ? "Loading teachers..." : "All teachers" }, ...teachers],

@@ -40,7 +40,6 @@ import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table-primitive"
-import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 type ViewTab = "roll-call" | "day-view" | "month-view"
@@ -279,16 +278,6 @@ export default function AttendanceManagementWorkspace() {
     }))
   }
 
-  const updateNote = (row: AttendanceRecord, note: string) => {
-    setDrafts((prev) => ({
-      ...prev,
-      [row.studentId]: {
-        ...(prev[row.studentId] ?? makeBulkDraftRecord(row, row.status, displayName)),
-        note,
-      },
-    }))
-  }
-
   const markAll = (nextStatus: AttendanceStatus) => {
     setDrafts((prev) => {
       const next = { ...prev }
@@ -455,14 +444,13 @@ export default function AttendanceManagementWorkspace() {
                     <TableHead>Student Name</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead>Source</TableHead>
-                    <TableHead>First Entry</TableHead>
-                    <TableHead>Last Exit</TableHead>
-                    <TableHead>Note</TableHead>
+                    <TableHead>Check In</TableHead>
+                    <TableHead>Check Out</TableHead>
                     <TableHead className="text-right">SMS</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {rows.map((row) => (
+                  {rows.map((row, index) => (
                     <TableRow key={row.studentId}>
                       <TableCell>
                         <input
@@ -475,7 +463,7 @@ export default function AttendanceManagementWorkspace() {
                           }
                         />
                       </TableCell>
-                      <TableCell className="font-medium">{row.rollNumber || "-"}</TableCell>
+                      <TableCell className="font-medium">{row.rollNumber || String(index + 1)}</TableCell>
                       <TableCell>
                         <div className="space-y-1">
                           <div className="font-medium">{row.studentName}</div>
@@ -498,9 +486,6 @@ export default function AttendanceManagementWorkspace() {
                       </TableCell>
                       <TableCell>{formatTimeLabel(row.firstEntry)}</TableCell>
                       <TableCell>{formatTimeLabel(row.lastExit)}</TableCell>
-                      <TableCell className="min-w-[220px]">
-                        <Textarea value={drafts[row.studentId]?.note ?? row.note ?? ""} onChange={(event) => updateNote(row, event.target.value)} className="min-h-20 bg-white" />
-                      </TableCell>
                       <TableCell className="text-right">
                         <Button size="sm" variant="outline" onClick={() => smsMutation.mutate({ batchId, date, studentIds: [row.studentId] })}>
                           <MessageSquare className="mr-1 size-4" /> Send

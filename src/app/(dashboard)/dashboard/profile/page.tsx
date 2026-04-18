@@ -589,12 +589,14 @@ export default function ProfileManagementPage() {
         typeof window !== "undefined"
           ? localStorage.getItem("access_token")
           : null
+      const apiBase = (process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089").replace(/\/+$/, "")
 
       let uploadErrorMessage = "Image upload failed"
 
       for (const path of uploadPaths) {
+        const normalizedPath = /\/api$/i.test(apiBase) ? path.replace(/^\/api(?=\/|$)/i, "") : path
         const response = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089"}${path}`,
+          `${apiBase}${normalizedPath}`,
           {
             method: "POST",
             headers: {

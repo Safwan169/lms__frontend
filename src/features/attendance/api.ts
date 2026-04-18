@@ -30,9 +30,9 @@ export async function getAttendanceBatches(tenantId: string | number) {
 }
 
 export async function getAttendanceRollCall(params: { batchId: string; date: string }) {
-  const response = await api.get("/attendance/student", {
+  const response = await api.get("/attendance/student/daily", {
     params: {
-      batchId: params.batchId,
+      batch_id: params.batchId,
       date: params.date,
     },
   })
@@ -128,4 +128,41 @@ export async function getMyAttendanceRecords(params?: {
   const payload = extractPayload<Record<string, unknown> | unknown[]>(response)
   const items = Array.isArray(payload) ? payload : payload?.items ?? payload?.records ?? payload ?? []
   return ensureArray<unknown>(items).map((item) => normalizeAttendanceRecord(item)) as AttendanceRecord[]
+}
+
+export async function getMyAttendanceDateStatusList(params?: {
+  month?: number
+  year?: number
+  batchId?: string
+}) {
+  const month = params?.month ?? new Date().getMonth() + 1
+  const year = params?.year ?? new Date().getFullYear()
+  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`
+  const monthEnd = new Date(year, month, 0).toISOString().slice(0, 10)
+
+  const response = await api.get("/attendance/student/self/date-status-list", {
+    params: {
+      batch_id: params?.batchId || undefined,
+      start_date: monthStart,
+      end_date: monthEnd,
+    },
+  })
+
+  const payload = extractPayload<Record<string, unknown>>(response)
+  const studentId = String(payload?.student_id ?? "").trim()
+  const batchId = String(payload?.batch_id ?? params?.batchId ?? "").trim()
+  const entries = ensureArray<unknown>(payload?.attendance_entries ?? payload?.records ?? payload?.items ?? [])
+
+  return entries.map((item, index) =>
+    normalizeAttendanceRecord(
+      {
+        ...((item ?? {}) as Record<string, unknown>),
+        id: String(((item ?? {}) as Record<string, unknown>).id ?? `${studentId}-${batchId}-${index}`),
+        student_id: ((item ?? {}) as Record<string, unknown>).student_id ?? studentId,
+        batch_id: ((item ?? {}) as Record<string, unknown>).batch_id ?? batchId,
+      },
+      batchId,
+      String(((item ?? {}) as Record<string, unknown>).date ?? "")
+    )
+  ) as AttendanceRecord[]
 }
