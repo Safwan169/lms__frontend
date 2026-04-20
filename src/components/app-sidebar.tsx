@@ -125,7 +125,7 @@ const navData: NavItem[] = [
     title: "Class Rooms",
     url: "/dashboard/classrooms",
     icon: School,
-    roles: ["teacher"],
+    roles: [],
   },
   {
     title: "My Class",
@@ -143,7 +143,7 @@ const navData: NavItem[] = [
     title: "Attendance",
     url: "/dashboard/attendance",
     icon: ClipboardCheck,
-    roles: ["admin", "rektor", "teacher"],
+    roles: ["admin", "rektor"],
   },
   {
     title: "Self Attendance",

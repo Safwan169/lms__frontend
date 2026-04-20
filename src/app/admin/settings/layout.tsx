@@ -5,10 +5,8 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useMemo } from "react"
 import {
   ArrowLeft,
-  Bell,
   BookOpen,
   CalendarDays,
-  ClipboardList,
   CreditCard,
   GraduationCap,
   School,
@@ -29,9 +27,7 @@ const settingsNavItems: SettingsNavItem[] = [
   { title: "Subjects", href: "/admin/settings/subjects", icon: BookOpen },
   { title: "Classes", href: "/admin/settings/classes", icon: GraduationCap },
   { title: "Batches", href: "/admin/settings/batches", icon: CalendarDays },
-  { title: "Admission", href: "/admin/settings/admission", icon: ClipboardList },
   { title: "Payment Methods", href: "/admin/settings/payment-methods", icon: CreditCard },
-  { title: "Notifications", href: "/admin/settings/notifications", icon: Bell },
 ]
 
 function isRouteActive(pathname: string, href: string) {
