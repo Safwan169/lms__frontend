@@ -1,16 +1,23 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { useForm } from "react-hook-form"
-import { Archive, Loader2, Pencil, Plus, Trash2 } from "lucide-react"
+import { Loader2, Pencil, Plus, Trash2, Users } from "lucide-react"
 import toast from "react-hot-toast"
 import { z } from "zod"
 
 import api from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
-import { useCreateBatchMutation, useUpdateBatchMutation, useDeleteBatchMutation } from "@/features/user/userApi"
+import {
+  useAssignBatchTeacherMutation,
+  useCreateBatchMutation,
+  useDeleteBatchMutation,
+  useDeleteBatchTeacherMutation,
+  useLazyGetBatchTeachersQuery,
+  useUpdateBatchMutation,
+} from "@/features/user/userApi"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
@@ -36,10 +43,16 @@ import {
 } from "@/components/ui/table-primitive"
 
 type BatchStatus = "ACTIVE" | "ARCHIVED"
+type SubjectOption = {
+  id: string
+  name: string
+}
+
 type ClassOption = {
   id: string
   name: string
   status: "ACTIVE" | "INACTIVE"
+  subjects: SubjectOption[]
 }
 
 type BatchRow = {
@@ -56,12 +69,17 @@ type BatchRow = {
   end_date?: string | null
 }
 
+type TeacherOption = {
+  id: string
+  name: string
+}
+
 const batchFormSchema = z.object({
   batch_name: z.string().trim().min(1, "Batch name is required"),
   class_id: z.string().trim().min(1, "Class is required"),
   section: z.string().trim().min(1, "Section is required"),
   capacity: z.coerce.number().int().min(1, "Capacity must be at least 1"),
-  fee: z.string().trim().min(1, "Fee is required"),
+  fee: z.string().trim().optional(),
   start_date: z.string().optional(),
   end_date: z.string().optional(),
   status: z.boolean().default(true),
@@ -69,6 +87,15 @@ const batchFormSchema = z.object({
 
 type BatchFormValues = z.input<typeof batchFormSchema>
 type BatchSubmitValues = z.output<typeof batchFormSchema>
+
+function extractArrayPayload(payload: any): any[] {
+  if (Array.isArray(payload?.data?.data)) return payload.data.data
+  if (Array.isArray(payload?.data?.items)) return payload.data.items
+  if (Array.isArray(payload?.data)) return payload.data
+  if (Array.isArray(payload?.items)) return payload.items
+  if (Array.isArray(payload)) return payload
+  return []
+}
 
 function toDateInputValue(value?: string | null) {
   if (!value) return ""
@@ -88,12 +115,21 @@ export default function SettingsBatchesPage() {
   const [createBatchApiCall] = useCreateBatchMutation()
   const [updateBatchApiCall] = useUpdateBatchMutation()
   const [deleteBatchApiCall] = useDeleteBatchMutation()
+  const [assignBatchTeacherApiCall] = useAssignBatchTeacherMutation()
+  const [deleteBatchTeacherApiCall] = useDeleteBatchTeacherMutation()
+  const [loadBatchTeachers, { isFetching: isAssignmentsLoading }] = useLazyGetBatchTeachersQuery()
 
   const [classFilter, setClassFilter] = useState<string>("All")
   const [statusFilter, setStatusFilter] = useState<string>("All")
   const [dialogOpen, setDialogOpen] = useState(false)
   const [isEditMode, setIsEditMode] = useState(false)
   const [selectedRow, setSelectedRow] = useState<BatchRow | null>(null)
+  const [manageDialogOpen, setManageDialogOpen] = useState(false)
+  const [manageBatch, setManageBatch] = useState<BatchRow | null>(null)
+  const [manageSubjects, setManageSubjects] = useState<SubjectOption[]>([])
+  const [assignmentsBySubject, setAssignmentsBySubject] = useState<Record<string, string>>({})
+  const [draftTeacherBySubject, setDraftTeacherBySubject] = useState<Record<string, string>>({})
+  const [teacherSearch, setTeacherSearch] = useState("")
 
   const tenantId =
     (user as any)?.tenant_id ??
@@ -128,19 +164,45 @@ export default function SettingsBatchesPage() {
       })
 
       const payload = response?.data
-      const rawItems = Array.isArray(payload?.data)
-        ? payload.data
-        : Array.isArray(payload)
-          ? payload
-          : []
+      const rawItems = extractArrayPayload(payload)
 
       return rawItems
         .map((item: any) => ({
           id: String(item?.id ?? item?.class_id ?? "").trim(),
           name: String(item?.class_name ?? item?.name ?? `Class ${item?.id ?? ""}`).trim(),
           status: String(item?.status ?? "ACTIVE").toUpperCase() === "INACTIVE" ? "INACTIVE" : "ACTIVE",
+          subjects: Array.isArray(item?.class_subjects)
+            ? item.class_subjects
+                .map((subject: any) => ({
+                  id: String(subject?.subject_id ?? subject?.subject?.id ?? "").trim(),
+                  name: String(subject?.subject?.name ?? subject?.name ?? "").trim(),
+                }))
+                .filter((subject: SubjectOption) => subject.id.length > 0 && subject.name.length > 0)
+            : [],
         }))
         .filter((item: ClassOption) => item.id.length > 0)
+    },
+    enabled: !!tenantId,
+  })
+
+  const { data: teacherOptions = [], isLoading: isTeachersLoading } = useQuery({
+    queryKey: ["settings-teacher-options", tenantId],
+    queryFn: async (): Promise<TeacherOption[]> => {
+      if (!tenantId) return []
+
+      const response = await api.get(`/api/tenants/${tenantId}/teachers`, {
+        params: { page: 1, limit: 100 },
+      })
+
+      const payload = response?.data
+      const rawItems = extractArrayPayload(payload)
+
+      return rawItems
+        .map((item: any) => ({
+          id: String(item?.user_id ?? item?.id ?? "").trim(),
+          name: String(item?.name ?? item?.full_name ?? item?.user?.name ?? "Unnamed Teacher").trim(),
+        }))
+        .filter((item: TeacherOption) => item.id.length > 0)
     },
     enabled: !!tenantId,
   })
@@ -163,11 +225,7 @@ export default function SettingsBatchesPage() {
 
       const response = await api.get(`/api/tenants/${tenantId}/batches`, { params })
       const payload = response?.data
-      const rawItems = Array.isArray(payload?.data)
-        ? payload.data
-        : Array.isArray(payload)
-          ? payload
-          : []
+      const rawItems = extractArrayPayload(payload)
 
       return rawItems
         .map((item: any) => ({
@@ -190,6 +248,92 @@ export default function SettingsBatchesPage() {
   })
 
   const activeClasses = classOptions.filter((item) => item.status === "ACTIVE")
+  const manageBatchClass = classOptions.find((item) => item.id === manageBatch?.class_id)
+  const manageBatchSubjects = manageSubjects
+  const filteredTeacherOptions = teacherSearch.trim()
+    ? teacherOptions.filter((teacher) =>
+        teacher.name.toLowerCase().includes(teacherSearch.trim().toLowerCase())
+      )
+    : teacherOptions
+
+  useEffect(() => {
+    const keyword = teacherSearch.trim()
+    if (!keyword) return
+    if (filteredTeacherOptions.length !== 1) return
+
+    const matchedTeacherId = filteredTeacherOptions[0]?.id
+    if (!matchedTeacherId) return
+
+    setDraftTeacherBySubject((prev) => {
+      const next = { ...prev }
+      let changed = false
+
+      manageBatchSubjects.forEach((subject) => {
+        const alreadyAssigned = Boolean(assignmentsBySubject[subject.id])
+        const alreadyDrafted = Boolean(next[subject.id])
+
+        if (!alreadyAssigned && !alreadyDrafted) {
+          next[subject.id] = matchedTeacherId
+          changed = true
+        }
+      })
+
+      return changed ? next : prev
+    })
+  }, [teacherSearch, filteredTeacherOptions, manageBatchSubjects, assignmentsBySubject])
+
+  const hydrateAssignments = (payload: any): Record<string, string> => {
+    const rawItems = extractArrayPayload(payload)
+
+    const next: Record<string, string> = {}
+    rawItems.forEach((item: any) => {
+      const subjectId = String(item?.subject_id ?? item?.subject?.id ?? "").trim()
+      const teacherId = String(
+        item?.teacher_id ??
+          item?.teacher?.id ??
+          item?.teacher?.user_id ??
+          item?.teacher?.user?.id ??
+          ""
+      ).trim()
+
+      if (subjectId && teacherId) next[subjectId] = teacherId
+    })
+    return next
+  }
+
+  const fetchBatchAssignments = async (batch: BatchRow) => {
+    if (!tenantId) return
+    const response = await loadBatchTeachers({ tenantId, batchId: batch.id }, true).unwrap()
+    const nextAssignments = hydrateAssignments(response)
+    setAssignmentsBySubject(nextAssignments)
+    setDraftTeacherBySubject(nextAssignments)
+  }
+
+  const fetchManageSubjects = async (batch: BatchRow) => {
+    if (!tenantId) return
+
+    const classSubjects = classOptions.find((item) => item.id === batch.class_id)?.subjects ?? []
+    if (classSubjects.length > 0) {
+      setManageSubjects(classSubjects)
+      return
+    }
+
+    try {
+      const response = await api.get(`/api/tenants/${tenantId}/classes/${batch.class_id}/subjects`)
+      const payload = response?.data
+      const rawItems = extractArrayPayload(payload)
+      const nextSubjects: SubjectOption[] = rawItems
+        .map((item: any) => ({
+          id: String(item?.subject_id ?? item?.id ?? "").trim(),
+          name: String(item?.subject?.name ?? item?.name ?? "").trim(),
+        }))
+        .filter((item: SubjectOption) => item.id.length > 0 && item.name.length > 0)
+
+      setManageSubjects(nextSubjects)
+    } catch {
+      setManageSubjects([])
+    }
+  }
 
   const saveMutation = useMutation({
     mutationFn: async (values: BatchSubmitValues) => {
@@ -203,7 +347,6 @@ export default function SettingsBatchesPage() {
         name: values.batch_name,
         section: values.section,
         capacity: values.capacity,
-        fee: values.fee,
         start_date: values.start_date ? new Date(values.start_date).toISOString() : undefined,
         end_date: values.end_date ? new Date(values.end_date).toISOString() : undefined,
         status: (values.status ? "ACTIVE" : "ARCHIVED") as "ACTIVE" | "ARCHIVED",
@@ -214,7 +357,10 @@ export default function SettingsBatchesPage() {
           await updateBatchApiCall({
             tenantId: tenantId || 1,
             batchId: selectedRow.id,
-            batch: batchPayload,
+            batch: {
+              ...batchPayload,
+              fee: values.fee,
+            },
           }).unwrap()
         } catch (error: unknown) {
           const maybeError = error as { data?: { message?: string }; message?: string }
@@ -277,13 +423,35 @@ export default function SettingsBatchesPage() {
     },
   })
 
-  const archiveMutation = useMutation({
-    mutationFn: async (_row: BatchRow) => {
+  const assignTeacherMutation = useMutation({
+    mutationFn: async ({ batch, subjectId, teacherId }: { batch: BatchRow; subjectId: string; teacherId: string }) => {
       if (!tenantId) throw new Error("Tenant information missing")
-      throw new Error("Archive action is not connected to a backend endpoint yet")
+      await assignBatchTeacherApiCall({
+        tenantId,
+        batchId: batch.id,
+        assignment: { subject_id: subjectId, teacher_id: teacherId },
+      }).unwrap()
+    },
+    onSuccess: async () => {
+      if (manageBatch) await fetchBatchAssignments(manageBatch)
+      toast.success("Teacher assigned")
     },
     onError: (error: any) => {
-      toast.error(error?.message || "Failed to update batch")
+      toast.error(error?.message || "Failed to assign teacher")
+    },
+  })
+
+  const removeTeacherMutation = useMutation({
+    mutationFn: async ({ batch, subjectId }: { batch: BatchRow; subjectId: string }) => {
+      if (!tenantId) throw new Error("Tenant information missing")
+      await deleteBatchTeacherApiCall({ tenantId, batchId: batch.id, subjectId }).unwrap()
+    },
+    onSuccess: async () => {
+      if (manageBatch) await fetchBatchAssignments(manageBatch)
+      toast.success("Teacher removed")
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to remove teacher")
     },
   })
 
@@ -317,6 +485,16 @@ export default function SettingsBatchesPage() {
       status: row.status === "ACTIVE",
     })
     setDialogOpen(true)
+  }
+
+  const openManageTeachersDialog = async (row: BatchRow) => {
+    setManageBatch(row)
+    setManageDialogOpen(true)
+    setAssignmentsBySubject({})
+    setDraftTeacherBySubject({})
+    setManageSubjects([])
+    setTeacherSearch("")
+    await Promise.all([fetchManageSubjects(row), fetchBatchAssignments(row)])
   }
 
   return (
@@ -417,10 +595,10 @@ export default function SettingsBatchesPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => archiveMutation.mutate(row)}
-                          disabled
+                          onClick={() => openManageTeachersDialog(row)}
+                          title="Manage Teachers"
                         >
-                          <Archive className="h-4 w-4" />
+                          <Users className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -522,19 +700,21 @@ export default function SettingsBatchesPage() {
                 )}
               />
 
-              <FormField
-                control={form.control}
-                name="fee"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Fee</FormLabel>
-                    <FormControl>
-                      <Input placeholder="2500.00" {...field} value={field.value ?? ""} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
+              {isEditMode ? (
+                <FormField
+                  control={form.control}
+                  name="fee"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Fee</FormLabel>
+                      <FormControl>
+                        <Input placeholder="2500.00" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              ) : null}
 
               <div className="grid gap-4 md:grid-cols-2">
                 <FormField
@@ -596,6 +776,148 @@ export default function SettingsBatchesPage() {
               </DialogFooter>
             </form>
           </Form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={manageDialogOpen}
+        onOpenChange={(open) => {
+          setManageDialogOpen(open)
+          if (!open) {
+            setManageBatch(null)
+            setManageSubjects([])
+            setAssignmentsBySubject({})
+            setDraftTeacherBySubject({})
+            setTeacherSearch("")
+          }
+        }}
+      >
+        <DialogContent className="max-w-3xl">
+          <DialogHeader>
+            <DialogTitle>Manage Teachers</DialogTitle>
+            <DialogDescription>
+              {manageBatch
+                ? `Assign teachers by subject for ${manageBatch.batch_name}.`
+                : "Assign teachers by subject for this batch."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="grid gap-2 md:grid-cols-2">
+              <div className="rounded-md border p-3 text-sm">
+                <p className="font-medium">Batch</p>
+                <p className="text-muted-foreground">{manageBatch?.batch_name ?? "-"}</p>
+              </div>
+              <div className="rounded-md border p-3 text-sm">
+                <p className="font-medium">Class</p>
+                <p className="text-muted-foreground">{manageBatch?.class_name ?? "-"}</p>
+              </div>
+            </div>
+
+            <div>
+              <Input
+                placeholder="Search teacher..."
+                value={teacherSearch}
+                onChange={(event) => setTeacherSearch(event.target.value)}
+              />
+            </div>
+
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Subject</TableHead>
+                    <TableHead>Assigned Teacher</TableHead>
+                    <TableHead className="text-right">Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {isAssignmentsLoading || isTeachersLoading ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
+                        <span className="inline-flex items-center gap-2">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          Loading assignments...
+                        </span>
+                      </TableCell>
+                    </TableRow>
+                  ) : manageBatchSubjects.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
+                        No subjects found in this batch&apos;s class.
+                      </TableCell>
+                    </TableRow>
+                  ) : (
+                    manageBatchSubjects.map((subject) => {
+                      const assignedTeacherId = assignmentsBySubject[subject.id] ?? ""
+                      const draftTeacherId = draftTeacherBySubject[subject.id] ?? assignedTeacherId
+                      const assignedTeacherName =
+                        teacherOptions.find((teacher) => teacher.id === assignedTeacherId)?.name ?? "-"
+                      const assignDisabled =
+                        !manageBatch ||
+                        !draftTeacherId ||
+                        assignTeacherMutation.isPending ||
+                        (draftTeacherId === assignedTeacherId && assignedTeacherId.length > 0)
+
+                      return (
+                        <TableRow key={subject.id}>
+                          <TableCell className="font-medium">{subject.name}</TableCell>
+                          <TableCell>
+                            <div className="space-y-2">
+                              <p className="text-xs text-muted-foreground">Current: {assignedTeacherName}</p>
+                              <Select
+                                value={draftTeacherId}
+                                onValueChange={(value) =>
+                                  setDraftTeacherBySubject((prev) => ({ ...prev, [subject.id]: value }))
+                                }
+                                className="w-full"
+                              >
+                                <option value="">Select teacher</option>
+                                {filteredTeacherOptions.map((teacher) => (
+                                  <option key={teacher.id} value={teacher.id}>
+                                    {teacher.name}
+                                  </option>
+                                ))}
+                              </Select>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                size="sm"
+                                onClick={() => {
+                                  if (!manageBatch || !draftTeacherId) return
+                                  assignTeacherMutation.mutate({
+                                    batch: manageBatch,
+                                    subjectId: subject.id,
+                                    teacherId: draftTeacherId,
+                                  })
+                                }}
+                                disabled={assignDisabled}
+                              >
+                                {assignedTeacherId ? "Change" : "Assign"}
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                disabled={!manageBatch || !assignedTeacherId || removeTeacherMutation.isPending}
+                                onClick={() => {
+                                  if (!manageBatch || !assignedTeacherId) return
+                                  removeTeacherMutation.mutate({ batch: manageBatch, subjectId: subject.id })
+                                }}
+                              >
+                                Remove
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         </DialogContent>
       </Dialog>
     </div>

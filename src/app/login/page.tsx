@@ -1,5 +1,5 @@
 'use client';
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { Mail, Lock, Eye, EyeOff, ArrowRight, GraduationCap } from 'lucide-react';
@@ -74,7 +74,26 @@ const LoginForm: React.FC = () => {
     const [loginUser] = useLoginMutation();
     const [forgotPassword] = useForgotPasswordMutation();
     const [resetPassword] = useResetPasswordMutation();
-    const { login } = useAuth();
+    const { login, user, isAuthReady } = useAuth();
+
+    useEffect(() => {
+        if (!isAuthReady || !user) return;
+
+        const normalizedRole = String(
+            user?.role ??
+            (Array.isArray(user?.roles) ? user.roles[0] : user?.roles) ??
+            ''
+        ).toLowerCase();
+
+        const routeByRole =
+            normalizedRole === 'superadmin'
+                ? '/dashboard/admins'
+                : normalizedRole === 'teacher'
+                    ? '/dashboard/dashboard-empty'
+                    : '/dashboard';
+
+        router.replace(routeByRole);
+    }, [isAuthReady, user, router]);
 
     const {
         register,
@@ -114,7 +133,6 @@ const LoginForm: React.FC = () => {
                 action: { label: 'x', onClick: () => { } },
             });
 
-            router.push('/dashboard');
         } catch (error: unknown) {
             const maybeError = error as { data?: { message?: string }; message?: string };
             const message =

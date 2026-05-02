@@ -60,6 +60,11 @@ export type ManualAdmissionRequest = {
   parent_phone?: string;
 };
 
+export type AssignBatchTeacherRequest = {
+  subject_id: string;
+  teacher_id: string;
+};
+
 export type GetAdmissionsParams = {
   page?: number;
   limit?: number;
@@ -201,6 +206,28 @@ export const userApi = baseApi.injectEndpoints({
       query: ({ tenantId, batchId }) => ({ url: `/api/tenants/${tenantId}/batches/${batchId}`, method: "DELETE" }),
       invalidatesTags: ["User"]
     }),
+    assignBatchTeacher: builder.mutation<
+      any,
+      { tenantId: number | string; batchId: number | string; assignment: AssignBatchTeacherRequest }
+    >({
+      query: ({ tenantId, batchId, assignment }) => ({
+        url: `/api/tenants/${tenantId}/batches/${batchId}/teachers`,
+        method: "POST",
+        body: assignment,
+      }),
+      invalidatesTags: ["User"],
+    }),
+    getBatchTeachers: builder.query<any, { tenantId: number | string; batchId: number | string }>({
+      query: ({ tenantId, batchId }) => `/api/tenants/${tenantId}/batches/${batchId}/teachers`,
+      providesTags: ["User"],
+    }),
+    deleteBatchTeacher: builder.mutation<any, { tenantId: number | string; batchId: number | string; subjectId: string }>({
+      query: ({ tenantId, batchId, subjectId }) => ({
+        url: `/api/tenants/${tenantId}/batches/${batchId}/teachers/${subjectId}`,
+        method: "DELETE",
+      }),
+      invalidatesTags: ["User"],
+    }),
     updateClass: builder.mutation<any, { tenantId: number | string; classId: number | string; classData: CreateClassRequest }>({
 
       query: ({ tenantId, classId, classData }) => ({ url: `/api/tenants/${tenantId}/classes/${classId}`, method: "PATCH", body: classData }),
@@ -270,6 +297,10 @@ export const {
   useGetBatchQuery,
   useUpdateBatchMutation,
   useDeleteBatchMutation,
+  useAssignBatchTeacherMutation,
+  useGetBatchTeachersQuery,
+  useLazyGetBatchTeachersQuery,
+  useDeleteBatchTeacherMutation,
   useUpdateClassMutation,
   useCreateManualAdmissionMutation,
   useGetAdmissionsQuery,

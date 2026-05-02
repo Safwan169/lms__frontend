@@ -97,17 +97,15 @@ export type AttendanceLogEntry = {
 }
 
 export type AttendanceSummaryItem = {
-  studentId: string
+  studentId?: string
   batchId: string
   batchName?: string
-  month: number
-  year: number
+  className?: string | null
+  subject?: string | null
   totalClasses: number
-  present: number
+  attended: number
   absent: number
-  late: number
-  excused?: number
-  percentage: number
+  attendancePercentage: number
 }
 
 export type AttendanceSummaryResponse = {

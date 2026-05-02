@@ -97,16 +97,16 @@ export default function AttendanceSelfService() {
           </>
         ) : (
           (summaryQuery.data ?? []).slice(0, 3).map((item) => (
-            <Card key={`${item.batchId}-${item.month}-${item.year}`}>
+            <Card key={item.batchId}>
               <CardHeader className="pb-2">
                 <CardTitle className="text-base">{item.batchName || item.batchId}</CardTitle>
               </CardHeader>
               <CardContent className="space-y-1 text-sm">
-                <p><span className="text-muted-foreground">Month:</span> {String(item.month).padStart(2, "0")}/{item.year}</p>
-                <p><span className="text-muted-foreground">Present:</span> {item.present}</p>
+                <p><span className="text-muted-foreground">Class:</span> {item.className || "-"}</p>
+                <p><span className="text-muted-foreground">Attended:</span> {item.attended}</p>
                 <p><span className="text-muted-foreground">Absent:</span> {item.absent}</p>
-                <p><span className="text-muted-foreground">Late:</span> {item.late}</p>
-                <p><span className="text-muted-foreground">Attendance %:</span> {item.percentage}%</p>
+                <p><span className="text-muted-foreground">Total Classes:</span> {item.totalClasses}</p>
+                <p><span className="text-muted-foreground">Attendance %:</span> {item.attendancePercentage}%</p>
               </CardContent>
             </Card>
           ))

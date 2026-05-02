@@ -158,7 +158,9 @@ export function normalizeStatus(value: unknown): AttendanceStatus {
 }
 
 export function normalizeSource(value: unknown): AttendanceSource {
-  return String(value ?? "").toUpperCase() === "MANUAL" ? "MANUAL" : "MACHINE"
+  const normalized = String(value ?? "").toUpperCase()
+  if (normalized === "MANUAL" || normalized === "MACHINE") return normalized
+  return "MANUAL"
 }
 
 export function normalizeActionType(value: unknown): AttendanceActionType {
@@ -184,6 +186,8 @@ export function normalizeAttendanceRecord(value: unknown, fallbackBatchId = "", 
   const student = asObject(root.student)
   const profile = asObject(root.student_profile)
   const batch = asObject(root.batch)
+  const markedBy = String(root.marked_by ?? root.markedBy ?? "").toUpperCase()
+  const source = normalizeSource(root.source ?? (markedBy === "MACHINE" ? "MACHINE" : "MANUAL"))
 
   return {
     id: String(root.id ?? root.attendance_id ?? `${root.student_id ?? student.id ?? ""}-${fallbackDate}`).trim(),
@@ -206,7 +210,7 @@ export function normalizeAttendanceRecord(value: unknown, fallbackBatchId = "", 
         ""
     ).trim(),
     status: normalizeStatus(root.status),
-    source: normalizeSource(root.source),
+    source,
     firstEntry: asNullableString(root.first_entry ?? root.firstEntry ?? root.check_in_time),
     lastExit: asNullableString(root.last_exit ?? root.lastExit ?? root.check_out_time),
     overridden: Boolean(root.overridden),
@@ -328,23 +332,25 @@ export function normalizeSummaryItems(payload: unknown): AttendanceSummaryItem[]
   return ensureArray<unknown>(payload)
     .map((item) => {
       const root = asObject(item)
-      const present = Number(root.present ?? 0)
+      const attended = Number(root.attended ?? root.present ?? 0)
       const totalClasses = Number(root.total_classes ?? root.totalClasses ?? 0)
       return {
-        studentId: String(root.student_id ?? root.studentId ?? "").trim(),
+        studentId: String(root.student_id ?? root.studentId ?? "").trim() || undefined,
         batchId: String(root.batch_id ?? root.batchId ?? "").trim(),
         batchName: String(root.batch_name ?? root.batchName ?? "").trim() || undefined,
-        month: Number(root.month ?? 0),
-        year: Number(root.year ?? 0),
+        className: String(root.class_name ?? root.className ?? "").trim() || null,
+        subject: String(root.subject ?? "").trim() || null,
         totalClasses,
-        present,
+        attended,
         absent: Number(root.absent ?? 0),
-        late: Number(root.late ?? 0),
-        excused: Number(root.excused ?? 0),
-        percentage: Number(root.percentage ?? computeAttendancePercentage(present, totalClasses)),
+        attendancePercentage: Number(
+          root.attendance_percentage ??
+            root.percentage ??
+            computeAttendancePercentage(attended, totalClasses)
+        ),
       }
     })
-    .filter((item) => item.batchId.length > 0 || item.studentId.length > 0)
+    .filter((item) => item.batchId.length > 0 || Boolean(item.studentId))
 }
 
 export function makeBulkDraftRecord(record: AttendanceRecord, nextStatus: AttendanceStatus, updatedBy: string) {

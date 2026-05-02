@@ -11,7 +11,6 @@ import { z } from "zod"
 import api from "@/lib/api"
 import { useAuth } from "@/context/AuthContext"
 import { useCreateClassMutation, useUpdateClassMutation } from "@/features/user/userApi"
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -34,7 +33,6 @@ import {
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
-import { Switch } from "@/components/ui/switch"
 import {
   Table,
   TableBody,
@@ -51,8 +49,8 @@ type ClassRow = {
   class_name: string
   code: string
   description: string
+  group: ClassSection
   level: string
-  sections: ClassSection[]
   status: "ACTIVE" | "INACTIVE"
   subject_ids: string[]
   subject_names: string[]
@@ -64,6 +62,7 @@ type ClassApiItem = {
   name?: string
   code?: string
   description?: string
+  group?: string
   level?: string
   status?: "ACTIVE" | "INACTIVE"
   class_subjects?: Array<{
@@ -92,11 +91,9 @@ type SubjectOption = {
 const classFormSchema = z.object({
   class_name: z.string().trim().min(1, "Class name is required"),
   code: z.string().trim().min(1, "Class code is required"),
-  description: z.string().trim().min(1, "Description is required"),
+  group: z.enum(["Science", "Commerce", "Arts", "General"]),
   level: z.string().trim().min(1, "Level is required"),
   subject_ids: z.array(z.string().trim().min(1)).min(1, "Select at least one subject"),
-  sections: z.array(z.enum(["Science", "Commerce", "Arts", "General"])).min(1, "Select at least one section"),
-  status: z.boolean().default(true),
 })
 
 type ClassFormValues = z.input<typeof classFormSchema>
@@ -134,11 +131,9 @@ export default function SettingsClassesPage() {
     defaultValues: {
       class_name: "",
       code: "",
-      description: "",
+      group: "General",
       level: "Beginner",
       subject_ids: [],
-      sections: ["General"],
-      status: true,
     },
   })
 
@@ -211,17 +206,17 @@ export default function SettingsClassesPage() {
           )
         )
 
-        const normalizedSections = subjectNames.filter((name): name is ClassSection =>
-          SECTION_OPTIONS.includes(name as ClassSection)
-        )
+        const normalizedGroup = SECTION_OPTIONS.includes((item?.group ?? "") as ClassSection)
+          ? (item?.group as ClassSection)
+          : "General"
 
         return {
           id: String(item?.id ?? `class-${Date.now()}`),
           class_name: String(item?.name ?? "Unnamed Class"),
           code: String(item?.code ?? ""),
           description: String(item?.description ?? ""),
+          group: normalizedGroup,
           level: String(item?.level ?? "Beginner"),
-          sections: normalizedSections.length > 0 ? normalizedSections : ["General"],
           status: item?.status === "INACTIVE" ? "INACTIVE" : "ACTIVE",
           subject_ids: subjectIds,
           subject_names: subjectNames,
@@ -238,7 +233,7 @@ export default function SettingsClassesPage() {
       const classPayload = {
         name: values.class_name,
         code: values.code,
-        description: values.description,
+        group: values.group,
         level: values.level,
         subject_ids: normalizeSubjectIds(values.subject_ids),
       }
@@ -255,10 +250,10 @@ export default function SettingsClassesPage() {
             id: result?.id || selectedRow.id,
             class_name: values.class_name,
             code: values.code,
-            description: values.description,
+            description: selectedRow.description,
+            group: values.group,
             level: values.level,
-            sections: values.sections,
-            status: values.status ? "ACTIVE" : "INACTIVE",
+            status: selectedRow.status,
             subject_ids: values.subject_ids,
             subject_names: subjectOptions
               .filter((item) => values.subject_ids.includes(item.id))
@@ -281,10 +276,10 @@ export default function SettingsClassesPage() {
           id: result?.id || `cls-${Date.now()}`,
           class_name: values.class_name,
           code: values.code,
-          description: values.description,
+          description: "",
+          group: values.group,
           level: values.level,
-          sections: values.sections,
-          status: values.status ? "ACTIVE" : "INACTIVE",
+          status: "ACTIVE",
           subject_ids: values.subject_ids,
           subject_names: subjectOptions
             .filter((item) => values.subject_ids.includes(item.id))
@@ -309,11 +304,9 @@ export default function SettingsClassesPage() {
       form.reset({
         class_name: "",
         code: "",
-        description: "",
+        group: "General",
         level: "Beginner",
         subject_ids: [],
-        sections: ["General"],
-        status: true,
       })
     },
     onError: (error: any) => {
@@ -355,11 +348,9 @@ export default function SettingsClassesPage() {
     form.reset({
       class_name: "",
       code: "",
-      description: "",
+      group: "General",
       level: "Beginner",
       subject_ids: [],
-      sections: ["General"],
-      status: true,
     })
     setDialogOpen(true)
   }
@@ -370,11 +361,9 @@ export default function SettingsClassesPage() {
     form.reset({
       class_name: row.class_name,
       code: row.code,
-      description: row.description,
+      group: row.group,
       level: row.level,
       subject_ids: row.subject_ids,
-      sections: row.sections,
-      status: row.status === "ACTIVE",
     })
     setDialogOpen(true)
   }
@@ -402,9 +391,8 @@ export default function SettingsClassesPage() {
           <TableHeader>
             <TableRow>
               <TableHead>Class Name</TableHead>
-              <TableHead>Sections</TableHead>
+              <TableHead>Group</TableHead>
               <TableHead>Subjects</TableHead>
-              <TableHead>Status</TableHead>
               <TableHead className="text-right">Actions</TableHead>
             </TableRow>
           </TableHeader>
@@ -413,15 +401,14 @@ export default function SettingsClassesPage() {
               Array.from({ length: 5 }).map((_, index) => (
                 <TableRow key={`class-skeleton-${index}`}>
                   <TableCell><Skeleton className="h-4 w-24" /></TableCell>
-                  <TableCell><Skeleton className="h-4 w-36" /></TableCell>
+                  <TableCell><Skeleton className="h-4 w-20" /></TableCell>
                   <TableCell><Skeleton className="h-4 w-32" /></TableCell>
-                  <TableCell><Skeleton className="h-6 w-20 rounded-full" /></TableCell>
                   <TableCell><Skeleton className="ml-auto h-8 w-20" /></TableCell>
                 </TableRow>
               ))
             ) : rows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={5} className="py-12 text-center">
+                <TableCell colSpan={4} className="py-12 text-center">
                   <div className="space-y-3">
                     <p className="text-sm text-muted-foreground">No classes yet. Add your first class.</p>
                     <Button size="sm" onClick={openAddDialog}>
@@ -435,15 +422,8 @@ export default function SettingsClassesPage() {
               rows.map((row) => (
                 <TableRow key={row.id}>
                   <TableCell className="font-medium">{row.class_name}</TableCell>
-                  <TableCell>{row.sections.join(", ")}</TableCell>
+                  <TableCell>{row.group}</TableCell>
                   <TableCell>{row.subject_names.length > 0 ? row.subject_names.join(", ") : "-"}</TableCell>
-                  <TableCell>
-                    <Badge
-                      className={row.status === "ACTIVE" ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}
-                    >
-                      {row.status === "ACTIVE" ? "Active" : "Inactive"}
-                    </Badge>
-                  </TableCell>
                   <TableCell className="text-right">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="icon" onClick={() => openEditDialog(row)}>
@@ -499,20 +479,6 @@ export default function SettingsClassesPage() {
                     <FormLabel>Class Code</FormLabel>
                     <FormControl>
                       <Input placeholder="C10-SCI" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="description"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Description</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Science group for SSC exam preparation." {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -582,26 +548,24 @@ export default function SettingsClassesPage() {
 
               <FormField
                 control={form.control}
-                name="sections"
+                name="group"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Sections</FormLabel>
+                    <FormLabel>Group</FormLabel>
                     <FormControl>
                       <div className="grid grid-cols-2 gap-2 rounded-md border p-3">
                         {SECTION_OPTIONS.map((section) => {
-                          const checked = field.value?.includes(section)
+                          const checked = field.value === section
 
                           return (
                             <label key={section} className="flex items-center gap-2 text-sm">
                               <input
-                                type="checkbox"
+                                type="radio"
+                                name="group"
                                 className="h-4 w-4 rounded border-input"
                                 checked={checked}
                                 onChange={(event) => {
-                                  const next = new Set(field.value ?? [])
-                                  if (event.target.checked) next.add(section)
-                                  else next.delete(section)
-                                  field.onChange(Array.from(next))
+                                  if (event.target.checked) field.onChange(section)
                                 }}
                               />
                               {section}
@@ -611,19 +575,6 @@ export default function SettingsClassesPage() {
                       </div>
                     </FormControl>
                     <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="status"
-                render={({ field }) => (
-                  <FormItem className="flex items-center justify-between rounded-md border p-3">
-                    <FormLabel className="mb-0">Active</FormLabel>
-                    <FormControl>
-                      <Switch checked={field.value} onCheckedChange={field.onChange} />
-                    </FormControl>
                   </FormItem>
                 )}
               />

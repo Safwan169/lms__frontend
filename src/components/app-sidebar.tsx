@@ -10,12 +10,10 @@ import {
   BookOpen,
   CalendarDays,
   ClipboardCheck,
-  HardDrive,
-  LifeBuoy,
   School,
-  Settings,
   GraduationCap,
   Users,
+  UserRound,
 } from "lucide-react"
 
 import {
@@ -128,6 +126,12 @@ const navData: NavItem[] = [
     roles: [],
   },
   {
+    title: "Class Access",
+    url: "/dashboard/class-access",
+    icon: BookOpen,
+    roles: ["student"],
+  },
+  {
     title: "My Class",
     url: "/dashboard/my-class",
     icon: CalendarDays,
@@ -146,10 +150,16 @@ const navData: NavItem[] = [
     roles: ["admin", "rektor"],
   },
   {
-    title: "Self Attendance",
+    title: "My Attendance",
     url: "/dashboard/self-attendance",
     icon: ClipboardCheck,
     roles: ["student"],
+  },
+  {
+    title: "My Profile",
+    url: "/dashboard/profile",
+    icon: UserRound,
+    roles: ["teacher", "student"],
   },
   
   // {

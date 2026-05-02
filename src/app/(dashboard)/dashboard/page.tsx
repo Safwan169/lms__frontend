@@ -1,182 +1,279 @@
-import React from 'react';
+"use client"
 
-const stats = [
-    { label: 'Total Students', value: '4,821', change: '+143 this month', trend: 'up', color: '#6366f1', bg: '#eef2ff', icon: '👨‍🎓' },
-    { label: 'Total Teachers', value: '312', change: '+8 this month', trend: 'up', color: '#0ea5e9', bg: '#e0f2fe', icon: '👩‍🏫' },
-    { label: 'Revenue (BDT)', value: ' 24,390 BDT', change: '+12% vs last month', trend: 'up', color: '#10b981', bg: '#d1fae5', icon: '💰' },
-];
+import Link from "next/link"
+import { useMemo } from "react"
+import {
+  ArrowRight,
+  BellRing,
+  BookOpen,
+  CalendarDays,
+  ClipboardCheck,
+  Sparkles,
+  UserRound,
+} from "lucide-react"
 
-const recentStudents = [
-    { name: 'Sarah Johnson', course: 'React Masterclass', enrolled: '2h ago', status: 'Active', avatar: 'SJ' },
-    { name: 'Mohammed Al-Rashid', course: 'Python for Data Science', enrolled: '5h ago', status: 'Active', avatar: 'MA' },
-    { name: 'Priya Nair', course: 'UI/UX Design Fundamentals', enrolled: 'Yesterday', status: 'Pending', avatar: 'PN' },
-    { name: 'Carlos Mendez', course: 'System Design', enrolled: 'Yesterday', status: 'Active', avatar: 'CM' },
-    { name: 'Emily Chen', course: 'Next.js 14 App Router', enrolled: '2 days ago', status: 'Inactive', avatar: 'EC' },
-];
+import { useAuth } from "@/context/AuthContext"
 
-const topCourses = [
-    { title: 'React Masterclass', instructor: 'James Wright', students: 892, revenue: '$8,920', rating: 4.9, progress: 89 },
-    { title: 'Python for Data Science', instructor: 'Dr. Aisha Patel', students: 741, revenue: '$7,410', rating: 4.8, progress: 74 },
-    { title: 'UI/UX Design Fundamentals', instructor: 'Sofia Larsen', students: 634, revenue: '$6,340', rating: 4.7, progress: 63 },
-    { title: 'System Design', instructor: 'Kevin Park', students: 520, revenue: '$5,200', rating: 4.9, progress: 52 },
-];
+const adminStats = [
+  { label: "Total Students", value: "4,821", helper: "+143 this month", tone: "bg-indigo-50 text-indigo-700" },
+  { label: "Total Teachers", value: "312", helper: "+8 this month", tone: "bg-sky-50 text-sky-700" },
+  { label: "Revenue", value: "24,390 BDT", helper: "+12% vs last month", tone: "bg-emerald-50 text-emerald-700" },
+]
 
-const recentActivity = [
-    { text: '3 new admissions in Class 9 (Science) - Batch A', time: '2 min ago', color: '#6366f1' },
-    { text: 'Attendance submitted for Class 10 Mathematics', time: '18 min ago', color: '#f59e0b' },
-    { text: 'Section B timetable updated for Class 8', time: '1h ago', color: '#10b981' },
-    { text: 'Fee due reminders sent to 12 students (Class 7)', time: '3h ago', color: '#ef4444' },
-    { text: '2 transfer requests approved for Class 6 - Batch C', time: '5h ago', color: '#6366f1' },
-];
+const adminActivity = [
+  "3 new admissions added to Class 9 Science — Batch A",
+  "Attendance was submitted for Class 10 Mathematics",
+  "Section B timetable was updated for the new week",
+  "Fee due reminders were sent to 12 students",
+]
 
-const AdminDashboard = () => {
-    return (
-        <>
-           
+function normalizeRole(user: any) {
+  return String(
+    user?.role ??
+      (Array.isArray(user?.roles) ? user.roles[0] : user?.roles) ??
+      ""
+  ).toLowerCase()
+}
 
-            <div className="adm-root">
+function pickText(...values: unknown[]) {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim()
+    if (typeof value === "number" && Number.isFinite(value)) return String(value)
+  }
+  return ""
+}
 
-                {/* Top bar */}
-                <div className="adm-topbar">
-                    <div className="adm-topbar-left">
-                        <h1>Admin Dashboard</h1>
-                        <p>Monday, 16 March 2026 — Welcome back, Admin</p>
-                    </div>
-                    
-                </div>
+export default function DashboardPage() {
+  const { user } = useAuth()
+  const normalizedRole = useMemo(() => normalizeRole(user), [user])
 
-                {/* Stats */}
-                <div className="adm-stats adm-stats-3">
-                    {stats.map((s) => (
-                        <div className="adm-stat" key={s.label}>
-                            <div className="adm-stat-icon" style={{ background: s.bg }}>{s.icon}</div>
-                            <div className="adm-stat-val">{s.value}</div>
-                            <div className="adm-stat-label">{s.label}</div>
-                            <div className={`adm-stat-change ${s.trend}`}>{s.trend === 'up' ? '↑' : '↓'} {s.change}</div>
-                            <div className="adm-stat-corner" style={{ background: s.color }} />
-                        </div>
-                    ))}
-                </div>
+  if (normalizedRole === "student") {
+    return <StudentDashboard user={user} />
+  }
 
-                {/* Main grid */}
-                <div className="adm-grid">
-                    <div>
-                        {/* Recent enrollments */}
-                        <div className="adm-card">
-                            <div className="adm-card-header">
-                                <span className="adm-card-title">Recent Enrollments</span>
-                                <button className="adm-view-all">View all →</button>
-                            </div>
-                            <table className="adm-table">
-                                <thead>
-                                    <tr>
-                                        <th>Student</th>
-                                        <th>Enrolled</th>
-                                        <th>Status</th>
-                                    </tr>
-                                </thead>
-                                <tbody>
-                                    {recentStudents.map((s) => (
-                                        <tr key={s.name}>
-                                            <td>
-                                                <div className="adm-stu-cell">
-                                                    <div className="adm-stu-av">{s.avatar}</div>
-                                                    <div>
-                                                        <div className="adm-stu-name">{s.name}</div>
-                                                        <div className="adm-stu-course">{s.course}</div>
-                                                    </div>
-                                                </div>
-                                            </td>
-                                            <td style={{ color: '#9095a8', fontSize: '0.78rem' }}>{s.enrolled}</td>
-                                            <td><span className={`adm-badge ${s.status.toLowerCase()}`}>{s.status}</span></td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+  return <AdminDashboard />
+}
 
-                        {/* Top courses */}
-                        {/* <div className="adm-card">
-                            <div className="adm-card-header">
-                                <span className="adm-card-title">Top Courses by Revenue</span>
-                                <button className="adm-view-all">Manage →</button>
-                            </div>
-                            {topCourses.map((c, i) => (
-                                <div className="adm-course-row" key={c.title}>
-                                    <div className="adm-course-rank">#{i + 1}</div>
-                                    <div className="adm-course-info">
-                                        <div className="adm-course-name">{c.title}</div>
-                                        <div className="adm-course-meta">{c.instructor} · {c.students} students · ★ {c.rating}</div>
-                                    </div>
-                                    <div className="adm-course-bar">
-                                        <div className="adm-course-bar-fill" style={{ width: `${c.progress}%` }} />
-                                    </div>
-                                    <div className="adm-course-rev">{c.revenue}</div>
-                                </div>
-                            ))}
-                        </div> */}
-                    </div>
+function StudentDashboard({ user }: { user: any }) {
+  const displayName = pickText(user?.name, user?.full_name, user?.username, "Student")
+  const tenantName = pickText(
+    user?.tenant?.school_name,
+    user?.tenant?.schoolName,
+    user?.tenant?.name,
+    "Your school"
+  )
 
-                    {/* Sidebar */}
-                    <div>
-                        {/* <div className="adm-card">
-                            <div className="adm-card-header">
-                                <span className="adm-card-title">Quick Actions</span>
-                            </div>
-                            <div className="adm-actions">
-                                {[
-                                    { icon: '➕', label: 'Add Course' },
-                                    { icon: '👤', label: 'Add Student' },
-                                    { icon: '📊', label: 'View Reports' },
-                                    { icon: '💬', label: 'Send Notice' },
-                                ].map((a) => (
-                                    <button className="adm-action-btn" key={a.label}>
-                                        <span className="adm-action-icon">{a.icon}</span>
-                                        <span className="adm-action-label">{a.label}</span>
-                                    </button>
-                                ))}
-                            </div>
-                        </div> */}
+  const profile = user?.profile ?? user?.studentProfile ?? user?.student ?? {}
+  const className = pickText(profile?.class_name, profile?.className, "Assigned class")
+  const batchName = pickText(profile?.batch_name, profile?.batchName, "Current batch")
+  const section = pickText(profile?.section, "Section pending")
+  const studentId = pickText(profile?.student_id, user?.student_id, user?.id, "Pending")
 
-                        <div className="adm-card">
-                            <div className="adm-card-header">
-                                <span className="adm-card-title">Recent Activity</span>
-                                <button className="adm-view-all">See all</button>
-                            </div>
-                            {recentActivity.map((a, i) => (
-                                <div className="adm-act-item" key={i}>
-                                    <div className="adm-act-dot" style={{ background: a.color }} />
-                                    <div className="adm-act-text">{a.text}</div>
-                                    <div className="adm-act-time">{a.time}</div>
-                                </div>
-                            ))}
-                        </div>
+  const attendanceNumber = Number(profile?.attendance_percentage ?? profile?.attendanceRate ?? 92)
+  const attendanceRate = Number.isFinite(attendanceNumber) ? attendanceNumber : 92
 
-                        {/* <div className="adm-card">
-                            <div className="adm-card-header">
-                                <span className="adm-card-title">Platform Health</span>
-                            </div>
-                            {[
-                                { label: 'Server Uptime', value: '99.9%', color: '#10b981' },
-                                { label: 'Avg. Load Time', value: '1.2s', color: '#6366f1' },
-                                { label: 'Support Tickets Open', value: '7', color: '#f59e0b' },
-                                { label: 'Pending Approvals', value: '3', color: '#ef4444' },
-                            ].map((h) => (
-                                <div key={h.label} style={{
-                                    display: 'flex', justifyContent: 'space-between',
-                                    alignItems: 'center', padding: '0.65rem 0',
-                                    borderBottom: '1px solid #f5f6fa', fontSize: '0.82rem'
-                                }}>
-                                    <span style={{ color: '#9095a8' }}>{h.label}</span>
-                                    <span style={{ fontWeight: 600, color: h.color }}>{h.value}</span>
-                                </div>
-                            ))}
-                        </div> */}
-                    </div>
-                </div>
+  const summaryCards = [
+    {
+      title: "Student ID",
+      value: studentId,
+      helper: `${className} • ${section}`,
+      icon: BookOpen,
+      tone: "bg-indigo-50 text-indigo-700",
+    },
+    {
+      title: "Current Batch",
+      value: batchName,
+      helper: "See your published routine and class plan",
+      icon: CalendarDays,
+      tone: "bg-sky-50 text-sky-700",
+    },
+    {
+      title: "Attendance",
+      value: `${attendanceRate}%`,
+      helper: attendanceRate >= 90 ? "Excellent consistency" : "Keep attending regularly",
+      icon: ClipboardCheck,
+      tone: "bg-emerald-50 text-emerald-700",
+    },
+    {
+      title: "Profile Status",
+      value: "Ready",
+      helper: "Keep your contact and guardian details updated",
+      icon: UserRound,
+      tone: "bg-violet-50 text-violet-700",
+    },
+  ]
+
+  const quickLinks = [
+    {
+      title: "My Class",
+      description: "Open your weekly routine and class list.",
+      href: "/dashboard/my-class",
+      icon: CalendarDays,
+    },
+    {
+      title: "My Attendance",
+      description: "Review your present and absent records.",
+      href: "/dashboard/self-attendance",
+      icon: ClipboardCheck,
+    },
+    {
+      title: "My Profile",
+      description: "Update personal, guardian, and contact details.",
+      href: "/dashboard/profile",
+      icon: UserRound,
+    },
+  ]
+
+  return (
+    <div className="min-h-full bg-slate-50/60 p-4 md:p-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-600 via-violet-600 to-sky-500 p-6 text-white shadow-lg">
+          <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
+            <div className="space-y-3">
+              <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm">
+                <Sparkles className="h-3.5 w-3.5" />
+                Student Space
+              </div>
+              <div>
+                <h1 className="text-3xl font-semibold">Welcome back, {displayName}</h1>
+                <p className="mt-2 max-w-2xl text-sm text-indigo-50">
+                  Stay on top of your class routine, track attendance, and keep your profile updated from one place.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2 text-xs text-indigo-50">
+                <span className="rounded-full bg-white/10 px-3 py-1">{tenantName}</span>
+                <span className="rounded-full bg-white/10 px-3 py-1">{className}</span>
+                <span className="rounded-full bg-white/10 px-3 py-1">{batchName}</span>
+              </div>
             </div>
-        </>
-    );
-};
 
-export default AdminDashboard;
+            <div className="flex flex-wrap gap-3">
+              <Link
+                href="/dashboard/my-class"
+                className="inline-flex items-center gap-2 rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 shadow-sm transition hover:bg-slate-100"
+              >
+                Open My Class
+                <ArrowRight className="h-4 w-4" />
+              </Link>
+              <Link
+                href="/dashboard/self-attendance"
+                className="inline-flex items-center gap-2 rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white transition hover:bg-white/10"
+              >
+                Check Attendance
+              </Link>
+            </div>
+          </div>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+          {summaryCards.map((card) => {
+            const Icon = card.icon
+            return (
+              <div key={card.title} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-slate-500">{card.title}</p>
+                    <h2 className="mt-2 text-2xl font-semibold text-slate-900">{card.value}</h2>
+                    <p className="mt-1 text-xs text-slate-500">{card.helper}</p>
+                  </div>
+                  <div className={`rounded-xl p-2 ${card.tone}`}>
+                    <Icon className="h-5 w-5" />
+                  </div>
+                </div>
+              </div>
+            )
+          })}
+        </section>
+
+        <section className="grid gap-6 xl:grid-cols-[1.35fr_0.9fr]">
+          <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+            <div className="mb-4 flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-slate-900">Quick actions</h2>
+                <p className="text-sm text-slate-500">Everything a student usually needs most.</p>
+              </div>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              {quickLinks.map((item) => {
+                const Icon = item.icon
+                return (
+                  <Link
+                    key={item.title}
+                    href={item.href}
+                    className="group rounded-2xl border border-slate-200 p-4 transition hover:border-indigo-200 hover:bg-indigo-50/50"
+                  >
+                    <div className="mb-3 inline-flex rounded-xl bg-slate-100 p-2 text-slate-700 group-hover:bg-indigo-100 group-hover:text-indigo-700">
+                      <Icon className="h-5 w-5" />
+                    </div>
+                    <h3 className="font-semibold text-slate-900">{item.title}</h3>
+                    <p className="mt-1 text-sm text-slate-500">{item.description}</p>
+                  </Link>
+                )
+              })}
+            </div>
+          </div>
+
+          <div className="space-y-6">
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <div className="mb-4 flex items-center gap-2">
+                <BellRing className="h-5 w-5 text-amber-500" />
+                <h2 className="text-lg font-semibold text-slate-900">Today’s focus</h2>
+              </div>
+              <div className="space-y-3 text-sm text-slate-600">
+                <div className="rounded-2xl bg-slate-50 p-3">Review your routine before class starts.</div>
+                <div className="rounded-2xl bg-slate-50 p-3">Keep your attendance above 90% this month.</div>
+                <div className="rounded-2xl bg-slate-50 p-3">Update your profile if any phone or guardian details changed.</div>
+              </div>
+            </div>
+
+            <div className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+              <h2 className="text-lg font-semibold text-slate-900">Student note</h2>
+              <p className="mt-2 text-sm text-slate-600">
+                Your dashboard is now focused on student activities so you can quickly reach your class, attendance, and personal information.
+              </p>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}
+
+function AdminDashboard() {
+  return (
+    <div className="min-h-full bg-slate-50/60 p-4 md:p-6">
+      <div className="mx-auto max-w-7xl space-y-6">
+        <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
+          <h1 className="text-3xl font-semibold text-slate-900">Admin Dashboard</h1>
+          <p className="mt-2 text-sm text-slate-500">
+            Monitor admissions, staff, and overall institute activity from one overview.
+          </p>
+        </section>
+
+        <section className="grid gap-4 md:grid-cols-3">
+          {adminStats.map((item) => (
+            <div key={item.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+              <span className={`inline-flex rounded-full px-2.5 py-1 text-xs font-medium ${item.tone}`}>
+                {item.label}
+              </span>
+              <div className="mt-3 text-2xl font-semibold text-slate-900">{item.value}</div>
+              <p className="mt-1 text-sm text-slate-500">{item.helper}</p>
+            </div>
+          ))}
+        </section>
+
+        <section className="rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Recent activity</h2>
+          <div className="mt-4 space-y-3">
+            {adminActivity.map((activity) => (
+              <div key={activity} className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                {activity}
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </div>
+  )
+}

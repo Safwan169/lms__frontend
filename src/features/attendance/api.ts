@@ -13,12 +13,18 @@ import {
   ensureArray,
   extractPayload,
   normalizeBatchOptions,
-  normalizeDayView,
   normalizeLogEntries,
   normalizeMonthMatrix,
   normalizeSummaryItems,
   normalizeAttendanceRecord,
+  computeAttendancePercentage,
 } from "@/features/attendance/utils"
+
+function getMonthDateRange(month: number, year: number) {
+  const start = `${year}-${String(month).padStart(2, "0")}-01`
+  const end = `${year}-${String(month).padStart(2, "0")}-${String(new Date(year, month, 0).getDate()).padStart(2, "0")}`
+  return { start, end }
+}
 
 export async function getAttendanceBatches(tenantId: string | number) {
   const response = await api.get(`/api/tenants/${tenantId}/batches`, {
@@ -37,7 +43,8 @@ export async function getAttendanceRollCall(params: { batchId: string; date: str
     },
   })
   const payload = extractPayload<Record<string, unknown> | unknown[]>(response)
-  const items = Array.isArray(payload) ? payload : payload?.items ?? payload?.records ?? payload?.students ?? []
+  const root = (Array.isArray(payload) ? {} : payload) as Record<string, unknown>
+  const items = Array.isArray(payload) ? payload : root.items ?? root.records ?? root.students ?? []
   return ensureArray<unknown>(items).map((item) => normalizeAttendanceRecord(item, params.batchId, params.date)) as AttendanceRecord[]
 }
 
@@ -46,15 +53,20 @@ export async function saveAttendanceBulk(params: {
   date: string
   records: AttendanceBulkSaveItem[]
 }) {
-  const response = await api.post(`/attendance/student/bulk/${params.batchId}/${params.date}`, {
-    records: params.records,
-  })
+  const response = await api.post(
+    `/attendance/student/bulk/${params.batchId}/${params.date}`,
+    params.records.map((item) => ({
+      student_id: item.student_id,
+      status: item.status,
+      note: item.note ?? undefined,
+    }))
+  )
   return extractPayload<unknown>(response)
 }
 
 export async function sendAttendanceSms(payload: AttendanceSmsRequest) {
-  const response = await api.post("/attendance/student/send-sms", payload)
-  return extractPayload<unknown>(response)
+  void payload
+  throw new Error("SMS endpoint is not available in backend attendance module yet.")
 }
 
 export async function getAttendanceDayView(params: {
@@ -64,15 +76,35 @@ export async function getAttendanceDayView(params: {
   source?: string
   search?: string
 }) {
-  const response = await api.get(`/attendance/batch/${params.batchId}/day`, {
-    params: {
-      date: params.date,
-      status: params.status || undefined,
-      source: params.source || undefined,
-      search: params.search || undefined,
-    },
+  const rows = await getAttendanceRollCall({ batchId: params.batchId, date: params.date })
+  const normalizedStatus = String(params.status ?? "").toUpperCase()
+  const normalizedSource = String(params.source ?? "").toUpperCase()
+  const normalizedSearch = String(params.search ?? "").toLowerCase().trim()
+
+  const filteredRows = rows.filter((row) => {
+    const statusPass = !normalizedStatus || normalizedStatus === "ALL" || row.status === normalizedStatus
+    const sourcePass = !normalizedSource || normalizedSource === "ALL" || row.source === normalizedSource
+    const searchPass =
+      !normalizedSearch ||
+      row.studentName.toLowerCase().includes(normalizedSearch) ||
+      row.rollNumber.toLowerCase().includes(normalizedSearch)
+    return statusPass && sourcePass && searchPass
   })
-  return normalizeDayView(extractPayload<unknown>(response), params.batchId, params.date) as AttendanceDayView
+
+  return {
+    batchId: params.batchId,
+    date: params.date,
+    items: filteredRows,
+    totals: {
+      total: filteredRows.length,
+      present: filteredRows.filter((row) => row.status === "PRESENT").length,
+      absent: filteredRows.filter((row) => row.status === "ABSENT").length,
+      late: filteredRows.filter((row) => row.status === "LATE").length,
+      excused: filteredRows.filter((row) => row.status === "EXCUSED").length,
+      machine: filteredRows.filter((row) => row.source === "MACHINE").length,
+      manual: filteredRows.filter((row) => row.source === "MANUAL").length,
+    },
+  } as AttendanceDayView
 }
 
 export async function getAttendanceMonthMatrix(params: {
@@ -80,25 +112,125 @@ export async function getAttendanceMonthMatrix(params: {
   month: number
   year: number
 }) {
-  const response = await api.get(`/attendance/batch/${params.batchId}/month`, {
-    params: {
-      month: params.month,
-      year: params.year,
-    },
+  const range = getMonthDateRange(params.month, params.year)
+
+  const [summaryResponse, attendanceResponse] = await Promise.all([
+    api.get(`/attendance/batch/${params.batchId}/student-summary`),
+    api.get("/attendance/student/date-status-list", {
+      params: {
+        batch_id: params.batchId,
+        start_date: range.start,
+        end_date: range.end,
+      },
+    }),
+  ])
+
+  const summaryPayload = extractPayload<Record<string, unknown>>(summaryResponse)
+  const attendancePayload = extractPayload<Record<string, unknown>>(attendanceResponse)
+
+  const summaryStudents = ensureArray<Record<string, unknown>>(summaryPayload.students ?? [])
+  const attendanceStudents = ensureArray<Record<string, unknown>>(attendancePayload.students ?? [])
+
+  const days = Array.from({ length: new Date(params.year, params.month, 0).getDate() }, (_, index) =>
+    `${params.year}-${String(params.month).padStart(2, "0")}-${String(index + 1).padStart(2, "0")}`
+  )
+
+  const attendanceMap = new Map<string, Record<string, unknown>>(
+    attendanceStudents.map((student) => [String(student.student_id ?? ""), student])
+  )
+
+  const rowsFromSummary = summaryStudents.map((student) => {
+    const studentId = String(student.student_id ?? "")
+    const studentAttendance = attendanceMap.get(studentId) ?? {}
+    const entries = ensureArray<Record<string, unknown>>((studentAttendance as Record<string, unknown>).attendance_entries ?? [])
+    const cells = days.reduce<Record<string, "PRESENT" | "ABSENT" | "LATE" | "EXCUSED" | null>>((acc, day) => {
+      const entry = entries.find((item) => String(item.date ?? "") === day)
+      const status = String(entry?.status ?? "").toUpperCase()
+      acc[day] =
+        status === "PRESENT" || status === "ABSENT" || status === "LATE" || status === "EXCUSED"
+          ? (status as "PRESENT" | "ABSENT" | "LATE" | "EXCUSED")
+          : null
+      return acc
+    }, {})
+
+    const present = Object.values(cells).filter((value) => value === "PRESENT").length
+    const absent = Object.values(cells).filter((value) => value === "ABSENT").length
+    const late = Object.values(cells).filter((value) => value === "LATE").length
+    const excused = Object.values(cells).filter((value) => value === "EXCUSED").length
+    const totalClasses = present + absent + late + excused
+
+    return {
+      studentId,
+      studentName: String(student.student_name ?? "Unknown Student"),
+      rollNumber: String(student.student_roll ?? ""),
+      cells,
+      summary: {
+        present,
+        absent,
+        late,
+        excused,
+        percentage: Number(student.attendance_percentage ?? computeAttendancePercentage(present, totalClasses)),
+      },
+    }
   })
-  return normalizeMonthMatrix(extractPayload<unknown>(response), params.batchId, params.month, params.year) as AttendanceMonthMatrix
+
+  const summaryIds = new Set(rowsFromSummary.map((row) => row.studentId))
+  const missingRows = attendanceStudents
+    .filter((student) => !summaryIds.has(String(student.student_id ?? "")))
+    .map((student) => {
+      const entries = ensureArray<Record<string, unknown>>(student.attendance_entries ?? [])
+      const cells = days.reduce<Record<string, "PRESENT" | "ABSENT" | "LATE" | "EXCUSED" | null>>((acc, day) => {
+        const entry = entries.find((item) => String(item.date ?? "") === day)
+        const status = String(entry?.status ?? "").toUpperCase()
+        acc[day] =
+          status === "PRESENT" || status === "ABSENT" || status === "LATE" || status === "EXCUSED"
+            ? (status as "PRESENT" | "ABSENT" | "LATE" | "EXCUSED")
+            : null
+        return acc
+      }, {})
+      const present = Object.values(cells).filter((value) => value === "PRESENT").length
+      const absent = Object.values(cells).filter((value) => value === "ABSENT").length
+      const late = Object.values(cells).filter((value) => value === "LATE").length
+      const excused = Object.values(cells).filter((value) => value === "EXCUSED").length
+      const totalClasses = present + absent + late + excused
+      return {
+        studentId: String(student.student_id ?? ""),
+        studentName: String(student.student_name ?? "Unknown Student"),
+        rollNumber: String(student.student_roll ?? ""),
+        cells,
+        summary: {
+          present,
+          absent,
+          late,
+          excused,
+          percentage: Number(student.attendance_percentage ?? computeAttendancePercentage(present, totalClasses)),
+        },
+      }
+    })
+
+  return normalizeMonthMatrix(
+    {
+      days,
+      rows: [...rowsFromSummary, ...missingRows],
+    },
+    params.batchId,
+    params.month,
+    params.year
+  ) as AttendanceMonthMatrix
 }
 
 export async function getAttendanceLogs(params: {
-  batchId?: string
-  dateFrom?: string
-  dateTo?: string
+  status?: string
+  deviceSerial?: string
+  skip?: number
+  take?: number
 }) {
   const response = await api.get("/attendance/logs", {
     params: {
-      batchId: params.batchId || undefined,
-      dateFrom: params.dateFrom || undefined,
-      dateTo: params.dateTo || undefined,
+      status: params.status || undefined,
+      deviceSerial: params.deviceSerial || undefined,
+      skip: Number.isFinite(params.skip) ? params.skip : undefined,
+      take: Number.isFinite(params.take) ? params.take : undefined,
     },
   })
   const payload = extractPayload<Record<string, unknown> | unknown[]>(response)
@@ -118,10 +250,15 @@ export async function getMyAttendanceRecords(params?: {
   year?: number
   sort?: "ASC" | "DESC"
 }) {
-  const response = await api.get("/attendance/student/my-records", {
+  const month = params?.month
+  const year = params?.year
+  const hasMonthFilter = Number.isFinite(month) && Number.isFinite(year)
+  const range = hasMonthFilter ? getMonthDateRange(Number(month), Number(year)) : null
+
+  const response = await api.get("/attendance/student", {
     params: {
-      month: params?.month || undefined,
-      year: params?.year || undefined,
+      start_date: range?.start,
+      end_date: range?.end,
       sort: params?.sort || "DESC",
     },
   })
@@ -137,14 +274,13 @@ export async function getMyAttendanceDateStatusList(params?: {
 }) {
   const month = params?.month ?? new Date().getMonth() + 1
   const year = params?.year ?? new Date().getFullYear()
-  const monthStart = `${year}-${String(month).padStart(2, "0")}-01`
-  const monthEnd = new Date(year, month, 0).toISOString().slice(0, 10)
+  const range = getMonthDateRange(month, year)
 
   const response = await api.get("/attendance/student/self/date-status-list", {
     params: {
       batch_id: params?.batchId || undefined,
-      start_date: monthStart,
-      end_date: monthEnd,
+      start_date: range.start,
+      end_date: range.end,
     },
   })
 

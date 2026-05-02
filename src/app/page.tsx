@@ -1,26 +1,39 @@
 // src/app/page.tsx
+"use client";
 
-import ClientProfile from "@/components/client/ClientProfile";
-import DialogExample from "@/components/DialogExample";
-import Link from "next/link";
+import { useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/context/AuthContext";
+
+function normalizeRole(user: any) {
+  return String(
+    user?.role ??
+      (Array.isArray(user?.roles) ? user.roles[0] : user?.roles) ??
+      "",
+  ).toLowerCase();
+}
+
+function getDefaultRouteForRole(role: string) {
+  if (role === "superadmin") return "/dashboard/admins";
+  if (role === "teacher") return "/dashboard/dashboard-empty";
+  if (role === "student") return "/dashboard";
+  return "/dashboard";
+}
 
 export default function HomePage() {
+  const { user, isAuthReady } = useAuth();
+  const router = useRouter();
 
+  useEffect(() => {
+    if (!isAuthReady) return;
 
+    if (!user) {
+      router.replace("/login");
+      return;
+    }
 
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold">Next.js Boilerplate</h1>
-      <section className="mt-6">
-        <h2 className="text-xl">RTK Query - Profile</h2>
+    router.replace(getDefaultRouteForRole(normalizeRole(user)));
+  }, [isAuthReady, user, router]);
 
-      </section>
-      <ClientProfile />
-      <section className="mt-6">
-        <h2 className="text-xl">TanStack Query - Stats</h2>
-       < DialogExample />
-       <Link className="bg-red-500 " href={'/login'}>login </Link>
-      </section>
-    </main>
-  );
+  return null;
 }
