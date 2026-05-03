@@ -160,6 +160,21 @@ type ScheduleWorkspaceProps = {
   minimalView?: boolean
 }
 
+function mapDeliveryModeToBatchRoutineApi(mode: DeliveryMode): string {
+  switch (mode) {
+    case "ON_SITE":
+      return "IN_PERSON"
+    case "LIVE_ONLINE":
+      return "LIVE_ONLINE"
+    case "RECORDED_SUPPORT":
+      return "RECORDED_SUPPORT"
+    case "HYBRID":
+      return "HYBRID"
+    default:
+      return mode
+  }
+}
+
 const BUILDER_DAYS: DayOfWeek[] = ["SATURDAY", "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY"]
 const FULL_WEEK_DAYS: DayOfWeek[] = ["SATURDAY", "SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"]
 const DAY_LABELS: Record<DayOfWeek, string> = {
@@ -343,8 +358,9 @@ function overlaps(startA: string, endA: string, startB: string, endB: string) {
   return parseTimeToMinutes(startA) < parseTimeToMinutes(endB) && parseTimeToMinutes(endA) > parseTimeToMinutes(startB)
 }
 
-function validateEntryDraft(draft: EntryDraft) {
+function validateEntryDraft(draft: EntryDraft, options?: { requireTeacher?: boolean }) {
   const errors: Partial<Record<keyof EntryDraft, string>> = {}
+  const requireTeacher = options?.requireTeacher ?? false
   if (!draft.dayOfWeek) errors.dayOfWeek = "Day is required"
   if (!draft.startTime) errors.startTime = "Start time is required"
   if (!draft.endTime) errors.endTime = "End time is required"
@@ -352,7 +368,7 @@ function validateEntryDraft(draft: EntryDraft) {
     errors.endTime = "End time must be after start time"
   }
   if (!draft.subjectId) errors.subjectId = "Subject is required"
-  if (!draft.teacherId) errors.teacherId = "Teacher is required"
+  if (requireTeacher && !draft.teacherId) errors.teacherId = "Teacher is required"
   if ((draft.deliveryMode === "ON_SITE" || draft.deliveryMode === "HYBRID") && !draft.roomId) {
     errors.roomId = "Room is required for this mode"
   }
@@ -868,14 +884,6 @@ async function fetchMyStudentSchedule(batches: BatchOption[]) {
   }))
 
   return groupTeacherScheduleRecords(enrichedItems, batches)
-}
-
-function getRoutineDateWindow() {
-  const now = new Date()
-  return {
-    effective_from: toDateInput(now),
-    effective_to: `${now.getFullYear()}-12-31`,
-  }
 }
 
 async function detectConflicts(
@@ -1473,7 +1481,7 @@ export default function ScheduleWorkspace({
   const saveEntryMutation = useMutation({
     mutationFn: async (payload: EntryDraft) => {
       const resolvedTeacherId = resolveOptionId(teachers, payload.teacherId)
-      if (!resolvedTeacherId || !isUuidLike(resolvedTeacherId)) {
+      if (editingEntryId && (!resolvedTeacherId || !isUuidLike(resolvedTeacherId))) {
         throw new Error("Please select a valid teacher from the list.")
       }
 
@@ -1489,7 +1497,7 @@ export default function ScheduleWorkspace({
         start_time: payload.startTime,
         end_time: payload.endTime,
         ...(resolvedSubjectId ? { subject_id: resolvedSubjectId } : {}),
-        teacher_id: resolvedTeacherId,
+        ...(resolvedTeacherId ? { teacher_id: resolvedTeacherId } : {}),
         delivery_mode: payload.deliveryMode,
         ...(resolvedRoomId ? { room_id: resolvedRoomId } : {}),
         ...(payload.liveSessionRef ? { live_session_ref: payload.liveSessionRef } : {}),
@@ -1514,24 +1522,26 @@ export default function ScheduleWorkspace({
         }
       }
 
-      let routineId = currentRoutine?.id
-      let routineStatus: RoutineStatus = currentRoutine?.status ?? "DRAFT"
-      if (!routineId) {
-        const response = await api.post("/api/routines", {
-          batch_id: payload.batchId,
-          ...getRoutineDateWindow(),
-        })
-        const routinePayload = extractResponseData(response)
-        const createdRoutine = mapRoutineRecord(routinePayload, batches)
-        routineId =
-          createdRoutine?.id ??
-          String(routinePayload?.routine?.id ?? routinePayload?.id ?? "").trim()
-        routineStatus = createdRoutine?.status ?? routineStatus
+      const routineStatus: RoutineStatus = currentRoutine?.status ?? "DRAFT"
+
+      if (!tenantId || tenantId === "demo-tenant") {
+        throw new Error("Tenant context is required to create routine entries.")
       }
 
-      if (!routineId) throw new Error("Failed to create routine for this batch")
+      const createEntryPayload = {
+        day_of_week: dayOfWeekToApiValue(payload.dayOfWeek),
+        start_time: payload.startTime,
+        end_time: payload.endTime,
+        ...(resolvedSubjectId ? { subject_id: resolvedSubjectId } : {}),
+        delivery_mode: mapDeliveryModeToBatchRoutineApi(payload.deliveryMode),
+        ...(resolvedRoomId ? { room_id: resolvedRoomId } : {}),
+        ...(payload.notes ? { notes: payload.notes } : {}),
+      }
 
-      const response = await api.post(`/api/routines/${routineId}/entries`, entryPayload)
+      const response = await api.post(
+        `/api/tenants/${tenantId}/batches/${payload.batchId}/routine/entries`,
+        createEntryPayload
+      )
       const responsePayload = extractResponseData(response)
       const nextEntry = mapRoutineEntry(
         {
@@ -1540,6 +1550,15 @@ export default function ScheduleWorkspace({
         },
         routineStatus
       )
+      const routineId = String(
+        responsePayload?.routine_id ??
+          responsePayload?.routineId ??
+          responsePayload?.routine?.id ??
+          responsePayload?.entry?.routine_id ??
+          responsePayload?.entry?.routineId ??
+          currentRoutine?.id ??
+          ""
+      ).trim()
 
       return {
         batchId: payload.batchId,
@@ -1753,14 +1772,15 @@ export default function ScheduleWorkspace({
   }
 
   function handleSaveEntry() {
+    const requiresTeacher = Boolean(editingEntryId)
     const normalizedDraft: EntryDraft = {
       ...entryDraft,
       subjectId: resolveOptionId(subjects, entryDraft.subjectId),
       teacherId: resolveOptionId(teachers, entryDraft.teacherId),
       roomId: entryDraft.roomId ? resolveOptionId(rooms, entryDraft.roomId) : "",
     }
-    const validationErrors = validateEntryDraft(entryDraft)
-    if (!normalizedDraft.teacherId || !isUuidLike(normalizedDraft.teacherId)) {
+    const validationErrors = validateEntryDraft(entryDraft, { requireTeacher: requiresTeacher })
+    if (requiresTeacher && (!normalizedDraft.teacherId || !isUuidLike(normalizedDraft.teacherId))) {
       validationErrors.teacherId = "Select a valid teacher from the list"
     }
     if (!normalizedDraft.subjectId) {
@@ -2477,7 +2497,7 @@ export default function ScheduleWorkspace({
               <div><FieldLabel label="Start Time" required /><Input type="time" value={entryDraft.startTime} onChange={(event) => setEntryDraft((current) => ({ ...current, startTime: event.target.value }))} /><FieldError message={entryErrors.startTime} /></div>
               <div><FieldLabel label="End Time" required /><Input type="time" value={entryDraft.endTime} onChange={(event) => setEntryDraft((current) => ({ ...current, endTime: event.target.value }))} /><FieldError message={entryErrors.endTime} /></div>
               <div><FieldLabel label="Subject" required /><SearchableInput listId="subject-options-list" value={entryDraft.subjectId} onChange={(value) => setEntryDraft((current) => ({ ...current, subjectId: value }))} options={subjects} placeholder="Search subject" strictMatch /><FieldError message={entryErrors.subjectId} /></div>
-              <div><FieldLabel label="Teacher" required /><SearchableInput listId="teacher-options-list" value={entryDraft.teacherId} onChange={(value) => setEntryDraft((current) => ({ ...current, teacherId: value }))} options={teachers} placeholder="Search teacher" strictMatch /><FieldError message={entryErrors.teacherId} /></div>
+              {editingEntryId ? <div><FieldLabel label="Teacher" required /><SearchableInput listId="teacher-options-list" value={entryDraft.teacherId} onChange={(value) => setEntryDraft((current) => ({ ...current, teacherId: value }))} options={teachers} placeholder="Search teacher" strictMatch /><FieldError message={entryErrors.teacherId} /></div> : null}
               <div>
                 <FieldLabel label="Delivery Mode" required />
                 <div className="grid grid-cols-2 gap-2">
