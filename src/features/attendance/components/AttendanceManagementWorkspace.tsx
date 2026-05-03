@@ -1,6 +1,6 @@
 "use client"
 
-import { useDeferredValue, useMemo, useState } from "react"
+import { useDeferredValue, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 import { AlertCircle, Loader2, MessageSquare, RefreshCcw, Save, Search, ShieldCheck } from "lucide-react"
 import toast from "react-hot-toast"
@@ -265,7 +265,13 @@ export default function AttendanceManagementWorkspace() {
   }
 
   const batchLabel = batches.find((item) => item.id === batchId)?.name ?? "Selected Batch"
-  const tabs: ViewTab[] = ["roll-call", "day-view", "month-view"]
+  const tabs: ViewTab[] = isAdmin ? ["day-view", "roll-call", "month-view"] : ["roll-call", "day-view"]
+
+  useEffect(() => {
+    if (!tabs.includes(activeTab)) {
+      setActiveTab(tabs[0])
+    }
+  }, [activeTab, tabs])
 
   const updateStatus = (row: AttendanceRecord, nextStatus: AttendanceStatus) => {
     setDrafts((prev) => ({
@@ -386,7 +392,7 @@ export default function AttendanceManagementWorkspace() {
       <div className="flex flex-wrap gap-2">
         {tabs.map((tab) => (
           <Button key={tab} size="sm" variant={activeTab === tab ? "default" : "outline"} onClick={() => setActiveTab(tab)}>
-            {tab === "roll-call" ? "Roll Call" : tab === "day-view" ? "Day View" : "Month Matrix"}
+            {tab === "roll-call" ? "Roll Call" : tab === "day-view" ? "Summary" : "Logs"}
           </Button>
         ))}
       </div>

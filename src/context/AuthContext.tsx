@@ -17,6 +17,8 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
+type HttpStatusError = Error & { status?: number }
+
 function extractNestedProfile(user: any) {
   if (!user || typeof user !== "object") return {}
 
@@ -86,7 +88,9 @@ async function fetchUnifiedProfile(token: string, tenantId: string | number | nu
   })
 
   if (!response.ok) {
-    throw new Error(`Profile fetch failed with status ${response.status}`)
+    const error = new Error(`Profile fetch failed with status ${response.status}`) as HttpStatusError
+    error.status = response.status
+    throw error
   }
 
   const data = await response.json().catch(() => null)
@@ -142,7 +146,16 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             }
             localStorage.setItem("user", JSON.stringify(nextUser));
           }
-        } catch {
+        } catch (error) {
+          const status = (error as HttpStatusError)?.status
+          if (status === 401) {
+            localStorage.removeItem("access_token");
+            localStorage.removeItem("user");
+            setLocalUser(null);
+            dispatch(clearUser());
+            return;
+          }
+
           // Keep local auth session usable even if profile hydration fails on boot.
         }
 
