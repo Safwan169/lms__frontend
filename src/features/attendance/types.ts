@@ -123,3 +123,76 @@ export type AttendanceSmsRequest = {
   recipients?: string[]
   note?: string
 }
+
+export type AttendanceSmsResponse = {
+  available: boolean
+  message: string
+}
+
+export type TeacherAttendanceRecord = {
+  id: string
+  teacherId: string
+  teacherName: string
+  teacherEmail?: string | null
+  date: string
+  checkIn?: string | null
+  checkOut?: string | null
+  status: AttendanceStatus
+  note?: string | null
+}
+
+export type MarkTeacherAttendanceDto = {
+  teacher_id: string
+  date: string
+  check_in?: string
+  check_out?: string
+  status: AttendanceStatus
+  note?: string
+}
+
+export type UpdateAttendanceDto = {
+  status?: AttendanceStatus
+  note?: string
+}
+
+export type AttendanceStatsBreakdown = {
+  status: AttendanceStatus
+  _count: number
+}
+
+export type AttendanceStats = {
+  student: {
+    total: number
+    breakdown: AttendanceStatsBreakdown[]
+  }
+  teacher: {
+    total: number
+    breakdown: AttendanceStatsBreakdown[]
+  }
+}
+
+export type AttendanceLogDetail = {
+  id: string
+  deviceSerial?: string | null
+  rawData: string
+  parsedCount: number
+  processedCount: number
+  failedCount: number
+  errorMessage?: string | null
+  status: string
+  createdAt: string
+  processedAt?: string | null
+}
+
+export type MachineImportResult = {
+  total_records: number
+  student_marked: number
+  teacher_marked: number
+  skipped: number
+}
+
+export type BatchPresentDate = {
+  student_id: string
+  student_name: string
+  dates: { date: string; check_in_time: string | null }[]
+}

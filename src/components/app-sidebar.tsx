@@ -5,7 +5,9 @@ import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
   Calculator,
+  BarChart2,
   ChevronDown,
+  Cpu,
   Monitor,
   BookOpen,
   CalendarDays,
@@ -13,6 +15,7 @@ import {
   School,
   GraduationCap,
   Users,
+  UserCheck,
   UserRound,
 } from "lucide-react"
 
@@ -147,8 +150,26 @@ const navData: NavItem[] = [
     title: "Attendance",
     url: "/dashboard/attendance",
     icon: ClipboardCheck,
-    roles: ["admin", "rektor"],
+    roles: ["admin", "rektor", "teacher"],
   },
+  // {
+  //   title: "Teacher Attendance",
+  //   url: "/dashboard/teacher-attendance",
+  //   icon: UserCheck,
+  //   roles: ["admin", "rektor", "superadmin"],
+  // },
+  // {
+  //   title: "Machine Import",
+  //   url: "/dashboard/machine-import",
+  //   icon: Cpu,
+  //   roles: ["admin", "rektor", "superadmin"],
+  // },
+  // {
+  //   title: "Attendance Stats",
+  //   url: "/dashboard/attendance-stats",
+  //   icon: BarChart2,
+  //   roles: ["admin", "rektor", "superadmin"],
+  // },
   {
     title: "My Attendance",
     url: "/dashboard/self-attendance",

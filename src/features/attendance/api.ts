@@ -3,11 +3,19 @@ import type {
   AttendanceBatchOption,
   AttendanceBulkSaveItem,
   AttendanceDayView,
+  AttendanceLogDetail,
   AttendanceLogEntry,
   AttendanceMonthMatrix,
   AttendanceRecord,
   AttendanceSmsRequest,
+  AttendanceSmsResponse,
   AttendanceSummaryItem,
+  AttendanceStats,
+  BatchPresentDate,
+  MarkTeacherAttendanceDto,
+  MachineImportResult,
+  TeacherAttendanceRecord,
+  UpdateAttendanceDto,
 } from "@/features/attendance/types"
 import {
   ensureArray,
@@ -66,7 +74,11 @@ export async function saveAttendanceBulk(params: {
 
 export async function sendAttendanceSms(payload: AttendanceSmsRequest) {
   void payload
-  throw new Error("SMS endpoint is not available in backend attendance module yet.")
+  const response: AttendanceSmsResponse = {
+    available: false,
+    message: "SMS endpoint is not available in backend attendance module yet.",
+  }
+  return response
 }
 
 export async function getAttendanceDayView(params: {
@@ -302,3 +314,145 @@ export async function getMyAttendanceDateStatusList(params?: {
     )
   ) as AttendanceRecord[]
 }
+
+// ─── Student single-record CRUD ─────────────────────────────────────────────
+
+export async function markStudentAttendance(data: {
+  batch_id: string
+  student_id: string
+  date: string
+  status: string
+  note?: string
+}) {
+  const response = await api.post("/attendance/student", data)
+  return extractPayload<unknown>(response)
+}
+
+export async function updateStudentAttendance(id: string, data: UpdateAttendanceDto) {
+  const response = await api.put(`/attendance/student/${id}`, data)
+  return extractPayload<unknown>(response)
+}
+
+export async function deleteStudentAttendance(id: string) {
+  const response = await api.delete(`/attendance/student/${id}`)
+  return extractPayload<unknown>(response)
+}
+
+export async function updateBulkStudentAttendance(params: {
+  batchId: string
+  date: string
+  records: AttendanceBulkSaveItem[]
+}) {
+  const response = await api.put(
+    `/attendance/student/bulk/${params.batchId}/${params.date}`,
+    params.records.map((item) => ({
+      student_id: item.student_id,
+      status: item.status,
+      note: item.note ?? undefined,
+    }))
+  )
+  return extractPayload<unknown>(response)
+}
+
+// ─── Teacher attendance ──────────────────────────────────────────────────────
+
+export async function markTeacherAttendance(data: MarkTeacherAttendanceDto) {
+  const response = await api.post("/attendance/teacher", data)
+  return extractPayload<unknown>(response)
+}
+
+export async function getTeacherAttendance(params?: {
+  teacher_id?: string
+  date?: string
+  start_date?: string
+  end_date?: string
+}) {
+  const response = await api.get("/attendance/teacher", { params })
+  const payload = extractPayload<unknown[] | Record<string, unknown>>(response)
+  const items = Array.isArray(payload) ? payload : []
+  return items.map((item) => {
+    const r = item as Record<string, unknown>
+    const teacher = (r.teacher ?? {}) as Record<string, unknown>
+    return {
+      id: String(r.id ?? ""),
+      teacherId: String(r.teacher_id ?? teacher.id ?? ""),
+      teacherName: String(r.teacher_name ?? teacher.name ?? "Unknown Teacher"),
+      teacherEmail: String(r.teacher_email ?? teacher.email ?? "") || null,
+      date: String(r.date ?? "").slice(0, 10),
+      checkIn: r.check_in ? String(r.check_in) : null,
+      checkOut: r.check_out ? String(r.check_out) : null,
+      status: String(r.status ?? "ABSENT").toUpperCase() as TeacherAttendanceRecord["status"],
+      note: r.note ? String(r.note) : null,
+    } as TeacherAttendanceRecord
+  })
+}
+
+export async function updateTeacherAttendance(id: string, data: UpdateAttendanceDto) {
+  const response = await api.put(`/attendance/teacher/${id}`, data)
+  return extractPayload<unknown>(response)
+}
+
+export async function deleteTeacherAttendance(id: string) {
+  const response = await api.delete(`/attendance/teacher/${id}`)
+  return extractPayload<unknown>(response)
+}
+
+// ─── Machine import ──────────────────────────────────────────────────────────
+
+export async function importMachineAttendance(payload: string) {
+  const response = await api.post("/attendance/machine", { payload })
+  return extractPayload<MachineImportResult>(response)
+}
+
+// ─── Stats ───────────────────────────────────────────────────────────────────
+
+export async function getAttendanceStats(params?: {
+  batch_id?: string
+  student_id?: string
+  teacher_id?: string
+  date?: string
+  start_date?: string
+  end_date?: string
+}) {
+  const response = await api.get("/attendance/stats", { params })
+  return extractPayload<AttendanceStats>(response)
+}
+
+// ─── Log detail ──────────────────────────────────────────────────────────────
+
+export async function getAttendanceLogDetail(logId: string) {
+  const response = await api.get(`/attendance/logs/${logId}`)
+  const r = extractPayload<Record<string, unknown>>(response)
+  return {
+    id: String(r.id ?? ""),
+    deviceSerial: r.device_serial ? String(r.device_serial) : null,
+    rawData: String(r.raw_data ?? ""),
+    parsedCount: Number(r.parsed_count ?? 0),
+    processedCount: Number(r.processed_count ?? 0),
+    failedCount: Number(r.failed_count ?? 0),
+    errorMessage: r.error_message ? String(r.error_message) : null,
+    status: String(r.status ?? ""),
+    createdAt: String(r.created_at ?? ""),
+    processedAt: r.processed_at ? String(r.processed_at) : null,
+  } as AttendanceLogDetail
+}
+
+// ─── Batch present dates ─────────────────────────────────────────────────────
+
+export async function getBatchPresentDates(batchId: string) {
+  const response = await api.get(`/attendance/batch/${batchId}/present-dates`)
+  const payload = extractPayload<unknown[] | Record<string, unknown>>(response)
+  const items = Array.isArray(payload) ? payload : []
+  return items.map((item) => {
+    const r = item as Record<string, unknown>
+    return {
+      student_id: String(r.student_id ?? ""),
+      student_name: String(r.student_name ?? "Unknown"),
+      dates: ((r.dates ?? []) as Record<string, unknown>[]).map((d) => ({
+        date: String(d.date ?? ""),
+        check_in_time: d.check_in_time ? String(d.check_in_time) : null,
+      })),
+    } as BatchPresentDate
+  })
+}
+

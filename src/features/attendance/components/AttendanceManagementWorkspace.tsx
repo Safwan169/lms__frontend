@@ -2,19 +2,21 @@
 
 import { useDeferredValue, useEffect, useMemo, useState } from "react"
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import { AlertCircle, Loader2, MessageSquare, RefreshCcw, Save, Search, ShieldCheck } from "lucide-react"
+import { AlertCircle, Loader2, MessageSquare, Pencil, RefreshCcw, Save, Search, ShieldCheck, Trash2 } from "lucide-react"
 import toast from "react-hot-toast"
 
 import { useAuth } from "@/context/AuthContext"
 import {
+  deleteStudentAttendance,
   getAttendanceDayView,
   getAttendanceMonthMatrix,
   getAttendanceRollCall,
   saveAttendanceBulk,
   sendAttendanceSms,
+  updateStudentAttendance,
 } from "@/features/attendance/api"
 import { useGetBatchesQuery } from "@/features/user/userApi"
-import type { AttendanceBulkSaveItem, AttendanceRecord, AttendanceStatus } from "@/features/attendance/types"
+import type { AttendanceBulkSaveItem, AttendanceRecord, AttendanceStatus, UpdateAttendanceDto } from "@/features/attendance/types"
 import {
   computeAttendancePercentage,
   formatDateLabel,
@@ -36,14 +38,24 @@ import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select } from "@/components/ui/select"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table-primitive"
+import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
 
 type ViewTab = "roll-call" | "day-view" | "month-view"
 type DraftMap = Record<string, AttendanceBulkSaveItem>
+
+type EditTarget = { id: string; studentName: string; status: AttendanceStatus; note: string | null }
 
 function StatCard({ label, value, hint }: { label: string; value: string; hint: string }) {
   return (
@@ -136,6 +148,10 @@ export default function AttendanceManagementWorkspace() {
   const [daySource, setDaySource] = useState("All")
   const [daySearch, setDaySearch] = useState("")
   const deferredDaySearch = useDeferredValue(daySearch)
+
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null)
+  const [editForm, setEditForm] = useState<UpdateAttendanceDto>({})
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null)
 
   const batchesQuery = useGetBatchesQuery(
     {
@@ -248,7 +264,35 @@ export default function AttendanceManagementWorkspace() {
 
   const smsMutation = useMutation({
     mutationFn: (payload: { studentIds?: string[]; batchId?: string; date?: string }) => sendAttendanceSms(payload),
-    onSuccess: () => toast.success("SMS request sent"),
+    onSuccess: (result) => {
+      if (result.available) {
+        toast.success("SMS request sent")
+        return
+      }
+      toast(result.message)
+    },
+    onError: (error: unknown) => toast.error(getErrorMessage(error)),
+  })
+
+  const editMutation = useMutation({
+    mutationFn: () => updateStudentAttendance(editTarget!.id, editForm),
+    onSuccess: () => {
+      toast.success("Attendance updated")
+      setEditTarget(null)
+      queryClient.invalidateQueries({ queryKey: ["attendance-roll-call", batchId, date] })
+      queryClient.invalidateQueries({ queryKey: ["attendance-day-view", batchId, date] })
+    },
+    onError: (error: unknown) => toast.error(getErrorMessage(error)),
+  })
+
+  const deleteMutation = useMutation({
+    mutationFn: () => deleteStudentAttendance(deleteTargetId!),
+    onSuccess: () => {
+      toast.success("Record deleted")
+      setDeleteTargetId(null)
+      queryClient.invalidateQueries({ queryKey: ["attendance-roll-call", batchId, date] })
+      queryClient.invalidateQueries({ queryKey: ["attendance-day-view", batchId, date] })
+    },
     onError: (error: unknown) => toast.error(getErrorMessage(error)),
   })
 
@@ -452,7 +496,7 @@ export default function AttendanceManagementWorkspace() {
                     <TableHead>Source</TableHead>
                     <TableHead>Check In</TableHead>
                     <TableHead>Check Out</TableHead>
-                    <TableHead className="text-right">SMS</TableHead>
+                    <TableHead className="text-right">Actions</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
@@ -493,9 +537,33 @@ export default function AttendanceManagementWorkspace() {
                       <TableCell>{formatTimeLabel(row.firstEntry)}</TableCell>
                       <TableCell>{formatTimeLabel(row.lastExit)}</TableCell>
                       <TableCell className="text-right">
-                        <Button size="sm" variant="outline" onClick={() => smsMutation.mutate({ batchId, date, studentIds: [row.studentId] })}>
-                          <MessageSquare className="mr-1 size-4" /> Send
-                        </Button>
+                        <div className="flex justify-end gap-1.5">
+                          <Button size="sm" variant="outline" onClick={() => smsMutation.mutate({ batchId, date, studentIds: [row.studentId] })}>
+                            <MessageSquare className="size-3.5" />
+                          </Button>
+                          {row.id && !row.id.startsWith("dummy-") ? (
+                            <>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={() => {
+                                  setEditTarget({ id: row.id, studentName: row.studentName, status: row.status, note: row.note ?? null })
+                                  setEditForm({ status: row.status, note: row.note ?? "" })
+                                }}
+                              >
+                                <Pencil className="size-3.5" />
+                              </Button>
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                className="text-destructive hover:bg-destructive hover:text-white"
+                                onClick={() => setDeleteTargetId(row.id)}
+                              >
+                                <Trash2 className="size-3.5" />
+                              </Button>
+                            </>
+                          ) : null}
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -634,6 +702,68 @@ export default function AttendanceManagementWorkspace() {
           )}
         </div>
       ) : null}
+
+      {/* ─── Edit Student Attendance Dialog ─────────────────── */}
+      <Dialog open={!!editTarget} onOpenChange={(open) => { if (!open) setEditTarget(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Attendance — {editTarget?.studentName}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Status</label>
+              <Select
+                value={editForm.status ?? ""}
+                onValueChange={(v) => setEditForm((prev) => ({ ...prev, status: v as AttendanceStatus }))}
+              >
+                <option value="PRESENT">Present</option>
+                <option value="ABSENT">Absent</option>
+                <option value="LATE">Late</option>
+                <option value="EXCUSED">Excused</option>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-sm font-medium">Note</label>
+              <Textarea
+                placeholder="Optional note"
+                value={editForm.note ?? ""}
+                onChange={(e) => setEditForm((prev) => ({ ...prev, note: e.target.value }))}
+              />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditTarget(null)}>Cancel</Button>
+            <Button
+              disabled={editMutation.isPending}
+              onClick={() => editMutation.mutate()}
+            >
+              {editMutation.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Save
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Delete Confirm Dialog ──────────────────────────── */}
+      <Dialog open={!!deleteTargetId} onOpenChange={(open) => { if (!open) setDeleteTargetId(null) }}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Attendance Record</DialogTitle>
+          </DialogHeader>
+          <p className="text-sm text-muted-foreground">This will permanently remove the attendance record. This action cannot be undone.</p>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteTargetId(null)}>Cancel</Button>
+            <Button
+              variant="destructive"
+              disabled={deleteMutation.isPending}
+              onClick={() => deleteMutation.mutate()}
+            >
+              {deleteMutation.isPending ? <Loader2 className="mr-2 size-4 animate-spin" /> : null}
+              Delete
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
     </div>
   )

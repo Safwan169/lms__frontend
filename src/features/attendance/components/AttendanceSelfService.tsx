@@ -40,7 +40,13 @@ export default function AttendanceSelfService() {
 
   const smsMutation = useMutation({
     mutationFn: () => sendAttendanceSms({ date: todayIsoDate() }),
-    onSuccess: () => toast.success("SMS trigger sent"),
+    onSuccess: (result) => {
+      if (result.available) {
+        toast.success("SMS trigger sent")
+        return
+      }
+      toast(result.message)
+    },
     onError: (error: unknown) => toast.error(getErrorMessage(error)),
   })
 
