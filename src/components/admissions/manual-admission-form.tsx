@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
 import { useRouter } from "next/navigation"
 import { useQuery } from "@tanstack/react-query"
 import { useForm } from "react-hook-form"
@@ -23,7 +23,12 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
 
 type ClassOption = { id: string; name: string }
-type BatchOption = { id: string; name: string }
+type BatchOption = {
+  id: string
+  name: string
+  fee?: string
+  currency?: string
+}
 const yesterdayDate = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().split("T")[0] ?? ""
 const bdPhoneRegex = /^(?:\+8801\d{9}|8801\d{9}|01\d{9})$/
 const manualAdmissionFieldMap = {
@@ -57,6 +62,12 @@ function normalizeBdPhone(value: string) {
   }
 
   return digitsOnly
+}
+
+function toMoney(value: unknown) {
+  const num = Number(value ?? 0)
+  if (!Number.isFinite(num)) return "0.00"
+  return num.toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
 const formSchema = z.object({
@@ -146,6 +157,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
   })
 
   const selectedClassId = form.watch("class_id")
+  const selectedBatchId = form.watch("batch_id")
   const isDialogMode = mode === "dialog"
   const { data: classes = [], isLoading: isClassesLoading } = useQuery({
     queryKey: ["manual-admission-classes", tenantId],
@@ -196,14 +208,29 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
           : []
 
       return rawItems
-        .map((item: any) => ({
-          id: String(item?.id ?? item?.batch_id ?? "").trim(),
-          name: String(item?.batch_name ?? item?.name ?? item?.section ?? `Batch ${item?.id ?? ""}`).trim(),
-        }))
+        .map((item: any) => {
+          const monthlyFeeStructure = Array.isArray(item?.feeStructures)
+            ? item.feeStructures.find((fee: any) => {
+                const feeType = String(fee?.fee_type ?? "").toUpperCase()
+                return fee?.is_active !== false && (feeType === "MONTHLY" || feeType === "SESSION")
+              })
+            : undefined
+
+          return {
+            id: String(item?.id ?? item?.batch_id ?? "").trim(),
+            name: String(item?.batch_name ?? item?.name ?? item?.section ?? `Batch ${item?.id ?? ""}`).trim(),
+            fee: String(monthlyFeeStructure?.amount ?? item?.fee ?? "").trim(),
+            currency: String(monthlyFeeStructure?.currency ?? "BDT").trim() || "BDT",
+          }
+        })
         .filter((item: BatchOption) => item.id.length > 0)
     },
     enabled: !!tenantId && !!selectedClassId,
   })
+
+  const selectedBatch = useMemo(() => {
+    return batches.find((item) => item.id === selectedBatchId) ?? null
+  }, [batches, selectedBatchId])
 
   useEffect(() => {
     if (!selectedClassId) {
@@ -397,6 +424,16 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
             <Card className={cn("adm-card m-0", isDialogMode && "border-slate-200 shadow-none")}>
               <CardHeader className={cn(isDialogMode && "border-b bg-slate-50/70 px-5 py-4")}><CardTitle className="text-base">Payment Details</CardTitle></CardHeader>
               <CardContent className={cn("grid gap-4 md:grid-cols-2", isDialogMode && "px-5 py-5")}>
+                <div className="md:col-span-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+                  <p className="text-xs text-muted-foreground">Selected Batch Fee</p>
+                  <p className="font-medium">
+                    {selectedBatch?.fee
+                      ? `${toMoney(selectedBatch.fee)} ${selectedBatch.currency ?? "BDT"}`
+                      : selectedBatch
+                        ? "No fee configured for this batch"
+                        : "Select a batch to view fee"}
+                  </p>
+                </div>
                 <FormField control={form.control} name="method" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Method</FormLabel>
