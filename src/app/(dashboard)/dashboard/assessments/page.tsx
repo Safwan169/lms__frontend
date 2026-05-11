@@ -487,7 +487,7 @@ export default function AssessmentsPage() {
                       <TableCell>
                         <div className="flex items-center gap-2">
                           {typeIcon(item.assessment_type)}
-                          <span className="font-medium text-sm max-w-[160px] truncate">{item.title}</span>
+                          <span className="font-medium text-sm max-w-40 truncate">{item.title}</span>
                         </div>
                       </TableCell>
                       <TableCell>

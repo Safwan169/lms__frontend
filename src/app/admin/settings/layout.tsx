@@ -120,7 +120,7 @@ export default function AdminSettingsLayout({
           </nav>
         </aside>
 
-        <section className="space-y-4 md:ml-[15.5rem]">
+        <section className="space-y-4 md:ml-62">
           <Button asChild variant="ghost" className="w-fit">
             <Link href="/dashboard">
               <ArrowLeft className="mr-2 h-4 w-4" />

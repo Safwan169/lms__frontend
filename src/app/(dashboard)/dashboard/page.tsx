@@ -134,7 +134,7 @@ function StudentDashboard({ user }: { user: any }) {
   return (
     <div className="min-h-full bg-slate-50/60 p-4 md:p-6">
       <div className="mx-auto max-w-7xl space-y-6">
-        <section className="overflow-hidden rounded-3xl bg-gradient-to-r from-indigo-600 via-violet-600 to-sky-500 p-6 text-white shadow-lg">
+        <section className="overflow-hidden rounded-3xl bg-linear-to-r from-indigo-600 via-violet-600 to-sky-500 p-6 text-white shadow-lg">
           <div className="flex flex-col gap-5 lg:flex-row lg:items-end lg:justify-between">
             <div className="space-y-3">
               <div className="inline-flex items-center gap-2 rounded-full bg-white/15 px-3 py-1 text-xs font-medium backdrop-blur-sm">
