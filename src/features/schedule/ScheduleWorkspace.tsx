@@ -2284,8 +2284,6 @@ export default function ScheduleWorkspace({
                     <ChevronLeft className="h-4 w-4" />
                   </Button>
                   <div className="min-w-0 flex-1 rounded-2xl border border-slate-200 px-3 py-2 text-center text-sm font-medium text-slate-700 sm:flex-none sm:rounded-full sm:px-4">
-                    <span className="block truncate sm:inline">{DAY_LONG_LABELS[selectedDailyDay]}</span>
-                    <span className="hidden sm:inline"> • </span>
                     <span className="block truncate sm:inline">{formatDateLabel(selectedDailyDate)}</span>
                   </div>
                   <Button
@@ -2306,21 +2304,23 @@ export default function ScheduleWorkspace({
                 </div>
               </div>
 
-              <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
-                {FULL_WEEK_DAYS.map((day, index) => (
-                  <button
-                    key={`daily-tab-${day}`}
-                    type="button"
-                    onClick={() => setSelectedDayIndex(index)}
-                    className={cn(
-                      "shrink-0 rounded-full border px-4 py-2 text-sm font-medium transition",
-                      selectedDayIndex === index ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"
-                    )}
-                  >
-                    {DAY_LABELS[day]}
-                  </button>
-                ))}
-              </div>
+              {!minimalView ? (
+                <div className="mb-4 flex gap-2 overflow-x-auto pb-1">
+                  {FULL_WEEK_DAYS.map((day, index) => (
+                    <button
+                      key={`daily-tab-${day}`}
+                      type="button"
+                      onClick={() => setSelectedDayIndex(index)}
+                      className={cn(
+                        "shrink-0 rounded-full border px-4 py-2 text-sm font-medium transition",
+                        selectedDayIndex === index ? "border-slate-900 bg-slate-900 text-white" : "border-slate-200 bg-white text-slate-700"
+                      )}
+                    >
+                      {formatDateLabel(getDateForDayIndex(currentWeekStart, index))}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
 
               {dailyReadEntries.length === 0 ? (
                 <div className="rounded-[24px] border border-dashed border-slate-300 bg-slate-50 p-10 text-center">

@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   Sparkles,
   UserRound,
+  Wallet,
 } from "lucide-react"
 
 import { useAuth } from "@/context/AuthContext"
@@ -115,6 +116,12 @@ function StudentDashboard({ user }: { user: any }) {
       description: "Review your present and absent records.",
       href: "/dashboard/self-attendance",
       icon: ClipboardCheck,
+    },
+    {
+      title: "My Payments",
+      description: "Track invoices, payment history, and wallet credit.",
+      href: "/dashboard/my-payments",
+      icon: Wallet,
     },
     {
       title: "My Profile",

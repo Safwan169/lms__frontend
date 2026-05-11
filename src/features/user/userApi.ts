@@ -54,8 +54,6 @@ export type ManualAdmissionRequest = {
   student_phone: string;
   class_id: string;
   batch_id: string;
-  amount: string;
-  discount?: string;
   payment_method: "CASH" | "BKASH" | "CARD";
   parent_phone?: string;
 };

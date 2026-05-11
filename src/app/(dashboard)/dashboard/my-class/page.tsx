@@ -21,7 +21,7 @@ export default function MyClassPage() {
 
   return (
     <ScheduleWorkspace
-      initialViewMode="weekly"
+      initialViewMode="daily"
       hideBuilder
       minimalView
       pageTitle="My Class"

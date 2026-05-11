@@ -33,8 +33,6 @@ const manualAdmissionFieldMap = {
   parent_phone: "parent_phone",
   class_id: "class_id",
   batch_id: "batch_id",
-  amount: "amount",
-  discount: "discount",
   payment_method: "method",
 } as const
 
@@ -97,8 +95,6 @@ const formSchema = z.object({
   parent_nid: z.string().optional(),
   parent_nid_front: z.custom<File | undefined>((value) => value == null || value instanceof File),
   parent_nid_back: z.custom<File | undefined>((value) => value == null || value instanceof File),
-  amount: z.coerce.number().positive("Amount is required"),
-  discount: z.coerce.number().min(0, "Discount cannot be negative").default(0),
   method: z.enum(["CASH", "BKASH", "CARD"], { message: "Method is required" }),
   transaction_id: z.string().optional(),
 })
@@ -144,8 +140,6 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
       parent_nid: "",
       parent_nid_front: undefined,
       parent_nid_back: undefined,
-      amount: 0,
-      discount: 0,
       method: undefined,
       transaction_id: "",
     },
@@ -268,8 +262,6 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
         student_phone: normalizedStudentPhone,
         class_id: values.class_id,
         batch_id: values.batch_id,
-        amount: values.amount.toFixed(2),
-        discount: values.discount.toFixed(2),
         payment_method: values.method,
         parent_phone: normalizedParentPhone,
         student_email: normalizedEmail ?? values.email.trim().toLowerCase(),
@@ -404,25 +396,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
 
             <Card className={cn("adm-card m-0", isDialogMode && "border-slate-200 shadow-none")}>
               <CardHeader className={cn(isDialogMode && "border-b bg-slate-50/70 px-5 py-4")}><CardTitle className="text-base">Payment Details</CardTitle></CardHeader>
-              <CardContent className={cn("grid gap-4 md:grid-cols-3", isDialogMode && "px-5 py-5")}>
-                <FormField control={form.control} name="amount" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Amount</FormLabel>
-                    <FormControl>
-                      <Input type="number" name={field.name} ref={field.ref} onBlur={field.onBlur} value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""} onChange={(event) => field.onChange(event.target.value)} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
-                <FormField control={form.control} name="discount" render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Discount</FormLabel>
-                    <FormControl>
-                      <Input type="number" name={field.name} ref={field.ref} onBlur={field.onBlur} value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""} onChange={(event) => field.onChange(event.target.value)} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )} />
+              <CardContent className={cn("grid gap-4 md:grid-cols-2", isDialogMode && "px-5 py-5")}>
                 <FormField control={form.control} name="method" render={({ field }) => (
                   <FormItem>
                     <FormLabel>Method</FormLabel>

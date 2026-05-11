@@ -5,6 +5,7 @@ import { usePathname, useRouter } from "next/navigation"
 import { useEffect, useMemo } from "react"
 import {
   ArrowLeft,
+  BadgeDollarSign,
   BookOpen,
   CalendarDays,
   CreditCard,
@@ -27,6 +28,7 @@ const settingsNavItems: SettingsNavItem[] = [
   { title: "Subjects", href: "/admin/settings/subjects", icon: BookOpen },
   { title: "Classes", href: "/admin/settings/classes", icon: GraduationCap },
   { title: "Batches", href: "/admin/settings/batches", icon: CalendarDays },
+  { title: "Fees", href: "/admin/settings/fees", icon: BadgeDollarSign },
   { title: "Payment Methods", href: "/admin/settings/payment-methods", icon: CreditCard },
 ]
 

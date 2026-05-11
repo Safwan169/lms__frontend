@@ -92,6 +92,11 @@ instance.interceptors.response.use(
       return Promise.reject(error);
     }
 
+    // Allow callers to opt-out of the global toast by passing { _suppressToast: true } in axios config
+    if ((error.config as any)?._suppressToast) {
+      return Promise.reject(error);
+    }
+
     // Show toast globally
     toast.error(message);
     return Promise.reject(error);
