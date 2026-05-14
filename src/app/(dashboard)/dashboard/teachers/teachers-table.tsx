@@ -56,9 +56,9 @@ type TeacherCreatePayload = {
   name: string
   email: string
   phone: string
+  machine_id: string
   speciality_subject: string[]
-  payroll_type: TeacherPayrollType
-  monthly_salary: string
+  joining_date: string
 }
 
 type Teacher = {
@@ -234,6 +234,8 @@ export default function TeachersTable() {
     phone: "",
     email: "",
     password: "",
+    machineId: "",
+    joiningDate: currentIsoDate(),
     department: "Science",
     shift: "Morning",
     designation: "Assistant Teacher",
@@ -250,7 +252,6 @@ export default function TeachersTable() {
     monthlySalary: "0.00",
     perClassRate: "0.00",
     perBatchRate: "0.00",
-    joiningDate: currentIsoDate(),
   })
 
   // Guard implementation intentionally commented for frontend-only flow.
@@ -477,6 +478,8 @@ export default function TeachersTable() {
       phone: "",
       email: "",
       password: "",
+      machineId: "",
+      joiningDate: currentIsoDate(),
       department: "Science",
       shift: "Morning",
       designation: "Assistant Teacher",
@@ -493,7 +496,6 @@ export default function TeachersTable() {
       monthlySalary: "0.00",
       perClassRate: "0.00",
       perBatchRate: "0.00",
-      joiningDate: currentIsoDate(),
     })
     setAddEditDialogOpen(true)
   }
@@ -505,6 +507,8 @@ export default function TeachersTable() {
       phone: teacher.phone,
       email: teacher.email,
       password: "",
+      machineId: "",
+      joiningDate: teacher.joinedOn ? teacher.joinedOn.split("T")[0] : currentIsoDate(),
       department: teacher.department,
       shift: teacher.shift,
       designation: teacher.designation,
@@ -521,7 +525,6 @@ export default function TeachersTable() {
       monthlySalary: teacher.monthlySalary ?? String(teacher.salary ?? 0),
       perClassRate: teacher.perClassRate ?? "0.00",
       perBatchRate: teacher.perBatchRate ?? "0.00",
-      joiningDate: teacher.joinedOn ? teacher.joinedOn.split("T")[0] : currentIsoDate(),
     })
     setAddEditDialogOpen(true)
   }
@@ -531,7 +534,6 @@ export default function TeachersTable() {
       .split(",")
       .map((item) => item.trim())
       .filter(Boolean)
-    const monthlySalaryValue = Number(formValues.monthlySalary)
 
     if (!formValues.fullName.trim() || !formValues.phone.trim() || !formValues.email.trim()) {
       toast.error("Name, phone and email are required")
@@ -545,11 +547,6 @@ export default function TeachersTable() {
 
     if (!tenantIdForApi || tenantIdForApi === "demo-tenant") {
       toast.error("Tenant information is missing. Please sign in again.")
-      return
-    }
-
-    if (!editingTeacherId && formValues.payrollType === "MONTHLY" && !Number.isFinite(monthlySalaryValue)) {
-      toast.error("Enter a valid monthly salary")
       return
     }
 
@@ -580,13 +577,14 @@ export default function TeachersTable() {
 
         toast.success("Teacher updated successfully")
       } else {
+        const joiningDateIso = toIsoDateString(formValues.joiningDate)
         const payload: TeacherCreatePayload = {
           name: formValues.fullName.trim(),
           email: formValues.email.trim(),
           phone: formValues.phone.trim(),
+          machine_id: formValues.machineId.trim(),
           speciality_subject: specialitySubjects,
-          payroll_type: formValues.payrollType,
-          monthly_salary: monthlySalaryValue.toFixed(2),
+          joining_date: joiningDateIso,
         }
 
         const createdResponse = await api.post(`/api/tenants/${tenantIdForApi}/teachers`, payload)
@@ -601,6 +599,8 @@ export default function TeachersTable() {
           phone: "",
           email: "",
           password: "",
+          machineId: "",
+          joiningDate: currentIsoDate(),
           department: "Science",
           shift: "Morning",
           designation: "Assistant Teacher",
@@ -617,7 +617,6 @@ export default function TeachersTable() {
           monthlySalary: "0.00",
           perClassRate: "0.00",
           perBatchRate: "0.00",
-          joiningDate: currentIsoDate(),
         })
       }
     } catch {
@@ -1001,6 +1000,20 @@ export default function TeachersTable() {
               <Input placeholder="Comma separated, e.g. Mathematics, Physics" value={formValues.specialitySubjects} onChange={(event) => setFormValues((prev) => ({ ...prev, specialitySubjects: event.target.value }))} />
             </div>
 
+            {!editingTeacherId ? (
+              <>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Machine ID</p>
+                  <Input placeholder="e.g. MCH-1002" value={formValues.machineId} onChange={(event) => setFormValues((prev) => ({ ...prev, machineId: event.target.value }))} />
+                </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Joining Date</p>
+                  <Input type="date" value={formValues.joiningDate} onChange={(event) => setFormValues((prev) => ({ ...prev, joiningDate: event.target.value }))} />
+                </div>
+              </>
+            ) : null}
+
             {editingTeacherId ? (
               <>
                 <div className="space-y-1">
@@ -1037,17 +1050,17 @@ export default function TeachersTable() {
                   <p className="text-xs font-medium text-muted-foreground">Bank Account</p>
                   <Input placeholder="Bank account number" value={formValues.bankAccount} onChange={(event) => setFormValues((prev) => ({ ...prev, bankAccount: event.target.value }))} />
                 </div>
-              </>
-            ) : null}
 
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Joining Date</p>
+                  <Input type="date" value={formValues.joiningDate} onChange={(event) => setFormValues((prev) => ({ ...prev, joiningDate: event.target.value }))} />
+                </div>
 
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Monthly Salary</p>
-              <Input placeholder="Used when payroll type is MONTHLY" value={formValues.monthlySalary} onChange={(event) => setFormValues((prev) => ({ ...prev, monthlySalary: event.target.value }))} />
-            </div>
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Monthly Salary</p>
+                  <Input placeholder="Used when payroll type is MONTHLY" value={formValues.monthlySalary} onChange={(event) => setFormValues((prev) => ({ ...prev, monthlySalary: event.target.value }))} />
+                </div>
 
-            {editingTeacherId ? (
-              <>
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Per Class Rate</p>
                   <Input placeholder="Used when payroll type is PER_CLASS" value={formValues.perClassRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perClassRate: event.target.value }))} />
@@ -1056,11 +1069,6 @@ export default function TeachersTable() {
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Per Batch Rate</p>
                   <Input placeholder="Used when payroll type is PER_BATCH" value={formValues.perBatchRate} onChange={(event) => setFormValues((prev) => ({ ...prev, perBatchRate: event.target.value }))} />
-                </div>
-
-                <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">Joining Date</p>
-                  <Input type="date" value={formValues.joiningDate} onChange={(event) => setFormValues((prev) => ({ ...prev, joiningDate: event.target.value }))} />
                 </div>
 
                 <div className="space-y-1">
@@ -1090,15 +1098,15 @@ export default function TeachersTable() {
                     {GENDERS.map((item) => <option key={item} value={item}>{item}</option>)}
                   </Select>
                 </div>
+
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Payroll Type</p>
+                  <Select value={formValues.payrollType} onValueChange={(value) => setFormValues((prev) => ({ ...prev, payrollType: value as TeacherPayrollType }))}>
+                    {PAYROLL_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
+                  </Select>
+                </div>
               </>
             ) : null}
-
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Payroll Type</p>
-              <Select value={formValues.payrollType} onValueChange={(value) => setFormValues((prev) => ({ ...prev, payrollType: value as TeacherPayrollType }))}>
-                {PAYROLL_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
-              </Select>
-            </div>
           </div>
 
           <DialogFooter>
