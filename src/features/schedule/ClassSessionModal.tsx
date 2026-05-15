@@ -1,0 +1,773 @@
+"use client"
+
+import { useEffect, useMemo, useRef, useState } from "react"
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
+import { useRouter } from "next/navigation"
+import {
+  BookOpen,
+  CalendarDays,
+  ClipboardList,
+  Clock3,
+  ExternalLink,
+  FileText,
+  Link2,
+  Loader2,
+  MapPin,
+  Paperclip,
+  Pencil,
+  Plus,
+  Save,
+  Upload,
+  Video,
+  X,
+} from "lucide-react"
+import toast from "react-hot-toast"
+
+import { cn } from "@/lib/utils"
+import { learningApi, type SessionMaterials } from "@/features/learning/api"
+import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Input } from "@/components/ui/input"
+import { Select } from "@/components/ui/select"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
+
+type ClassType = "OFFLINE" | "ONLINE" | "HYBRID"
+
+type MinimalEntry = {
+  id: string
+  subjectName: string
+  teacherName: string
+  dayOfWeek: string
+  startTime: string
+  endTime: string
+  deliveryMode: string
+  roomName?: string
+  liveSessionRef?: string
+  notes?: string
+  status: string
+  isOverride?: boolean
+}
+
+type ClassSessionModalProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  entry: MinimalEntry | null
+  sessionDate: string
+  tenantId: string | null
+  role: "teacher" | "student" | "admin" | "other"
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+function stripOverrideSuffix(id: string): string {
+  const idx = id.indexOf("__override__")
+  return idx === -1 ? id : id.slice(0, idx)
+}
+
+function deliveryModeToClassType(mode: string): ClassType {
+  if (mode === "LIVE_ONLINE") return "ONLINE"
+  if (mode === "HYBRID") return "HYBRID"
+  return "OFFLINE"
+}
+
+function formatDateLong(iso: string) {
+  if (!iso) return "—"
+  try {
+    return new Date(iso).toLocaleDateString("en-GB", {
+      weekday: "long",
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+    })
+  } catch {
+    return iso
+  }
+}
+
+function formatDateTimeShort(iso?: string | null) {
+  if (!iso) return "—"
+  try {
+    return new Date(iso).toLocaleString("en-GB", {
+      day: "2-digit",
+      month: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+    })
+  } catch {
+    return iso
+  }
+}
+
+function formatTime(value: string) {
+  if (!value) return "—"
+  const [hStr, mStr] = value.split(":")
+  const h = Number(hStr)
+  if (Number.isNaN(h)) return value
+  const period = h >= 12 ? "PM" : "AM"
+  const hour12 = h % 12 === 0 ? 12 : h % 12
+  return `${hour12}:${mStr ?? "00"} ${period}`
+}
+
+// ── Component ──────────────────────────────────────────────────────────────────
+
+export default function ClassSessionModal({
+  open,
+  onOpenChange,
+  entry,
+  sessionDate,
+  tenantId,
+  role,
+}: ClassSessionModalProps) {
+  const router = useRouter()
+  const qc = useQueryClient()
+  const isTeacher = role === "teacher" || role === "admin"
+  const isStudent = role === "student"
+  const realEntryId = entry ? stripOverrideSuffix(entry.id) : ""
+
+  const queryKey = useMemo(
+    () => ["session-materials", tenantId, realEntryId, sessionDate, role],
+    [tenantId, realEntryId, sessionDate, role]
+  )
+
+  const materialsQuery = useQuery({
+    queryKey,
+    enabled: Boolean(open && tenantId && realEntryId && sessionDate),
+    queryFn: async () => {
+      if (!tenantId || !realEntryId) return null
+      const res = isStudent
+        ? await learningApi.getStudentSessionMaterials(tenantId, realEntryId, sessionDate)
+        : await learningApi.getTeacherSessionMaterials(tenantId, realEntryId, sessionDate)
+      return (res?.data ?? null) as SessionMaterials | null
+    },
+  })
+
+  const materials = materialsQuery.data
+  const baseClassType: ClassType = entry
+    ? deliveryModeToClassType((materials?.delivery_mode ?? entry.deliveryMode) || "")
+    : "OFFLINE"
+  const liveLink = materials?.live_link ?? entry?.liveSessionRef ?? null
+
+  // ── Teacher: edit class metadata (note + class_type + live link) ─────────────
+  const [noteEdit, setNoteEdit] = useState(false)
+  const [noteText, setNoteText] = useState("")
+  const [classTypeDraft, setClassTypeDraft] = useState<ClassType>(baseClassType)
+  const [liveLinkDraft, setLiveLinkDraft] = useState("")
+
+  // Re-sync drafts when entry/materials change
+  useEffect(() => {
+    setNoteText(entry?.notes ?? "")
+    setClassTypeDraft(baseClassType)
+    setLiveLinkDraft(liveLink ?? "")
+  }, [entry?.id, sessionDate, materials?.schedule_entry_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Teacher: add attachment (content) ─────────────────────────────────────────
+  const [addAttachmentOpen, setAddAttachmentOpen] = useState(false)
+  const [attachmentTitle, setAttachmentTitle] = useState("")
+  const [attachmentNote, setAttachmentNote] = useState("")
+  const [attachmentMode, setAttachmentMode] = useState<"FILE" | "LINK">("FILE")
+  const [attachmentFile, setAttachmentFile] = useState<File | null>(null)
+  const [attachmentExternalUrl, setAttachmentExternalUrl] = useState("")
+  const fileInputRef = useRef<HTMLInputElement | null>(null)
+
+  // ── Teacher: create assessment inline ────────────────────────────────────────
+  const [assessmentOpen, setAssessmentOpen] = useState(false)
+  const [assessTitle, setAssessTitle] = useState("")
+  const [assessNote, setAssessNote] = useState("")
+  const [assessType, setAssessType] = useState<"ASSIGNMENT" | "QUIZ">("ASSIGNMENT")
+  const [assessLink, setAssessLink] = useState("")
+  const [assessTotalMarks, setAssessTotalMarks] = useState("100")
+  const [assessDeadline, setAssessDeadline] = useState("")
+
+  // ── Mutation: upsert session materials (covers note/type/live + content + assessment) ─
+  const upsertMut = useMutation({
+    mutationFn: async (payload: Parameters<typeof learningApi.upsertSessionMaterials>[3]) => {
+      if (!tenantId || !realEntryId) throw new Error("Missing tenant or schedule entry")
+      return learningApi.upsertSessionMaterials(tenantId, realEntryId, sessionDate, payload)
+    },
+    onSuccess: () => {
+      toast.success("Class updated")
+      qc.invalidateQueries({ queryKey })
+      // Reset transient states
+      setNoteEdit(false)
+      setAddAttachmentOpen(false)
+      setAttachmentTitle("")
+      setAttachmentNote("")
+      setAttachmentFile(null)
+      setAttachmentExternalUrl("")
+      setAssessmentOpen(false)
+      setAssessTitle("")
+      setAssessNote("")
+      setAssessLink("")
+      setAssessTotalMarks("100")
+      setAssessDeadline("")
+    },
+    onError: () => toast.error("Could not save"),
+  })
+
+  const uploadingRef = useRef(false)
+
+  const handleUploadAttachment = async () => {
+    if (!tenantId) return toast.error("Tenant context missing")
+    if (!attachmentTitle.trim()) return toast.error("Title required")
+
+    let fileId: string | undefined
+    if (attachmentMode === "FILE") {
+      if (!attachmentFile) return toast.error("Choose a file")
+      try {
+        uploadingRef.current = true
+        const res = await learningApi.uploadMedia(tenantId, attachmentFile)
+        fileId = (res?.data as any)?.id
+        if (!fileId) {
+          toast.error("Upload failed")
+          uploadingRef.current = false
+          return
+        }
+      } finally {
+        uploadingRef.current = false
+      }
+    } else {
+      if (!attachmentExternalUrl.trim()) return toast.error("Link required")
+    }
+
+    upsertMut.mutate({
+      title: attachmentTitle.trim(),
+      note: attachmentNote.trim() || null,
+      content:
+        attachmentMode === "FILE"
+          ? { content_type: "PDF", file_id: fileId! }
+          : { content_type: "VIDEO_LINK", external_url: attachmentExternalUrl.trim() },
+    })
+  }
+
+  const handleCreateAssessment = () => {
+    if (!assessTitle.trim()) return toast.error("Title required")
+    if (!assessLink.trim()) return toast.error("Question paper link required")
+    if (!assessDeadline) return toast.error("Submission deadline required")
+
+    upsertMut.mutate({
+      title: assessTitle.trim(),
+      note: assessNote.trim() || null,
+      assessment: {
+        assessment_type: assessType,
+        link: assessLink.trim(),
+        total_marks: assessTotalMarks ? Number(assessTotalMarks) : undefined,
+        submission_date: assessDeadline,
+      },
+    })
+  }
+
+  const handleSaveTopMeta = () => {
+    // Save note + classType + liveLink in one upsert
+    if (!entry) return
+    if (classTypeDraft === "ONLINE" && !liveLinkDraft.trim()) {
+      return toast.error("Online class needs a meeting link")
+    }
+    const payload: Parameters<typeof learningApi.upsertSessionMaterials>[3] = {
+      title: entry.subjectName || "Class session",
+      note: noteText.trim() || null,
+      class_type: classTypeDraft,
+    }
+    if (classTypeDraft !== "OFFLINE" && liveLinkDraft.trim()) {
+      payload.live_link = { meet_url: liveLinkDraft.trim() }
+    }
+    upsertMut.mutate(payload)
+  }
+
+  const handleAssessmentClick = (assessmentId: string) => {
+    onOpenChange(false)
+    router.push(`/dashboard/assessments?focus=${assessmentId}`)
+  }
+
+  if (!entry) return null
+
+  const loading = materialsQuery.isLoading
+  const contents = materials?.contents ?? []
+  const assessments = materials?.assessments ?? []
+  const hasAssessment = assessments.length > 0
+  const hasAttachment = contents.length > 0
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <BookOpen className="h-5 w-5 text-slate-600" />
+            {entry.subjectName}
+          </DialogTitle>
+          <DialogDescription>
+            {entry.teacherName} • {formatDateLong(sessionDate)} • {formatTime(entry.startTime)} – {formatTime(entry.endTime)}
+          </DialogDescription>
+        </DialogHeader>
+
+        {/* Summary chips */}
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge className="bg-slate-100 text-slate-700">
+            <Clock3 className="mr-1 h-3 w-3" />
+            {formatTime(entry.startTime)} – {formatTime(entry.endTime)}
+          </Badge>
+          {entry.roomName ? (
+            <Badge variant="muted">
+              <MapPin className="mr-1 h-3 w-3" />
+              {entry.roomName}
+            </Badge>
+          ) : null}
+          <Badge
+            className={cn(
+              classTypeDraft === "ONLINE"
+                ? "bg-indigo-100 text-indigo-800"
+                : classTypeDraft === "HYBRID"
+                  ? "bg-purple-100 text-purple-800"
+                  : "bg-emerald-100 text-emerald-800"
+            )}
+          >
+            {classTypeDraft}
+          </Badge>
+          {entry.isOverride ? <Badge variant="warning">Override</Badge> : null}
+          {hasAttachment ? (
+            <Badge className="bg-amber-100 text-amber-800">
+              <Paperclip className="mr-1 h-3 w-3" />
+              {contents.length} attachment{contents.length === 1 ? "" : "s"}
+            </Badge>
+          ) : null}
+          {hasAssessment ? (
+            <Badge className="bg-sky-100 text-sky-800">
+              <ClipboardList className="mr-1 h-3 w-3" />
+              {assessments.length} assessment{assessments.length === 1 ? "" : "s"}
+            </Badge>
+          ) : null}
+        </div>
+
+        {/* Teacher: class type + live link control */}
+        {isTeacher ? (
+          <section className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50/60 p-4">
+            <p className="text-sm font-semibold text-slate-900">Class type & live link</p>
+            <div className="flex flex-wrap gap-2">
+              {(["OFFLINE", "ONLINE", "HYBRID"] as ClassType[]).map((t) => (
+                <button
+                  key={t}
+                  type="button"
+                  onClick={() => setClassTypeDraft(t)}
+                  className={cn(
+                    "rounded-2xl border px-3 py-1.5 text-xs font-medium transition",
+                    classTypeDraft === t
+                      ? "border-slate-900 bg-slate-900 text-white"
+                      : "border-slate-200 bg-white text-slate-700 hover:border-slate-300"
+                  )}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+            {classTypeDraft !== "OFFLINE" ? (
+              <div>
+                <label className="text-xs font-medium text-slate-600">Meeting link</label>
+                <Input
+                  value={liveLinkDraft}
+                  onChange={(e) => setLiveLinkDraft(e.target.value)}
+                  placeholder="https://meet.google.com/…"
+                  className="mt-1"
+                />
+              </div>
+            ) : null}
+          </section>
+        ) : liveLink ? (
+          <section className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
+            <p className="text-sm font-semibold text-indigo-900">Live class link</p>
+            <a
+              href={liveLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-indigo-700 underline"
+            >
+              <Video className="h-4 w-4" />
+              {liveLink}
+            </a>
+          </section>
+        ) : null}
+
+        {/* Notes section */}
+        <section className="space-y-2 rounded-2xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-900">Notes</p>
+            {isTeacher ? (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setNoteEdit((v) => !v)}
+                disabled={upsertMut.isPending}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {noteEdit ? "Cancel" : "Edit"}
+              </Button>
+            ) : null}
+          </div>
+          {isTeacher && noteEdit ? (
+            <Textarea
+              value={noteText}
+              onChange={(e) => setNoteText(e.target.value)}
+              placeholder="e.g. Bring graph paper. Solve problems 12–18."
+              rows={3}
+            />
+          ) : (
+            <p className="whitespace-pre-line text-sm text-slate-600">
+              {noteText.trim() || (
+                <span className="italic text-slate-400">No notes yet.</span>
+              )}
+            </p>
+          )}
+        </section>
+
+        {/* Teacher: persistent save bar for note + class type + link */}
+        {isTeacher ? (
+          <div className="flex justify-end">
+            <Button
+              size="sm"
+              onClick={handleSaveTopMeta}
+              disabled={upsertMut.isPending}
+            >
+              {upsertMut.isPending ? (
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              ) : (
+                <Save className="mr-2 h-4 w-4" />
+              )}
+              Save class details
+            </Button>
+          </div>
+        ) : null}
+
+        {/* Attachments */}
+        <section className="space-y-3 rounded-2xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-900">
+              <Paperclip className="mr-1 inline h-4 w-4" />
+              Attachments
+            </p>
+            {isTeacher ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAddAttachmentOpen((v) => !v)}
+                disabled={upsertMut.isPending}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                Add
+              </Button>
+            ) : null}
+          </div>
+
+          {loading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-9 w-full" />
+              <Skeleton className="h-9 w-full" />
+            </div>
+          ) : contents.length === 0 ? (
+            <p className="text-sm italic text-slate-400">No attachments uploaded.</p>
+          ) : (
+            <ul className="space-y-2">
+              {contents.map((c) => (
+                <li
+                  key={c.id}
+                  className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-900">{c.title}</p>
+                    {c.description ? (
+                      <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{c.description}</p>
+                    ) : null}
+                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                      <Badge variant="muted" className="text-xs">
+                        {c.content_type}
+                      </Badge>
+                      {c.publish_status === "DRAFT" ? (
+                        <Badge className="bg-amber-100 text-amber-800">Draft</Badge>
+                      ) : null}
+                    </div>
+                  </div>
+                  {c.external_url ? (
+                    <a
+                      href={c.external_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                    >
+                      <ExternalLink className="h-3 w-3" />
+                      Open
+                    </a>
+                  ) : c.file_id ? (
+                    <Badge className="bg-slate-100 text-slate-700">
+                      <FileText className="mr-1 h-3 w-3" />
+                      File
+                    </Badge>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Inline add-attachment form */}
+          {isTeacher && addAttachmentOpen ? (
+            <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+              <div className="flex gap-2">
+                {(["FILE", "LINK"] as const).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setAttachmentMode(m)}
+                    className={cn(
+                      "rounded-lg border px-3 py-1 text-xs font-medium transition",
+                      attachmentMode === m
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700"
+                    )}
+                  >
+                    {m === "FILE" ? "PDF / file" : "Video / external link"}
+                  </button>
+                ))}
+              </div>
+              <Input
+                placeholder="Attachment title (e.g. Chapter 3 PDF)"
+                value={attachmentTitle}
+                onChange={(e) => setAttachmentTitle(e.target.value)}
+              />
+              <Textarea
+                placeholder="Optional note for students"
+                rows={2}
+                value={attachmentNote}
+                onChange={(e) => setAttachmentNote(e.target.value)}
+              />
+              {attachmentMode === "FILE" ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    className="hidden"
+                    onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)}
+                  />
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => fileInputRef.current?.click()}
+                  >
+                    <Upload className="mr-1 h-3.5 w-3.5" />
+                    {attachmentFile ? "Change file" : "Choose file"}
+                  </Button>
+                  {attachmentFile ? (
+                    <span className="truncate text-xs text-slate-600">{attachmentFile.name}</span>
+                  ) : null}
+                </div>
+              ) : (
+                <Input
+                  placeholder="https://youtu.be/… or https://drive.google.com/…"
+                  value={attachmentExternalUrl}
+                  onChange={(e) => setAttachmentExternalUrl(e.target.value)}
+                />
+              )}
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAddAttachmentOpen(false)
+                    setAttachmentFile(null)
+                    setAttachmentExternalUrl("")
+                    setAttachmentTitle("")
+                    setAttachmentNote("")
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button size="sm" onClick={handleUploadAttachment} disabled={upsertMut.isPending}>
+                  {upsertMut.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Upload
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        {/* Linked assessments */}
+        <section className="space-y-3 rounded-2xl border border-slate-200 p-4">
+          <div className="flex items-center justify-between">
+            <p className="text-sm font-semibold text-slate-900">
+              <ClipboardList className="mr-1 inline h-4 w-4" />
+              Linked assessments
+            </p>
+            {isTeacher && !assessmentOpen ? (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setAssessmentOpen(true)}
+                disabled={upsertMut.isPending}
+              >
+                <Plus className="mr-1 h-3.5 w-3.5" />
+                {hasAssessment ? "Add another" : "Create assessment"}
+              </Button>
+            ) : null}
+          </div>
+
+          {loading ? (
+            <Skeleton className="h-12 w-full" />
+          ) : assessments.length === 0 ? (
+            <p className="text-sm italic text-slate-400">
+              No assessment linked to this class yet.
+              {isStudent ? " Check back later." : ""}
+            </p>
+          ) : (
+            <ul className="space-y-2">
+              {assessments.map((a) => (
+                <li
+                  key={a.id}
+                  className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                >
+                  <button
+                    type="button"
+                    onClick={() => handleAssessmentClick(a.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <p className="truncate text-sm font-semibold text-slate-900 group-hover:underline">
+                      {a.title}
+                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
+                      <Badge variant="muted">{a.assessment_type}</Badge>
+                      <span className="inline-flex items-center gap-1">
+                        <CalendarDays className="h-3 w-3" />
+                        Due {formatDateTimeShort(a.deadline_at)}
+                      </span>
+                      {typeof a.marks === "number" ? (
+                        <span>{a.marks} marks</span>
+                      ) : null}
+                      {a.publish_status === "DRAFT" ? (
+                        <Badge className="bg-amber-100 text-amber-800">Draft</Badge>
+                      ) : (
+                        <Badge className="bg-emerald-100 text-emerald-800">Published</Badge>
+                      )}
+                    </div>
+                  </button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleAssessmentClick(a.id)}
+                  >
+                    {isStudent ? "Open & submit" : "Open"}
+                    <ExternalLink className="ml-1 h-3 w-3" />
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {/* Inline create-assessment form */}
+          {isTeacher && assessmentOpen ? (
+            <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+              <div className="flex gap-2">
+                {(["ASSIGNMENT", "QUIZ"] as const).map((t) => (
+                  <button
+                    key={t}
+                    type="button"
+                    onClick={() => setAssessType(t)}
+                    className={cn(
+                      "rounded-lg border px-3 py-1 text-xs font-medium transition",
+                      assessType === t
+                        ? "border-slate-900 bg-slate-900 text-white"
+                        : "border-slate-200 bg-white text-slate-700"
+                    )}
+                  >
+                    {t}
+                  </button>
+                ))}
+              </div>
+              <Input
+                placeholder="Assessment title"
+                value={assessTitle}
+                onChange={(e) => setAssessTitle(e.target.value)}
+              />
+              <Textarea
+                placeholder="Instructions / note"
+                rows={2}
+                value={assessNote}
+                onChange={(e) => setAssessNote(e.target.value)}
+              />
+              <Input
+                placeholder="Question paper link (drive / docs URL)"
+                value={assessLink}
+                onChange={(e) => setAssessLink(e.target.value)}
+              />
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Total marks</label>
+                  <Input
+                    type="number"
+                    min={0}
+                    value={assessTotalMarks}
+                    onChange={(e) => setAssessTotalMarks(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-slate-600">Submission deadline</label>
+                  <Input
+                    type="date"
+                    value={assessDeadline}
+                    onChange={(e) => setAssessDeadline(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => {
+                    setAssessmentOpen(false)
+                    setAssessTitle("")
+                    setAssessNote("")
+                    setAssessLink("")
+                    setAssessTotalMarks("100")
+                    setAssessDeadline("")
+                  }}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={handleCreateAssessment}
+                  disabled={upsertMut.isPending}
+                >
+                  {upsertMut.isPending ? (
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  ) : null}
+                  Create
+                </Button>
+              </div>
+            </div>
+          ) : null}
+        </section>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            <X className="mr-1 h-4 w-4" />
+            Close
+          </Button>
+          {hasAssessment ? (
+            <Button
+              onClick={() => router.push("/dashboard/assessments")}
+            >
+              <Link2 className="mr-2 h-4 w-4" />
+              Go to assessments
+            </Button>
+          ) : null}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

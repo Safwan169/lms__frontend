@@ -20,6 +20,7 @@ import {
   Users,
   UserCheck,
   UserRound,
+  Settings,
 } from "lucide-react"
 
 import {
@@ -105,6 +106,12 @@ const navData: NavItem[] = [
     title: "Teacher List",
     url: "/dashboard/teachers",
     icon: GraduationCap,
+    roles: ["admin", "rektor"],
+  },
+  {
+    title: "Assign Teacher",
+    url: "/dashboard/admin/batch-teacher-assignment",
+    icon: UserCheck,
     roles: ["admin", "rektor"],
   },
   {

@@ -624,6 +624,109 @@ export async function updateMark(
   )
 }
 
+// ─── Class Session Materials (Teacher / Student) ──────────────────────────────
+
+export type SessionMaterials = {
+  schedule_entry_id: string
+  session_date: string
+  day_of_week: string
+  start_time: string
+  end_time: string
+  delivery_mode: string | null
+  live_link: string | null
+  contents: Array<{
+    id: string
+    title: string
+    description: string | null
+    content_type: "PDF" | "VIDEO_LINK" | "ONLINE_CLASS" | string
+    file_id: string | null
+    external_url: string | null
+    publish_status: "DRAFT" | "PUBLISHED"
+    created_at: string
+  }>
+  assessments: Array<{
+    id: string
+    title: string
+    description: string | null
+    assessment_type: "ASSIGNMENT" | "QUIZ" | "EXAM" | string
+    file_id: string | null
+    link: string | null
+    marks: number | null
+    deadline_at: string | null
+    publish_status: "DRAFT" | "PUBLISHED"
+    created_at: string
+  }>
+}
+
+const EMPTY_SESSION_MATERIALS = (entryId: string, sessionDate: string): SessionMaterials => ({
+  schedule_entry_id: entryId,
+  session_date: sessionDate,
+  day_of_week: "",
+  start_time: "",
+  end_time: "",
+  delivery_mode: null,
+  live_link: null,
+  contents: [],
+  assessments: [],
+})
+
+export async function getTeacherSessionMaterials(
+  _tenantId: string,
+  entryId: string,
+  sessionDate: string
+) {
+  return withMockFallback(
+    () => api.get(`/teachers/me/schedule-entries/${entryId}/sessions/${sessionDate}/materials`),
+    () => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
+  )
+}
+
+export async function getStudentSessionMaterials(
+  _tenantId: string,
+  entryId: string,
+  sessionDate: string
+) {
+  return withMockFallback(
+    () => api.get(`/students/me/schedule-entries/${entryId}/sessions/${sessionDate}/materials`),
+    () => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
+  )
+}
+
+export type UpsertSessionMaterialsPayload = {
+  title: string
+  note?: string | null
+  class_type?: "OFFLINE" | "ONLINE" | "HYBRID"
+  content?: {
+    content_type?: "PDF" | "VIDEO_LINK" | "IMAGE"
+    file_id?: string
+    external_url?: string
+  }
+  assessment?: {
+    assessment_type?: "ASSIGNMENT" | "QUIZ"
+    file_id?: string
+    link?: string
+    total_marks?: number
+    submission_date: string
+  }
+  live_link?: { meet_url: string }
+}
+
+export async function upsertSessionMaterials(
+  _tenantId: string,
+  entryId: string,
+  sessionDate: string,
+  payload: UpsertSessionMaterialsPayload
+) {
+  return withMockFallback(
+    () =>
+      api.post(
+        `/teachers/me/schedule-entries/${entryId}/sessions/${sessionDate}/materials`,
+        payload
+      ),
+    () => wrapData({ message: "Saved (mock)", payload })
+  )
+}
+
 // ─── Named export object (convenience) ────────────────────────────────────────
 
 export const learningApi = {
@@ -648,4 +751,7 @@ export const learningApi = {
   getSubmissionById,
   markSubmission,
   updateMark,
+  getTeacherSessionMaterials,
+  getStudentSessionMaterials,
+  upsertSessionMaterials,
 }

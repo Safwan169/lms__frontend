@@ -43,6 +43,41 @@ export async function getAttendanceBatches(tenantId: string | number) {
   return normalizeBatchOptions(items) as AttendanceBatchOption[]
 }
 
+// Teacher uses /teachers/me/classes → /teachers/me/classes/:classId/batches.
+// The /tenants/:tenantId/batches endpoint is ADMIN-only.
+export async function getTeacherAssignedBatches() {
+  const classesResponse = await api.get("/teachers/me/classes")
+  const classesPayload = extractPayload<Record<string, unknown>>(classesResponse)
+  const classes = ensureArray<Record<string, unknown>>(classesPayload?.classes ?? [])
+  if (classes.length === 0) return [] as AttendanceBatchOption[]
+
+  const responses = await Promise.all(
+    classes.map((cls) =>
+      api
+        .get(`/teachers/me/classes/${String(cls.class_id ?? "")}/batches`)
+        .then((res) => ({ res, className: String(cls.class_name ?? "") }))
+        .catch(() => null)
+    )
+  )
+
+  const batches: AttendanceBatchOption[] = []
+  for (const entry of responses) {
+    if (!entry) continue
+    const payload = extractPayload<Record<string, unknown>>(entry.res)
+    const items = ensureArray<Record<string, unknown>>(payload?.batches ?? [])
+    for (const item of items) {
+      const id = String(item.batch_id ?? item.id ?? "").trim()
+      if (!id) continue
+      batches.push({
+        id,
+        name: String(item.batch_name ?? item.name ?? "Unnamed Batch").trim(),
+        className: entry.className || undefined,
+      })
+    }
+  }
+  return batches
+}
+
 export async function getAttendanceRollCall(params: { batchId: string; date: string }) {
   const response = await api.get("/attendance/student/daily", {
     params: {

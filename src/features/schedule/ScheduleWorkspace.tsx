@@ -51,6 +51,8 @@ import {
   TableRow,
 } from "@/components/ui/table-primitive"
 import { Textarea } from "@/components/ui/textarea"
+import ClassSessionModal from "@/features/schedule/ClassSessionModal"
+import { learningApi, type SessionMaterials } from "@/features/learning/api"
 
 type RoutineStatus = "DRAFT" | "PUBLISHED"
 type EntryStatus = "DRAFT" | "PUBLISHED" | "CANCELLED" | "OVERRIDE"
@@ -1057,7 +1059,75 @@ function FieldError({ message }: { message?: string }) {
   return <p className="mt-1 text-xs text-red-600">{message}</p>
 }
 
-function ScheduleCard({ entry, onClick }: { entry: ScheduleEntry; onClick?: () => void }) {
+function stripOverrideSuffix(id: string): string {
+  const idx = id.indexOf("__override__")
+  return idx === -1 ? id : id.slice(0, idx)
+}
+
+function ScheduleCardMaterialsIndicators({
+  entry,
+  sessionDate,
+  tenantId,
+  role,
+}: {
+  entry: ScheduleEntry
+  sessionDate: string
+  tenantId: string | null
+  role: "teacher" | "student" | "admin" | "other"
+}) {
+  const realEntryId = stripOverrideSuffix(entry.id)
+  const enabled = Boolean(tenantId && realEntryId && sessionDate && (role === "teacher" || role === "student"))
+
+  const { data } = useQuery({
+    queryKey: ["session-materials", tenantId, realEntryId, sessionDate, role],
+    enabled,
+    queryFn: async () => {
+      if (!tenantId) return null
+      const res =
+        role === "student"
+          ? await learningApi.getStudentSessionMaterials(tenantId, realEntryId, sessionDate)
+          : await learningApi.getTeacherSessionMaterials(tenantId, realEntryId, sessionDate)
+      return (res?.data ?? null) as SessionMaterials | null
+    },
+    staleTime: 60_000,
+  })
+
+  const hasAttachment = (data?.contents?.length ?? 0) > 0
+  const hasAssessment = (data?.assessments?.length ?? 0) > 0
+
+  if (!hasAttachment && !hasAssessment) return null
+
+  return (
+    <>
+      {hasAttachment ? (
+        <Badge className="bg-amber-100 text-amber-800 px-1.5 py-0">
+          <Eye className="mr-1 h-3 w-3" />
+          Attached
+        </Badge>
+      ) : null}
+      {hasAssessment ? (
+        <Badge className="bg-sky-100 text-sky-800 px-1.5 py-0">
+          <BellRing className="mr-1 h-3 w-3" />
+          Assessment
+        </Badge>
+      ) : null}
+    </>
+  )
+}
+
+function ScheduleCard({
+  entry,
+  onClick,
+  sessionDate,
+  tenantId,
+  role,
+}: {
+  entry: ScheduleEntry
+  onClick?: () => void
+  sessionDate?: string
+  tenantId?: string | null
+  role?: "teacher" | "student" | "admin" | "other"
+}) {
   const modeBadge = getModeBadgeProps(entry.deliveryMode)
   return (
     <button
@@ -1094,6 +1164,14 @@ function ScheduleCard({ entry, onClick }: { entry: ScheduleEntry; onClick?: () =
         {entry.status === "CANCELLED" ? <Badge variant="destructive">Cancelled</Badge> : null}
         {entry.status === "OVERRIDE" || entry.isOverride ? <Badge variant="warning">Override</Badge> : null}
         {entry.status === "PUBLISHED" ? <Badge className="bg-emerald-100 text-emerald-800">Published</Badge> : null}
+        {sessionDate && tenantId && role ? (
+          <ScheduleCardMaterialsIndicators
+            entry={entry}
+            sessionDate={sessionDate}
+            tenantId={tenantId}
+            role={role}
+          />
+        ) : null}
       </div>
     </button>
   )
@@ -1185,6 +1263,7 @@ export default function ScheduleWorkspace({
   const [overrideTarget, setOverrideTarget] = useState<ScheduleEntry | null>(null)
   const [overrideMode, setOverrideMode] = useState<"DATE_ONLY" | "FUTURE" | null>(null)
   const [entryDetail, setEntryDetail] = useState<ScheduleEntry | null>(null)
+  const [entryDetailDate, setEntryDetailDate] = useState<string>("")
   const [entryActionTarget, setEntryActionTarget] = useState<ScheduleEntry | null>(null)
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getWeekStart(new Date()))
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => {
@@ -1539,7 +1618,7 @@ export default function ScheduleWorkspace({
       }
 
       const response = await api.post(
-        `/api/tenants/${tenantId}/batches/${payload.batchId}/routine/entries`,
+        `/api/tenants/${tenantId}/batches/${payload.batchId}/schedule-entries`,
         createEntryPayload
       )
       const responsePayload = extractResponseData(response)
@@ -1691,6 +1770,27 @@ export default function ScheduleWorkspace({
   const weeklyReadEntries = useMemo(() => applyOverridesForWeek(currentRoutine, currentWeekStart), [currentRoutine, currentWeekStart])
   const selectedDailyDate = useMemo(() => getDateForDayIndex(currentWeekStart, selectedDayIndex), [currentWeekStart, selectedDayIndex])
   const selectedDailyDay = FULL_WEEK_DAYS[selectedDayIndex] ?? "SATURDAY"
+
+  const resolveEntryDate = (entry: ScheduleEntry, contextualDate?: string) => {
+    if (entry.overrideDate) return entry.overrideDate
+    if (contextualDate) return contextualDate
+    const dayIdx = FULL_WEEK_DAYS.indexOf(entry.dayOfWeek)
+    return toDateInput(addDays(currentWeekStart, dayIdx === -1 ? 0 : dayIdx))
+  }
+
+  const openClassDetail = (entry: ScheduleEntry, contextualDate?: string) => {
+    setEntryDetail(entry)
+    setEntryDetailDate(resolveEntryDate(entry, contextualDate))
+  }
+
+  const sessionModalRole: "teacher" | "student" | "admin" | "other" =
+    normalizedRole === "student"
+      ? "student"
+      : normalizedRole === "teacher"
+        ? "teacher"
+        : isAdmin
+          ? "admin"
+          : "other"
   const dailyReadEntries = useMemo(
     () =>
       weeklyReadEntries
@@ -1761,7 +1861,7 @@ export default function ScheduleWorkspace({
       return
     }
     if (!isAdmin) {
-      setEntryDetail(entry)
+      openClassDetail(entry)
       return
     }
     if (currentRoutine?.status === "PUBLISHED") {
@@ -2220,7 +2320,7 @@ export default function ScheduleWorkspace({
                           <div key={`weekly-mobile-${slot}`} className="rounded-2xl border border-slate-200 bg-white p-3">
                             <div className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">{formatTime(slot)}</div>
                             {entry ? (
-                              <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} />
+                              <ScheduleCard entry={entry} sessionDate={selectedDailyDate} tenantId={tenantId} role={sessionModalRole} onClick={() => openClassDetail(entry, selectedDailyDate)} />
                             ) : (
                               <div className="rounded-2xl border border-dashed border-slate-200 px-3 py-4 text-center text-xs text-slate-400">No class</div>
                             )}
@@ -2248,7 +2348,7 @@ export default function ScheduleWorkspace({
                         const entry = weeklyReadEntries.find((item) => (item.overrideDate ? item.overrideDate === date : item.dayOfWeek === day) && matchesSlot(item, slot))
                         return (
                           <div key={`${day}-${slot}-read`} className="min-h-32 rounded-2xl border border-slate-200 bg-slate-50 p-2">
-                            {entry ? <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} /> : <div className="flex h-full min-h-28 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">No class</div>}
+                            {entry ? <ScheduleCard entry={entry} sessionDate={date} tenantId={tenantId} role={sessionModalRole} onClick={() => openClassDetail(entry, date)} /> : <div className="flex h-full min-h-28 items-center justify-center rounded-2xl border border-dashed border-slate-200 text-xs text-slate-400">No class</div>}
                           </div>
                         )
                       }),
@@ -2335,7 +2435,7 @@ export default function ScheduleWorkspace({
                   {minimalView
                     ? dailyReadEntries.map((entry) => (
                         <div key={entry.id} className="rounded-3xl border border-slate-200 bg-slate-50 p-3">
-                          <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} />
+                          <ScheduleCard entry={entry} sessionDate={selectedDailyDate} tenantId={tenantId} role={sessionModalRole} onClick={() => openClassDetail(entry, selectedDailyDate)} />
                         </div>
                       ))
                     : TIME_SLOTS.map((slot) => {
@@ -2346,7 +2446,7 @@ export default function ScheduleWorkspace({
                               {formatTime(slot)}
                             </div>
                             {entry ? (
-                              <ScheduleCard entry={entry} onClick={() => setEntryDetail(entry)} />
+                              <ScheduleCard entry={entry} sessionDate={selectedDailyDate} tenantId={tenantId} role={sessionModalRole} onClick={() => openClassDetail(entry, selectedDailyDate)} />
                             ) : (
                               <div className="rounded-2xl border border-dashed border-slate-200 bg-white px-4 py-5 text-sm text-slate-400">
                                 No class in this slot
@@ -2427,7 +2527,7 @@ export default function ScheduleWorkspace({
                   const modeBadge = getModeBadgeProps(row.deliveryMode)
                   const statusBadge = getStatusBadgeProps(row.status)
                   return (
-                    <TableRow key={row.id} className="cursor-pointer hover:bg-slate-50" onClick={() => setEntryDetail(row)}>
+                    <TableRow key={row.id} className="cursor-pointer hover:bg-slate-50" onClick={() => openClassDetail(row)}>
                       <TableCell>{DAY_LABELS[row.dayOfWeek]}</TableCell>
                       <TableCell>{formatTime(row.startTime)} - {formatTime(row.endTime)}</TableCell>
                       <TableCell className="font-medium">{row.subjectName}</TableCell>
@@ -2463,7 +2563,7 @@ export default function ScheduleWorkspace({
               const modeBadge = getModeBadgeProps(row.deliveryMode)
               const statusBadge = getStatusBadgeProps(row.status)
               return (
-                <button key={`card-${row.id}`} type="button" onClick={() => setEntryDetail(row)} className="rounded-3xl border border-slate-200 p-4 text-left shadow-sm transition hover:border-slate-300">
+                <button key={`card-${row.id}`} type="button" onClick={() => openClassDetail(row)} className="rounded-3xl border border-slate-200 p-4 text-left shadow-sm transition hover:border-slate-300">
                   <div className="flex items-start justify-between gap-3">
                     <div>
                       <p className="font-semibold text-slate-900">{row.subjectName}</p>
@@ -2526,7 +2626,19 @@ export default function ScheduleWorkspace({
       <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}><DialogContent><DialogHeader><DialogTitle>Publish routine?</DialogTitle><DialogDescription>Publishing will make this routine visible to teachers and students. Proceed?</DialogDescription></DialogHeader><div className="space-y-2 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600"><p className="font-medium text-slate-900">Conflict summary</p>{routineHardConflicts.length === 0 ? <p>No unresolved hard conflicts remain. This routine is ready to publish.</p> : routineHardConflicts.map((conflict) => <p key={conflict.message}>{conflict.message}</p>)}</div><DialogFooter><Button variant="outline" onClick={() => setPublishDialogOpen(false)}>Cancel</Button><Button onClick={() => publishMutation.mutate()} disabled={publishMutation.isPending || routineHardConflicts.length > 0}>{publishMutation.isPending ? "Publishing..." : "Confirm Publish"}</Button></DialogFooter></DialogContent></Dialog>
       <Dialog open={!!entryActionTarget} onOpenChange={(open) => !open && setEntryActionTarget(null)}><DialogContent><DialogHeader><DialogTitle>Published Entry Actions</DialogTitle><DialogDescription>Base entries are locked after publish. Choose how you want to update this class.</DialogDescription></DialogHeader><div className="grid gap-3"><button type="button" onClick={() => openOverrideFlow("DATE_ONLY")} className="rounded-2xl border border-slate-200 p-4 text-left transition hover:border-slate-300 hover:bg-slate-50"><p className="font-medium text-slate-900">Edit this date only</p><p className="mt-1 text-sm text-slate-500">Create an override for one specific class date.</p></button><button type="button" onClick={() => openOverrideFlow("FUTURE")} className="rounded-2xl border border-slate-200 p-4 text-left transition hover:border-slate-300 hover:bg-slate-50"><p className="font-medium text-slate-900">Edit all future occurrences</p><p className="mt-1 text-sm text-slate-500">Update the underlying routine rule with a future update label.</p></button></div></DialogContent></Dialog>
       <Dialog open={overrideDialogOpen} onOpenChange={setOverrideDialogOpen}><DialogContent className="max-w-2xl"><DialogHeader><DialogTitle>{overrideMode === "FUTURE" ? "Future Update" : "Override Form"}</DialogTitle><DialogDescription>{overrideMode === "FUTURE" ? "Update the recurring entry for all future occurrences." : "Create a one-date override with conflict checking on submit."}</DialogDescription></DialogHeader><div className="grid gap-4 md:grid-cols-2"><div><FieldLabel label="Override Date" required /><Input type="date" value={overrideDraft.overrideDate} onChange={(event) => setOverrideDraft((current) => ({ ...current, overrideDate: event.target.value }))} /><FieldError message={overrideErrors.overrideDate} /></div><div><FieldLabel label="Status" required /><div className="grid grid-cols-2 gap-2">{(["UPDATED", "CANCELLED"] as const).map((status) => <button key={status} type="button" onClick={() => setOverrideDraft((current) => ({ ...current, status }))} className={cn("rounded-2xl border px-3 py-2 text-sm font-medium transition", overrideDraft.status === status ? status === "UPDATED" ? "border-amber-300 bg-amber-100 text-amber-900" : "border-red-300 bg-red-100 text-red-900" : "border-slate-200 bg-white text-slate-700")}>{status}</button>)}</div></div><div><FieldLabel label="New Start Time" /><Input type="time" value={overrideDraft.newStartTime} onChange={(event) => setOverrideDraft((current) => ({ ...current, newStartTime: event.target.value }))} /><FieldError message={overrideErrors.newStartTime} /></div><div><FieldLabel label="New End Time" /><Input type="time" value={overrideDraft.newEndTime} onChange={(event) => setOverrideDraft((current) => ({ ...current, newEndTime: event.target.value }))} /><FieldError message={overrideErrors.newEndTime} /></div><div><FieldLabel label="New Teacher" /><SearchableInput listId="override-teacher-options-list" value={overrideDraft.newTeacherId} onChange={(value) => setOverrideDraft((current) => ({ ...current, newTeacherId: value }))} options={teachers} placeholder="Optional teacher id" strictMatch /></div><div><FieldLabel label="New Mode" /><div className="grid grid-cols-2 gap-2">{(["ON_SITE", "LIVE_ONLINE", "RECORDED_SUPPORT", "HYBRID"] as DeliveryMode[]).map((mode) => { const badge = getModeBadgeProps(mode); return <button key={mode} type="button" onClick={() => setOverrideDraft((current) => ({ ...current, newMode: mode }))} className={cn("rounded-2xl border px-3 py-2 text-sm font-medium transition", overrideDraft.newMode === mode ? `border-slate-900 ${badge.className}` : "border-slate-200 bg-white text-slate-700")}>{badge.label}</button> })}</div></div>{overrideDraft.newMode === "ON_SITE" || overrideDraft.newMode === "HYBRID" ? <div><FieldLabel label="New Room" required /><SearchableInput listId="override-room-options-list" value={overrideDraft.newRoomId} onChange={(value) => setOverrideDraft((current) => ({ ...current, newRoomId: value }))} options={rooms} placeholder="Optional room id" strictMatch /><FieldError message={overrideErrors.newRoomId} /></div> : null}{overrideDraft.newMode === "LIVE_ONLINE" || overrideDraft.newMode === "HYBRID" ? <div><FieldLabel label="New Live Session URL" required /><Input type="url" value={overrideDraft.newLiveSessionRef} onChange={(event) => setOverrideDraft((current) => ({ ...current, newLiveSessionRef: event.target.value }))} /><FieldError message={overrideErrors.newLiveSessionRef} /></div> : null}</div><div><FieldLabel label="Reason" /><Textarea value={overrideDraft.reason} onChange={(event) => setOverrideDraft((current) => ({ ...current, reason: event.target.value }))} placeholder="Optional override note" /></div><DialogFooter><Button variant="outline" onClick={() => setOverrideDialogOpen(false)}>Cancel</Button><Button onClick={handleSaveOverride} disabled={overrideMutation.isPending}>{overrideMutation.isPending ? "Saving..." : "Save Override"}</Button></DialogFooter></DialogContent></Dialog>
-      <Dialog open={!!entryDetail} onOpenChange={(open) => !open && setEntryDetail(null)}><DialogContent><DialogHeader><DialogTitle>Schedule Entry Details</DialogTitle><DialogDescription>Read-only entry summary with applied override state.</DialogDescription></DialogHeader>{entryDetail ? <div className="space-y-3 text-sm text-slate-700"><div className="flex flex-wrap items-center gap-2"><Badge className={getModeBadgeProps(entryDetail.deliveryMode).className}>{getModeBadgeProps(entryDetail.deliveryMode).label}</Badge><Badge {...getStatusBadgeProps(entryDetail.status)}>{entryDetail.status}</Badge>{entryDetail.isOverride ? <Badge variant="warning">Modified</Badge> : null}</div><div className="rounded-2xl border border-slate-200 bg-slate-50 p-4"><p><span className="font-medium text-slate-900">Subject:</span> {entryDetail.subjectName}</p><p className="mt-2"><span className="font-medium text-slate-900">Teacher:</span> {entryDetail.teacherName}</p><p className="mt-2"><span className="font-medium text-slate-900">Time:</span> {DAY_LONG_LABELS[entryDetail.dayOfWeek]} • {formatTime(entryDetail.startTime)} - {formatTime(entryDetail.endTime)}</p><p className="mt-2"><span className="font-medium text-slate-900">Room/Link:</span> {entryDetail.roomName ?? entryDetail.liveSessionRef ?? "-"}</p>{entryDetail.overrideDate ? <p className="mt-2"><span className="font-medium text-slate-900">Override Date:</span> {formatDateLabel(entryDetail.overrideDate)}</p> : null}{entryDetail.reason ? <p className="mt-2"><span className="font-medium text-slate-900">Reason:</span> {entryDetail.reason}</p> : null}</div></div> : null}</DialogContent></Dialog>
+      <ClassSessionModal
+        open={!!entryDetail}
+        onOpenChange={(open) => {
+          if (!open) {
+            setEntryDetail(null)
+            setEntryDetailDate("")
+          }
+        }}
+        entry={entryDetail}
+        sessionDate={entryDetailDate}
+        tenantId={tenantId}
+        role={sessionModalRole}
+      />
     </div>
   )
 }

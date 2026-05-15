@@ -1,6 +1,7 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   AlertCircle, BookCheck, Calendar, CheckCircle2, ChevronRight,
@@ -160,6 +161,8 @@ export default function AssessmentsPage() {
   const isTeacherOrAdmin = role === "teacher" || role === "admin" || role === "superadmin"
 
   const qc = useQueryClient()
+  const searchParams = useSearchParams()
+  const focusId = searchParams?.get("focus") ?? null
 
   // ── List state ──
   const [search, setSearch] = useState("")
@@ -228,6 +231,19 @@ export default function AssessmentsPage() {
     },
     enabled: Boolean(tenantId) && Boolean(markTarget) && isStudent,
   })
+
+  // Auto-open focused assessment (from class-session modal)
+  useEffect(() => {
+    if (!focusId || !listData) return
+    const items: Assessment[] = ((listData as any)?.items ?? []) as Assessment[]
+    const target = items.find((a) => a.id === focusId)
+    if (!target) return
+    if (isStudent) {
+      setSubmitTarget(target)
+    } else if (isTeacherOrAdmin) {
+      setViewAssessment(target)
+    }
+  }, [focusId, listData, isStudent, isTeacherOrAdmin])
 
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
