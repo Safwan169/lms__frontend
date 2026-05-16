@@ -214,7 +214,7 @@ const navData: NavItem[] = [
     title: "Content",
     url: "/dashboard/content",
     icon: BookOpen,
-    roles: ["admin", "rektor", "superadmin", "teacher", "student"],
+    roles: ["admin", "rektor", "superadmin", "teacher"],
   },
   {
     title: "Assessments",

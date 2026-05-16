@@ -154,7 +154,7 @@ export default function ClassSessionModal({
   const baseClassType: ClassType = entry
     ? deliveryModeToClassType((materials?.delivery_mode ?? entry.deliveryMode) || "")
     : "OFFLINE"
-  const liveLink = materials?.live_link ?? entry?.liveSessionRef ?? null
+  const liveLink = materials?.meet_url ?? entry?.liveSessionRef ?? null
 
   // ── Teacher: edit class metadata (note + class_type + live link) ─────────────
   const [noteEdit, setNoteEdit] = useState(false)
@@ -162,12 +162,20 @@ export default function ClassSessionModal({
   const [classTypeDraft, setClassTypeDraft] = useState<ClassType>(baseClassType)
   const [liveLinkDraft, setLiveLinkDraft] = useState("")
 
-  // Re-sync drafts when entry/materials change
+  // Re-sync drafts when entry/materials change.
+  // The backend doesn't persist a session-level note; it stores the teacher's
+  // note as `description` on the content/assessment row created in the same
+  // upsert. On reopen, fall back to that description so the note reappears.
   useEffect(() => {
-    setNoteText(entry?.notes ?? "")
+    const persistedNote =
+      materials?.contents?.find((c) => c.description?.trim())?.description ??
+      materials?.assessments?.find((a) => a.description?.trim())?.description ??
+      entry?.notes ??
+      ""
+    setNoteText(persistedNote)
     setClassTypeDraft(baseClassType)
     setLiveLinkDraft(liveLink ?? "")
-  }, [entry?.id, sessionDate, materials?.schedule_entry_id]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [entry?.id, sessionDate, materials?.schedule_entry_id, materials?.contents, materials?.assessments]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Teacher: add attachment (content) ─────────────────────────────────────────
   const [addAttachmentOpen, setAddAttachmentOpen] = useState(false)
@@ -215,6 +223,34 @@ export default function ClassSessionModal({
 
   const uploadingRef = useRef(false)
 
+  // ── Open uploaded PDF/file ────────────────────────────────────────────────
+  // The session-materials endpoint returns only `file_id` (no URL). Fetch the
+  // content detail by id to get the underlying Media's secure URL and open it
+  // in a new tab so the user can view or download the PDF.
+  const [openingFileId, setOpeningFileId] = useState<string | null>(null)
+  const handleOpenContentFile = async (contentId: string) => {
+    if (!tenantId) return
+    setOpeningFileId(contentId)
+    try {
+      const res = isStudent
+        ? await learningApi.getStudentContentById(tenantId, contentId)
+        : await learningApi.getTeacherContentById(tenantId, contentId)
+      const data = (res as any)?.data ?? {}
+      const url: string | undefined =
+        data?.file?.url ?? data?.file?.secure_url ?? data?.external_url
+      if (!url) {
+        toast.error("File URL not available")
+        return
+      }
+      window.open(url, "_blank", "noopener,noreferrer")
+    } catch {
+      toast.error("Could not open the file")
+    } finally {
+      setOpeningFileId(null)
+    }
+  }
+  const openContentFile = handleOpenContentFile
+
   const handleUploadAttachment = async () => {
     if (!tenantId) return toast.error("Tenant context missing")
     if (!attachmentTitle.trim()) return toast.error("Title required")
@@ -238,14 +274,18 @@ export default function ClassSessionModal({
       if (!attachmentExternalUrl.trim()) return toast.error("Link required")
     }
 
-    upsertMut.mutate({
+    const payload: Parameters<typeof learningApi.upsertSessionMaterials>[3] = {
       title: attachmentTitle.trim(),
-      note: attachmentNote.trim() || null,
+      class_type: classTypeDraft,
       content:
         attachmentMode === "FILE"
           ? { content_type: "PDF", file_id: fileId! }
           : { content_type: "VIDEO_LINK", external_url: attachmentExternalUrl.trim() },
-    })
+    }
+    if (classTypeDraft !== "OFFLINE" && liveLinkDraft.trim()) {
+      payload.meet_url = liveLinkDraft.trim()
+    }
+    upsertMut.mutate(payload)
   }
 
   const handleCreateAssessment = () => {
@@ -253,31 +293,34 @@ export default function ClassSessionModal({
     if (!assessLink.trim()) return toast.error("Question paper link required")
     if (!assessDeadline) return toast.error("Submission deadline required")
 
-    upsertMut.mutate({
+    const payload: Parameters<typeof learningApi.upsertSessionMaterials>[3] = {
       title: assessTitle.trim(),
-      note: assessNote.trim() || null,
+      class_type: classTypeDraft,
       assessment: {
         assessment_type: assessType,
         link: assessLink.trim(),
         total_marks: assessTotalMarks ? Number(assessTotalMarks) : undefined,
         submission_date: assessDeadline,
       },
-    })
+    }
+    if (classTypeDraft !== "OFFLINE" && liveLinkDraft.trim()) {
+      payload.meet_url = liveLinkDraft.trim()
+    }
+    upsertMut.mutate(payload)
   }
 
   const handleSaveTopMeta = () => {
     // Save note + classType + liveLink in one upsert
     if (!entry) return
-    if (classTypeDraft === "ONLINE" && !liveLinkDraft.trim()) {
-      return toast.error("Online class needs a meeting link")
+    if (classTypeDraft !== "OFFLINE" && !liveLinkDraft.trim()) {
+      return toast.error("Online/Hybrid class needs a meeting link")
     }
     const payload: Parameters<typeof learningApi.upsertSessionMaterials>[3] = {
       title: entry.subjectName || "Class session",
-      note: noteText.trim() || null,
       class_type: classTypeDraft,
     }
     if (classTypeDraft !== "OFFLINE" && liveLinkDraft.trim()) {
-      payload.live_link = { meet_url: liveLinkDraft.trim() }
+      payload.meet_url = liveLinkDraft.trim()
     }
     upsertMut.mutate(payload)
   }
@@ -394,39 +437,7 @@ export default function ClassSessionModal({
           </section>
         ) : null}
 
-        {/* Notes section */}
-        <section className="space-y-2 rounded-2xl border border-slate-200 p-4">
-          <div className="flex items-center justify-between">
-            <p className="text-sm font-semibold text-slate-900">Notes</p>
-            {isTeacher ? (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => setNoteEdit((v) => !v)}
-                disabled={upsertMut.isPending}
-              >
-                <Pencil className="h-3.5 w-3.5" />
-                {noteEdit ? "Cancel" : "Edit"}
-              </Button>
-            ) : null}
-          </div>
-          {isTeacher && noteEdit ? (
-            <Textarea
-              value={noteText}
-              onChange={(e) => setNoteText(e.target.value)}
-              placeholder="e.g. Bring graph paper. Solve problems 12–18."
-              rows={3}
-            />
-          ) : (
-            <p className="whitespace-pre-line text-sm text-slate-600">
-              {noteText.trim() || (
-                <span className="italic text-slate-400">No notes yet.</span>
-              )}
-            </p>
-          )}
-        </section>
-
-        {/* Teacher: persistent save bar for note + class type + link */}
+        {/* Teacher: persistent save bar for class type + link */}
         {isTeacher ? (
           <div className="flex justify-end">
             <Button
@@ -502,11 +513,20 @@ export default function ClassSessionModal({
                       <ExternalLink className="h-3 w-3" />
                       Open
                     </a>
-                  ) : c.file_id ? (
-                    <Badge className="bg-slate-100 text-slate-700">
-                      <FileText className="mr-1 h-3 w-3" />
-                      File
-                    </Badge>
+                  ) : c.file_id && tenantId ? (
+                    <button
+                      type="button"
+                      onClick={() => openContentFile(c.id)}
+                      disabled={openingFileId === c.id}
+                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                    >
+                      {openingFileId === c.id ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <FileText className="h-3 w-3" />
+                      )}
+                      Open file
+                    </button>
                   ) : null}
                 </li>
               ))}

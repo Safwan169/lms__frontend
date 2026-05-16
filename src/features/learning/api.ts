@@ -633,7 +633,7 @@ export type SessionMaterials = {
   start_time: string
   end_time: string
   delivery_mode: string | null
-  live_link: string | null
+  meet_url: string | null
   contents: Array<{
     id: string
     title: string
@@ -665,7 +665,7 @@ const EMPTY_SESSION_MATERIALS = (entryId: string, sessionDate: string): SessionM
   start_time: "",
   end_time: "",
   delivery_mode: null,
-  live_link: null,
+  meet_url: null,
   contents: [],
   assessments: [],
 })
@@ -676,7 +676,10 @@ export async function getTeacherSessionMaterials(
   sessionDate: string
 ) {
   return withMockFallback(
-    () => api.get(`/teachers/me/schedule-entries/${entryId}/sessions/${sessionDate}/materials`),
+    () =>
+      api.get(`/teachers/me/schedule-entries/${entryId}/materials`, {
+        params: { date: sessionDate },
+      }),
     () => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
   )
 }
@@ -687,7 +690,10 @@ export async function getStudentSessionMaterials(
   sessionDate: string
 ) {
   return withMockFallback(
-    () => api.get(`/students/me/schedule-entries/${entryId}/sessions/${sessionDate}/materials`),
+    () =>
+      api.get(`/students/me/schedule-entries/${entryId}/materials`, {
+        params: { date: sessionDate },
+      }),
     () => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
   )
 }
@@ -695,7 +701,7 @@ export async function getStudentSessionMaterials(
 export type UpsertSessionMaterialsPayload = {
   title: string
   note?: string | null
-  class_type?: "OFFLINE" | "ONLINE" | "HYBRID"
+  class_type: "OFFLINE" | "ONLINE" | "HYBRID"
   content?: {
     content_type?: "PDF" | "VIDEO_LINK" | "IMAGE"
     file_id?: string
@@ -708,7 +714,7 @@ export type UpsertSessionMaterialsPayload = {
     total_marks?: number
     submission_date: string
   }
-  live_link?: { meet_url: string }
+  meet_url?: string
 }
 
 export async function upsertSessionMaterials(
@@ -720,8 +726,8 @@ export async function upsertSessionMaterials(
   return withMockFallback(
     () =>
       api.post(
-        `/teachers/me/schedule-entries/${entryId}/sessions/${sessionDate}/materials`,
-        payload
+        `/teachers/me/schedule-entries/${entryId}/materials`,
+        { ...payload, session_date: sessionDate }
       ),
     () => wrapData({ message: "Saved (mock)", payload })
   )

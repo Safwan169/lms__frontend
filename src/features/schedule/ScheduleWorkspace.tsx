@@ -640,10 +640,14 @@ function mapRoutineEntry(item: any, routineStatus: RoutineStatus = "DRAFT"): Sch
       item?.room?.id ??
       ""
   ).trim()
+  // Only treat the entry as a *separate* override row when the source explicitly
+  // says so (admin builder injects `is_override` + `override_date`). The teacher/
+  // student endpoints return one entry per schedule row with the override merged
+  // inline as `item.override` — that is NOT a separate row and must keep
+  // isOverride=false so applyOverridesForWeek doesn't hide it from the grid.
   const overrideDate = String(
     item?.override_date ??
       item?.overrideDate ??
-      overrideMeta?.override_date ??
       ""
   ).trim()
   const explicitOverrideRow = Boolean(item?.is_override || item?.isOverride || overrideDate)

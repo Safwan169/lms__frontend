@@ -11,6 +11,7 @@ import {
 import toast from "react-hot-toast"
 
 import { useAuth } from "@/context/AuthContext"
+import api from "@/lib/api"
 import { learningApi } from "@/features/learning/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -196,18 +197,51 @@ export default function AssessmentsPage() {
 
   // ─── Queries ────────────────────────────────────────────────────────────────
 
-  const listKey = isStudent ? ["student-assessments", tenantId] : ["teacher-assessments", tenantId]
+  // Resolve student's enrolled batch_id — required by the backend's
+  // /tenants/:tenantId/student/assessments?batch_id=... endpoint.
+  const userBatchId = String(
+    (user as any)?.batch_id ??
+      (user as any)?.batchId ??
+      (user as any)?.batch?.id ??
+      (user as any)?.student?.batch_id ??
+      (user as any)?.studentProfile?.batch_id ??
+      ""
+  ).trim()
+
+  const studentClassesQuery = useQuery({
+    queryKey: ["student-my-classes", tenantId],
+    enabled: Boolean(tenantId) && isStudent && !userBatchId,
+    queryFn: async () => {
+      const res = await api.get("/api/students/me/classes")
+      const payload = res?.data?.data ?? res?.data ?? null
+      const classes: Array<{ batch_id?: string }> = Array.isArray(payload?.classes)
+        ? payload.classes
+        : []
+      return classes
+    },
+  })
+
+  const studentBatchId =
+    userBatchId ||
+    String(studentClassesQuery.data?.[0]?.batch_id ?? "").trim()
+
+  const listKey = isStudent
+    ? ["student-assessments", tenantId, studentBatchId]
+    : ["teacher-assessments", tenantId]
 
   const { data: listData, isLoading, isError, refetch } = useQuery({
     queryKey: listKey,
     queryFn: async () => {
       if (!tenantId) return { items: [], meta: { total: 0 } }
       const res = isStudent
-        ? await learningApi.getStudentAssessments(tenantId, { limit: 50 })
+        ? await learningApi.getStudentAssessments(tenantId, {
+            limit: 50,
+            batch_id: studentBatchId,
+          })
         : await learningApi.getTeacherAssessments(tenantId, { limit: 50 })
       return res.data
     },
-    enabled: Boolean(tenantId),
+    enabled: Boolean(tenantId) && (!isStudent || Boolean(studentBatchId)),
   })
 
   // Submissions for selected assessment (teacher)
@@ -232,18 +266,6 @@ export default function AssessmentsPage() {
     enabled: Boolean(tenantId) && Boolean(markTarget) && isStudent,
   })
 
-  // Auto-open focused assessment (from class-session modal)
-  useEffect(() => {
-    if (!focusId || !listData) return
-    const items: Assessment[] = ((listData as any)?.items ?? []) as Assessment[]
-    const target = items.find((a) => a.id === focusId)
-    if (!target) return
-    if (isStudent) {
-      setSubmitTarget(target)
-    } else if (isTeacherOrAdmin) {
-      setViewAssessment(target)
-    }
-  }, [focusId, listData, isStudent, isTeacherOrAdmin])
 
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
@@ -294,7 +316,6 @@ export default function AssessmentsPage() {
       if (!tenantId || !submitTarget) throw new Error()
       const payload: Record<string, unknown> = {
         answer_link: submitLink || null,
-        comment: submitComment || null,
         file_id: uploadedFileUrl ? uploadedFileUrl : null,
       }
       return learningApi.submitAssessment(tenantId, submitTarget.id, payload)
@@ -337,8 +358,11 @@ export default function AssessmentsPage() {
     setUploading(true)
     try {
       const res = await learningApi.uploadMedia(tenantId, file)
-      const url = (res.data as any)?.url ?? (res.data as any)?.id ?? ""
-      setUploadedFileUrl(String(url))
+      // Backend's submit endpoint expects `file_id` to be the Media row's UUID,
+      // not the file URL. Always store the id here.
+      const fileId = (res.data as any)?.id ?? ""
+      if (!fileId) throw new Error("Upload returned no file id")
+      setUploadedFileUrl(String(fileId))
       toast.success("File uploaded")
     } catch {
       toast.error("File upload failed")
@@ -349,17 +373,60 @@ export default function AssessmentsPage() {
 
   // ─── Filtered list ──────────────────────────────────────────────────────────
 
+  // Backend response uses `marks` / `deadline_at` / no `passing_marks` etc.
+  // Normalize each row into the frontend's Assessment shape so the list row,
+  // view dialog, submit dialog and mark dialog all read the right values.
+  const normalizeAssessment = (raw: any): Assessment => ({
+    ...raw,
+    total_marks:
+      raw?.total_marks ??
+      raw?.marks ??
+      0,
+    passing_marks:
+      raw?.passing_marks ??
+      raw?.pass_marks ??
+      0,
+    deadline:
+      raw?.deadline ??
+      raw?.deadline_at ??
+      undefined,
+    submission_count:
+      raw?.submission_count ??
+      raw?.total_submissions ??
+      0,
+    class_id: raw?.class_id ?? "",
+    class_name: raw?.class_name ?? undefined,
+    batch_id: raw?.batch_id ?? "",
+    batch_name: raw?.batch_name ?? undefined,
+  })
+
   const allItems: Assessment[] = useMemo(() => {
     const raw = (listData as any)?.items ?? []
-    return raw.filter((item: Assessment) => {
-      if (filterType !== "ALL" && item.assessment_type !== filterType) return false
-      if (filterStatus !== "ALL" && item.publish_status !== filterStatus) return false
-      if (search && !`${item.title} ${item.description ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false
-      return true
-    })
+    return raw
+      .map((item: any) => normalizeAssessment(item))
+      .filter((item: Assessment) => {
+        if (filterType !== "ALL" && item.assessment_type !== filterType) return false
+        if (filterStatus !== "ALL" && item.publish_status !== filterStatus) return false
+        if (search && !`${item.title} ${item.description ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false
+        return true
+      })
   }, [listData, filterType, filterStatus, search])
 
   const totalItems = (listData as any)?.meta?.total ?? allItems.length
+
+  // Auto-open focused assessment (from class-session modal). Placed after
+  // `allItems` is declared to avoid a TDZ "Cannot access 'allItems' before
+  // initialization" error.
+  useEffect(() => {
+    if (!focusId) return
+    const target = allItems.find((a) => a.id === focusId)
+    if (!target) return
+    if (isStudent) {
+      setSubmitTarget(target)
+    } else if (isTeacherOrAdmin) {
+      setViewAssessment(target)
+    }
+  }, [focusId, allItems, isStudent, isTeacherOrAdmin])
   const allSubsList: Submission[] = (subsData as any)?.submissions ?? []
 
   const canCreate = useMemo(() =>
@@ -514,12 +581,33 @@ export default function AssessmentsPage() {
                       </TableCell>
                       <TableCell>
                         <div className="text-sm">
-                          <span className="font-medium">{item.class_name ?? item.class_id}</span>
-                          {item.batch_name && <span className="text-muted-foreground"> / {item.batch_name}</span>}
+                          {item.class_name || item.batch_name || item.subject_name ? (
+                            <>
+                              {item.class_name ? (
+                                <span className="font-medium">{item.class_name}</span>
+                              ) : null}
+                              {item.batch_name ? (
+                                <span className="text-muted-foreground">
+                                  {item.class_name ? " / " : ""}
+                                  {item.batch_name}
+                                </span>
+                              ) : null}
+                              {!item.class_name && !item.batch_name && item.subject_name ? (
+                                <span className="font-medium">{item.subject_name}</span>
+                              ) : null}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm font-mono">{item.total_marks} <span className="text-muted-foreground text-xs">/ pass {item.passing_marks}</span></span>
+                        <span className="text-sm font-mono">
+                          {item.total_marks || "—"}
+                          {item.passing_marks ? (
+                            <span className="text-muted-foreground text-xs"> / pass {item.passing_marks}</span>
+                          ) : null}
+                        </span>
                       </TableCell>
                       <TableCell>
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -950,17 +1038,6 @@ export default function AssessmentsPage() {
                     placeholder="https://docs.google.com/..."
                     value={submitLink}
                     onChange={e => setSubmitLink(e.target.value)}
-                  />
-                </div>
-
-                {/* Comment */}
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium">Comment (optional)</label>
-                  <Textarea
-                    placeholder="Leave a note for your teacher..."
-                    value={submitComment}
-                    onChange={e => setSubmitComment(e.target.value)}
-                    rows={2}
                   />
                 </div>
               </div>

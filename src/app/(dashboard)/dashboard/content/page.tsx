@@ -160,6 +160,9 @@ export default function ContentPage() {
   const [search, setSearch] = useState("")
   const [filterType, setFilterType] = useState<ContentType | "ALL">("ALL")
   const [filterStatus, setFilterStatus] = useState<PublishStatus | "ALL">("ALL")
+  const [filterClassId, setFilterClassId] = useState<string>("ALL")
+  const [filterBatchId, setFilterBatchId] = useState<string>("ALL")
+  const [filterSubjectId, setFilterSubjectId] = useState<string>("ALL")
   const [createOpen, setCreateOpen] = useState(false)
   const [viewItem, setViewItem] = useState<ContentItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ContentItem | null>(null)
@@ -309,10 +312,51 @@ export default function ContentPage() {
     return raw.filter((item: ContentItem) => {
       if (filterType !== "ALL" && item.content_type !== filterType) return false
       if (filterStatus !== "ALL" && item.publish_status !== filterStatus) return false
+      if (filterClassId !== "ALL" && item.class_id !== filterClassId) return false
+      if (filterBatchId !== "ALL" && item.batch_id !== filterBatchId) return false
+      if (filterSubjectId !== "ALL" && item.subject_id !== filterSubjectId) return false
       if (search && !`${item.title} ${item.description ?? ""}`.toLowerCase().includes(search.toLowerCase())) return false
       return true
     })
-  }, [listData, filterType, filterStatus, search])
+  }, [listData, filterType, filterStatus, filterClassId, filterBatchId, filterSubjectId, search])
+
+  // ── Derived dropdown options for filters (built from loaded items so they
+  //    only show values that actually exist in the table). Batch options
+  //    cascade off the selected class so the dropdown stays in sync.
+  const rawItems: ContentItem[] = useMemo(
+    () => ((listData as any)?.items ?? []) as ContentItem[],
+    [listData],
+  )
+  const filterClassOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    rawItems.forEach((i) => {
+      if (i.class_id) map.set(i.class_id, i.class_name || i.class_id)
+    })
+    return Array.from(map, ([id, name]) => ({ id, name }))
+  }, [rawItems])
+  const filterBatchOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    rawItems.forEach((i) => {
+      if (!i.batch_id) return
+      if (filterClassId !== "ALL" && i.class_id !== filterClassId) return
+      map.set(i.batch_id, i.batch_name || i.batch_id)
+    })
+    return Array.from(map, ([id, name]) => ({ id, name }))
+  }, [rawItems, filterClassId])
+  const filterSubjectOptions = useMemo(() => {
+    const map = new Map<string, string>()
+    rawItems.forEach((i) => {
+      if (i.subject_id) map.set(i.subject_id, i.subject_name || i.subject_id)
+    })
+    return Array.from(map, ([id, name]) => ({ id, name }))
+  }, [rawItems])
+
+  // Reset batch filter when its option set no longer contains it (class changed).
+  useEffect(() => {
+    if (filterBatchId !== "ALL" && !filterBatchOptions.some((o) => o.id === filterBatchId)) {
+      setFilterBatchId("ALL")
+    }
+  }, [filterBatchId, filterBatchOptions])
 
   // ── create validation ──
   const canCreate = useMemo(() => {
@@ -404,6 +448,36 @@ export default function ContentPage() {
             <option value="DRAFT">Draft</option>
           </select>
         )}
+        <select
+          value={filterClassId}
+          onChange={e => setFilterClassId(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="ALL">All Classes</option>
+          {filterClassOptions.map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        <select
+          value={filterBatchId}
+          onChange={e => setFilterBatchId(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="ALL">All Batches</option>
+          {filterBatchOptions.map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
+        <select
+          value={filterSubjectId}
+          onChange={e => setFilterSubjectId(e.target.value)}
+          className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+        >
+          <option value="ALL">All Subjects</option>
+          {filterSubjectOptions.map((o) => (
+            <option key={o.id} value={o.id}>{o.name}</option>
+          ))}
+        </select>
         <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-1.5">
           <RefreshCw className="h-3.5 w-3.5" />
           Refresh
