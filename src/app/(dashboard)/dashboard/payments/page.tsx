@@ -193,6 +193,49 @@ export default function PaymentsDashboardPage() {
     },
   })
 
+  // ── Sync This Month ─────────────────────────────────────────────────────────
+  // Runs the canonical bulk operations for the selected month in order:
+  //   1) generate monthly billing invoices (POST /v1/billing/run)
+  //   2) apply fines to overdue invoices (POST /v1/invoices/apply-fine)
+  //   3) send reminders for due/overdue invoices (POST /v1/reminders/send)
+  // Each step is reported individually so the operator can see what happened
+  // even if a later step fails.
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const results: { step: string; ok: boolean; message?: string }[] = []
+      try {
+        await financeApi.runBilling({ month, due_date: dueDate || undefined, remarks: `Sync — billing for ${month}` })
+        results.push({ step: "Billing run", ok: true })
+      } catch (err: any) {
+        results.push({ step: "Billing run", ok: false, message: err?.message })
+      }
+      try {
+        await financeApi.applyInvoiceFine({
+          month,
+          status: "overdue",
+          fine_amount: Number(fineAmount || 0).toFixed(2),
+          title: "Late payment fine",
+        })
+        results.push({ step: "Fines applied", ok: true })
+      } catch (err: any) {
+        results.push({ step: "Fines applied", ok: false, message: err?.message })
+      }
+      try {
+        await financeApi.sendInvoiceReminder({ month, status: "overdue" })
+        results.push({ step: "Reminders sent", ok: true })
+      } catch (err: any) {
+        results.push({ step: "Reminders sent", ok: false, message: err?.message })
+      }
+      return results
+    },
+    onSuccess: (results) => {
+      results.forEach((r) =>
+        r.ok ? toast.success(`${r.step} ✓`) : toast.error(`${r.step}: ${r.message || "failed"}`),
+      )
+      queryClient.invalidateQueries({ queryKey: ["finance"] })
+    },
+  })
+
   const invoiceItems = useMemo(() => asList<InvoiceRow>(invoicesQuery.data as ListPayload<InvoiceRow>), [invoicesQuery.data])
 
   const cycleItems = useMemo(() => asList<BillingCycleRow>(cyclesQuery.data as ListPayload<BillingCycleRow>), [cyclesQuery.data])
@@ -204,9 +247,23 @@ export default function PaymentsDashboardPage() {
           <h1 className="text-2xl font-semibold">Payments & Billing</h1>
           <p className="text-sm text-muted-foreground">Run monthly billing, manage invoices, and issue receipts from one place.</p>
         </div>
-        <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["finance"] })}>
-          <RefreshCcw className="mr-2 size-4" /> Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending || !month}
+            title={`Run billing, apply fines and send reminders for ${month}`}
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RefreshCcw className="mr-2 size-4" />
+            )}
+            Sync This Month
+          </Button>
+          <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["finance"] })}>
+            <RefreshCcw className="mr-2 size-4" /> Refresh
+          </Button>
+        </div>
       </div>
 
       <Card>
@@ -315,7 +372,7 @@ export default function PaymentsDashboardPage() {
       </Card>
 
       {/* Apply Discount to invoice */}
-      <Card>
+      {/* <Card>
         <CardHeader>
           <CardTitle>Apply Invoice Discount</CardTitle>
         </CardHeader>
@@ -356,7 +413,7 @@ export default function PaymentsDashboardPage() {
             </div>
           </div>
         </CardContent>
-      </Card>
+      </Card> */}
 
       <Card>
         <CardHeader>

@@ -3,7 +3,6 @@
 import Link from "next/link"
 
 const teacherModules = [
-  { title: "Students Page", href: "/dashboard/teacher-students", desc: "Batch-wise student information for your assigned learners." },
   { title: "Class Rooms", href: "/dashboard/classrooms", desc: "Access your classroom spaces and teaching context." },
   { title: "My Class", href: "/dashboard/my-class", desc: "Open your assigned class view instead of the timetable module." },
   { title: "Self Attendance", href: "/dashboard/self-attendance", desc: "Track your personal attendance record." },

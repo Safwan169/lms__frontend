@@ -101,6 +101,7 @@ type AccountantFormState = {
   name: string
   email: string
   phone: string
+  machineId: string
 }
 
 const PAGE_SIZES = [5, 10, 15, 20, 50]
@@ -109,6 +110,7 @@ const EMPTY_FORM: AccountantFormState = {
   name: "",
   email: "",
   phone: "",
+  machineId: "",
 }
 
 function formatDate(value?: string) {
@@ -380,6 +382,7 @@ export default function AccountantsTable() {
         name: addForm.name.trim(),
         email: addForm.email.trim(),
         phone: addForm.phone.trim() || undefined,
+        machine_id: addForm.machineId.trim() || undefined,
       }
 
       const response = await api.post(`/api/tenants/${tenantId}/accountants`, payload)
@@ -892,6 +895,15 @@ export default function AccountantsTable() {
                 value={addForm.phone}
                 onChange={(event) => setAddForm((prev) => ({ ...prev, phone: event.target.value }))}
                 placeholder="01712345678"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-sm font-medium">Machine ID</label>
+              <Input
+                value={addForm.machineId}
+                onChange={(event) => setAddForm((prev) => ({ ...prev, machineId: event.target.value }))}
+                placeholder="MCH-1004 (optional)"
               />
             </div>
           </div>

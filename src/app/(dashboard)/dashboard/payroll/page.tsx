@@ -275,6 +275,45 @@ export default function PayrollDashboardPage() {
     },
   })
 
+  // ── Sync This Month ─────────────────────────────────────────────────────────
+  // Re-runs the canonical payroll pipeline for the selected month:
+  //   1) Ensure the payroll month is open (POST /v1/payroll/months/open)
+  //      — silently ignore "already open" type errors.
+  //   2) Run payroll calculations (POST /v1/payroll/run) — recalculates
+  //      payroll records from current salary configs, attendance, etc.
+  // Finalize is intentionally NOT auto-triggered here because finalizing
+  // locks the month; that should stay an explicit operator action.
+  const syncMutation = useMutation({
+    mutationFn: async () => {
+      const results: { step: string; ok: boolean; message?: string }[] = []
+      try {
+        await financeApi.openPayrollMonth({ month, remarks: `Sync — open ${month}` })
+        results.push({ step: "Month opened", ok: true })
+      } catch (err: any) {
+        // Already open is fine — note but don't treat as fatal.
+        results.push({
+          step: "Month opened",
+          ok: false,
+          message: err?.message || "month may already be open",
+        })
+      }
+      try {
+        await financeApi.runPayroll({ month, remarks: `Sync — run payroll for ${month}` })
+        results.push({ step: "Payroll run", ok: true })
+      } catch (err: any) {
+        results.push({ step: "Payroll run", ok: false, message: err?.message })
+      }
+      return results
+    },
+    onSuccess: (results) => {
+      results.forEach((r) =>
+        r.ok ? toast.success(`${r.step} ✓`) : toast(`${r.step}: ${r.message || "skipped"}`),
+      )
+      queryClient.invalidateQueries({ queryKey: ["finance", "payrolls"] })
+      queryClient.invalidateQueries({ queryKey: ["finance", "payroll-months"] })
+    },
+  })
+
   // ── Derived data ──────────────────────────────────────────────────────
   const salaryConfigs = useMemo(
     () => asList<SalaryConfigRow>(salaryConfigsQuery.data as ListPayload<SalaryConfigRow>),
@@ -354,9 +393,23 @@ export default function PayrollDashboardPage() {
           <h1 className="text-2xl font-semibold">Payroll Workspace</h1>
           <p className="text-sm text-muted-foreground">Manage salary configs, run payroll, finalize salary, and issue payslips.</p>
         </div>
-        <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["finance"] })}>
-          <RefreshCcw className="mr-2 size-4" /> Refresh
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            onClick={() => syncMutation.mutate()}
+            disabled={syncMutation.isPending || !month}
+            title={`Open the month and run payroll calculation for ${month}`}
+          >
+            {syncMutation.isPending ? (
+              <Loader2 className="mr-2 size-4 animate-spin" />
+            ) : (
+              <RefreshCcw className="mr-2 size-4" />
+            )}
+            Sync This Month
+          </Button>
+          <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["finance"] })}>
+            <RefreshCcw className="mr-2 size-4" /> Refresh
+          </Button>
+        </div>
       </div>
 
       {/* ── Salary Config ─────────────────────────────────────────────── */}

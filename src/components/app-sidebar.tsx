@@ -139,12 +139,6 @@ const navData: NavItem[] = [
     roles: ["admin", "rektor", "accountant"],
   },
   {
-    title: "Students Page",
-    url: "/dashboard/teacher-students",
-    icon: Users,
-    roles: ["teacher"],
-  },
-  {
     title: "Class Rooms",
     url: "/dashboard/classrooms",
     icon: School,

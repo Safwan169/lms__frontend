@@ -106,6 +106,11 @@ export default function AttendanceManagementWorkspace() {
 
   // ─── Roll Call state ────────────────────────────────────────────
   const [mode, setMode] = useState<"view" | "edit">("view")
+  // Tracks when the teacher has explicitly run a bulk action (Mark as Present /
+  // Mark as Absent) so the Save button appears even if the chosen status
+  // happens to match the row's current value — the click itself is the intent
+  // to commit / re-confirm.
+  const [bulkActionApplied, setBulkActionApplied] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [drafts, setDrafts] = useState<DraftMap>({})
 
@@ -204,13 +209,14 @@ export default function AttendanceManagementWorkspace() {
   }, [baseDrafts, drafts, rollCallRows])
 
   const hasUnsavedChanges = useMemo(() => {
+    if (bulkActionApplied) return true
     return Object.keys(drafts).some((id) => {
       const base = baseDrafts[id]
       const draft = drafts[id]
       if (!base || !draft) return true
       return base.status !== draft.status || base.note !== draft.note
     })
-  }, [drafts, baseDrafts])
+  }, [drafts, baseDrafts, bulkActionApplied])
 
   const stats = useMemo(() => {
     const total = rows.length
@@ -329,6 +335,7 @@ export default function AttendanceManagementWorkspace() {
       setDrafts({})
       setSelectedIds([])
       setMode("view")
+      setBulkActionApplied(false)
       queryClient.invalidateQueries({ queryKey: ["attendance-roll-call", batchId, rollCallDate] })
       queryClient.invalidateQueries({ queryKey: ["attendance-summary-single"] })
       queryClient.invalidateQueries({ queryKey: ["attendance-summary-month"] })
@@ -375,12 +382,14 @@ export default function AttendanceManagementWorkspace() {
     setMode("view")
     setDrafts({})
     setSelectedIds([])
+    setBulkActionApplied(false)
   }
 
   const fullRefresh = () => {
     setDrafts({})
     setSelectedIds([])
     setMode("view")
+    setBulkActionApplied(false)
     queryClient.invalidateQueries({ queryKey: ["attendance-roll-call"] })
     queryClient.invalidateQueries({ queryKey: ["attendance-summary-single"] })
     queryClient.invalidateQueries({ queryKey: ["attendance-summary-month"] })
@@ -401,6 +410,7 @@ export default function AttendanceManagementWorkspace() {
 
   const markSelected = (nextStatus: AttendanceStatus) => {
     if (selectedIds.length === 0) return
+    setBulkActionApplied(true)
     setDrafts((prev) => {
       const next = { ...prev }
       for (const studentId of selectedIds) {

@@ -56,7 +56,7 @@ type TeacherCreatePayload = {
   name: string
   email: string
   phone: string
-  machine_id: string
+  machine_id?: string
   speciality_subject: string[]
   joining_date: string
 }
@@ -582,10 +582,11 @@ export default function TeachersTable() {
           name: formValues.fullName.trim(),
           email: formValues.email.trim(),
           phone: formValues.phone.trim(),
-          machine_id: formValues.machineId.trim(),
           speciality_subject: specialitySubjects,
           joining_date: joiningDateIso,
         }
+        const trimmedMachineId = formValues.machineId.trim()
+        if (trimmedMachineId) payload.machine_id = trimmedMachineId
 
         const createdResponse = await api.post(`/api/tenants/${tenantIdForApi}/teachers`, payload)
         const createdData = createdResponse?.data?.data ?? createdResponse?.data ?? payload
@@ -1003,7 +1004,7 @@ export default function TeachersTable() {
             {!editingTeacherId ? (
               <>
                 <div className="space-y-1">
-                  <p className="text-xs font-medium text-muted-foreground">Machine ID</p>
+                  <p className="text-xs font-medium text-muted-foreground">Machine ID (Optional)</p>
                   <Input placeholder="e.g. MCH-1002" value={formValues.machineId} onChange={(event) => setFormValues((prev) => ({ ...prev, machineId: event.target.value }))} />
                 </div>
 

@@ -152,7 +152,8 @@ export default function ContentPage() {
   const tenantId = user?.tenant_id ?? user?.tenant?.id ?? null
   const role = String(user?.role ?? (Array.isArray(user?.roles) ? user?.roles[0] : user?.roles) ?? "").toLowerCase()
   const isStudent = role === "student"
-  const isTeacherOrAdmin = role === "teacher" || role === "admin" || role === "superadmin"
+  const isAdmin = role === "admin" || role === "superadmin"
+  const isTeacherOrAdmin = role === "teacher" || isAdmin
 
   const qc = useQueryClient()
 
@@ -267,7 +268,7 @@ export default function ContentPage() {
       const isVideo = form.content_type === "VIDEO_LINK"
       const isOnline = form.content_type === "ONLINE_CLASS"
       const payload: Record<string, unknown> = {
-        class_id: form.class_id,
+        ...(isAdmin ? {} : { class_id: form.class_id }),
         batch_id: form.batch_id,
         subject_id: form.subject_id,
         title: form.title,

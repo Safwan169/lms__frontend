@@ -23,7 +23,6 @@ function isAllowedDashboardPath(role: string, pathname: string) {
   if (role === "teacher") {
     return [
       "/dashboard/dashboard-empty",
-      "/dashboard/teacher-students",
       "/dashboard/classrooms",
       "/dashboard/my-class",
       "/dashboard/attendance",

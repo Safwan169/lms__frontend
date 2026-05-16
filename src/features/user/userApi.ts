@@ -56,6 +56,7 @@ export type ManualAdmissionRequest = {
   batch_id: string;
   payment_method: "CASH" | "BKASH" | "CARD";
   parent_phone?: string;
+  machine_id?: string;
 };
 
 export type AssignBatchTeacherRequest = {

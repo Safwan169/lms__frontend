@@ -108,6 +108,7 @@ const formSchema = z.object({
   parent_nid_back: z.custom<File | undefined>((value) => value == null || value instanceof File),
   method: z.enum(["CASH", "BKASH", "CARD"], { message: "Method is required" }),
   transaction_id: z.string().optional(),
+  machine_id: z.string().optional(),
 })
 
 type FormValues = z.input<typeof formSchema>
@@ -153,6 +154,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
       parent_nid_back: undefined,
       method: undefined,
       transaction_id: "",
+      machine_id: "",
     },
   })
 
@@ -284,7 +286,17 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
       const normalizedEmail = normalizeEmail(values.email)
       const normalizedStudentPhone = normalizeBdPhone(values.phone)
       const normalizedParentPhone = normalizeBdPhone(values.parent_phone)
-      const payload = {
+      const trimmedMachineId = values.machine_id?.trim()
+      const payload: {
+        student_name: string
+        student_phone: string
+        class_id: string
+        batch_id: string
+        payment_method: "CASH" | "BKASH" | "CARD"
+        parent_phone: string
+        student_email: string
+        machine_id?: string
+      } = {
         student_name: values.full_name,
         student_phone: normalizedStudentPhone,
         class_id: values.class_id,
@@ -293,6 +305,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
         parent_phone: normalizedParentPhone,
         student_email: normalizedEmail ?? values.email.trim().toLowerCase(),
       }
+      if (trimmedMachineId) payload.machine_id = trimmedMachineId
 
       await createManualAdmission(payload).unwrap()
       toast.success("Student admitted successfully")
@@ -357,6 +370,7 @@ export default function ManualAdmissionForm({ mode = "page", onCancel, onSuccess
                 )} />
                 <FormField control={form.control} name="phone" render={({ field }) => <FormItem><FormLabel>Phone</FormLabel><FormControl><Input {...field} /></FormControl><FormMessage /></FormItem>} />
                 <FormField control={form.control} name="email" render={({ field }) => <FormItem><FormLabel>Email</FormLabel><FormControl><Input type="email" {...field} value={field.value ?? ""} /></FormControl><FormMessage /></FormItem>} />
+                <FormField control={form.control} name="machine_id" render={({ field }) => <FormItem><FormLabel>Machine ID (Optional)</FormLabel><FormControl><Input {...field} value={field.value ?? ""} placeholder="e.g. MCH-1006" /></FormControl><FormMessage /></FormItem>} />
                 <FormField control={form.control} name="address" render={({ field }) => <FormItem className="md:col-span-2"><FormLabel>Address</FormLabel><FormControl><Textarea {...field} /></FormControl><FormMessage /></FormItem>} />
               </CardContent>
             </Card>
