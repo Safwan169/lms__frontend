@@ -71,6 +71,11 @@ type Assessment = {
   submission_count?: number
   teacher?: { id: string; name: string } | null
   created_at: string
+  // student-only fields (surfaced by the student listing endpoint)
+  my_submitted?: boolean
+  my_is_late?: boolean
+  my_obtained_marks?: number | null
+  my_result_status?: "NOT_SUBMITTED" | "NOT_MARKED" | "MARKED" | string
 }
 
 type Submission = {
@@ -244,13 +249,43 @@ export default function AssessmentsPage() {
     enabled: Boolean(tenantId) && (!isStudent || Boolean(studentBatchId)),
   })
 
-  // Submissions for selected assessment (teacher)
+  // Submissions for selected assessment (teacher).
+  // Backend returns { assessment, items: [...] } with each item using
+  // `obtained_marks` / `feedback` / `file.url` / `link` — normalize here so
+  // the submissions table and the mark dialog can read the values they expect
+  // (`marks_obtained` / `marks_feedback` / `file_url` / `answer_link` /
+  // `is_marked`).
   const { data: subsData, isLoading: subsLoading, refetch: refetchSubs } = useQuery({
     queryKey: ["submissions", tenantId, viewAssessment?.id],
     queryFn: async () => {
       if (!tenantId || !viewAssessment) return { submissions: [] }
       const res = await learningApi.getSubmissions(tenantId, viewAssessment.id)
-      return res.data
+      const raw = (res?.data as any) ?? {}
+      const rawItems: any[] = Array.isArray(raw?.items)
+        ? raw.items
+        : Array.isArray(raw?.submissions)
+          ? raw.submissions
+          : []
+      const submissions: Submission[] = rawItems.map((s: any) => ({
+        id: s.id,
+        student: s.student
+          ? { id: s.student.id, name: s.student.name }
+          : undefined,
+        file_url: s.file_url ?? s.file?.url ?? s.file?.secure_url ?? undefined,
+        answer_link: s.answer_link ?? s.link ?? undefined,
+        comment: s.comment ?? s.note ?? undefined,
+        submitted_at: s.submitted_at ?? s.first_submitted_at ?? undefined,
+        marks_obtained:
+          s.marks_obtained ?? s.obtained_marks ?? null,
+        marks_feedback:
+          s.marks_feedback ?? s.feedback ?? null,
+        is_marked:
+          s.is_marked ??
+          (s.obtained_marks !== null && s.obtained_marks !== undefined) ??
+          false,
+        assessment: s.assessment,
+      }))
+      return { submissions, assessment: raw.assessment }
     },
     enabled: Boolean(tenantId) && Boolean(viewAssessment) && isTeacherOrAdmin,
   })
@@ -314,29 +349,53 @@ export default function AssessmentsPage() {
   const submitMut = useMutation({
     mutationFn: async () => {
       if (!tenantId || !submitTarget) throw new Error()
-      const payload: Record<string, unknown> = {
-        answer_link: submitLink || null,
-        file_id: uploadedFileUrl ? uploadedFileUrl : null,
-      }
+      // Backend's SubmitAssessmentDto is whitelisted to exactly
+      // `answer_file_id` (UUID) and `answer_link` (URL). Any extra key
+      // (e.g. the old `file_id`, `comment`) is rejected with
+      // "property X should not exist". Sending `null` for a URL/UUID also
+      // fails validation, so omit empty fields entirely.
+      const payload: Record<string, unknown> = {}
+      if (uploadedFileUrl) payload.answer_file_id = uploadedFileUrl
+      if (submitLink.trim()) payload.answer_link = submitLink.trim()
       return learningApi.submitAssessment(tenantId, submitTarget.id, payload)
     },
     onSuccess: () => {
       toast.success("Answer submitted!")
+      // Persist what the student just submitted so they can recall it from
+      // the "My Result" dialog (the backend's mark endpoint doesn't return
+      // the student's own file/link).
+      if (submitTarget) {
+        writeSubmittedAnswer(submitTarget.id, {
+          file_url: uploadedFileMeta?.url || undefined,
+          file_name: uploadedFileMeta?.name || undefined,
+          answer_link: submitLink.trim() || undefined,
+          submitted_at: new Date().toISOString(),
+        })
+      }
       qc.invalidateQueries({ queryKey: listKey })
       setSubmitTarget(null)
       setSubmitLink("")
       setSubmitComment("")
       setSubmitFile(null)
+      setUploadedFileMeta(null)
       setUploadedFileUrl("")
     },
     onError: () => toast.error("Failed to submit"),
   })
 
-  // Teacher mark submission
+  // Teacher mark submission. Backend DTO expects `obtained_marks`, not
+  // `marks_obtained` — send both so older mock paths still work, but the real
+  // backend reads the canonical field.
   const markMut = useMutation({
     mutationFn: async () => {
       if (!tenantId || !viewAssessment || !markDialogSub) throw new Error()
-      const payload = { marks_obtained: Number(markScore), feedback: markFeedback || null }
+      const score = Number(markScore)
+      // Backend's MarkAssessmentSubmissionDto is whitelisted to exactly
+      // `obtained_marks` (int) and optional `feedback` (string). Sending any
+      // other key (e.g. the legacy `marks_obtained`) is rejected with
+      // "property X should not exist".
+      const payload: any = { obtained_marks: score }
+      if (markFeedback.trim()) payload.feedback = markFeedback.trim()
       if (markDialogSub.is_marked) {
         return learningApi.updateMark(tenantId, viewAssessment.id, markDialogSub.id, payload)
       }
@@ -352,17 +411,58 @@ export default function AssessmentsPage() {
     onError: () => toast.error("Failed to save mark"),
   })
 
+  // ── Submitted-answer recall (localStorage) ─────────────────────────────────
+  // The backend's student-side endpoints don't return what the student actually
+  // submitted (file URL or answer link). To let the student see their own
+  // submission after the fact, persist a tiny snapshot at submit-time and
+  // recall it inside the "My Result" dialog.
+  const studentId = String((user as any)?.id ?? (user as any)?.user_id ?? "")
+  const submittedAnswerKey = (assessmentId: string) =>
+    `submitted-answer:${tenantId ?? "nt"}:${studentId || "anon"}:${assessmentId}`
+  type SubmittedAnswerSnapshot = {
+    file_url?: string
+    file_name?: string
+    answer_link?: string
+    submitted_at: string
+  }
+  const readSubmittedAnswer = (assessmentId: string): SubmittedAnswerSnapshot | null => {
+    if (typeof window === "undefined") return null
+    try {
+      const raw = window.localStorage.getItem(submittedAnswerKey(assessmentId))
+      return raw ? (JSON.parse(raw) as SubmittedAnswerSnapshot) : null
+    } catch {
+      return null
+    }
+  }
+  const writeSubmittedAnswer = (assessmentId: string, snap: SubmittedAnswerSnapshot) => {
+    if (typeof window === "undefined") return
+    try {
+      window.localStorage.setItem(submittedAnswerKey(assessmentId), JSON.stringify(snap))
+    } catch { /* quota / private mode — ignore */ }
+  }
+
+  // Snapshot of the most recent successful upload, so we can persist its public
+  // URL (not just the file_id) at submit-time.
+  const [uploadedFileMeta, setUploadedFileMeta] = useState<{ id: string; url: string; name: string } | null>(null)
+
   // File upload for student submit
   const handleUploadFile = async (file: File) => {
     if (!tenantId) return
     setUploading(true)
     try {
       const res = await learningApi.uploadMedia(tenantId, file)
-      // Backend's submit endpoint expects `file_id` to be the Media row's UUID,
-      // not the file URL. Always store the id here.
-      const fileId = (res.data as any)?.id ?? ""
+      const data = (res.data as any) ?? {}
+      // Backend's submit endpoint expects `answer_file_id` to be the Media
+      // row's UUID. We additionally remember the URL + original name so we
+      // can show the student what they submitted later.
+      const fileId = String(data?.id ?? "")
       if (!fileId) throw new Error("Upload returned no file id")
-      setUploadedFileUrl(String(fileId))
+      setUploadedFileUrl(fileId)
+      setUploadedFileMeta({
+        id: fileId,
+        url: String(data?.url ?? data?.secure_url ?? ""),
+        name: String(data?.original_name ?? data?.file_name ?? file.name ?? ""),
+      })
       toast.success("File uploaded")
     } catch {
       toast.error("File upload failed")
@@ -398,6 +498,10 @@ export default function AssessmentsPage() {
     class_name: raw?.class_name ?? undefined,
     batch_id: raw?.batch_id ?? "",
     batch_name: raw?.batch_name ?? undefined,
+    my_submitted: raw?.my_submission?.submitted,
+    my_is_late: raw?.my_submission?.is_late,
+    my_obtained_marks: raw?.my_submission?.obtained_marks ?? null,
+    my_result_status: raw?.my_submission?.result_status,
   })
 
   const allItems: Assessment[] = useMemo(() => {
@@ -602,12 +706,37 @@ export default function AssessmentsPage() {
                         </div>
                       </TableCell>
                       <TableCell>
-                        <span className="text-sm font-mono">
-                          {item.total_marks || "—"}
-                          {item.passing_marks ? (
-                            <span className="text-muted-foreground text-xs"> / pass {item.passing_marks}</span>
-                          ) : null}
-                        </span>
+                        {isStudent ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-mono">
+                              {item.my_result_status === "MARKED"
+                                ? (
+                                  <>
+                                    <span className="font-semibold text-primary">{item.my_obtained_marks}</span>
+                                    <span className="text-muted-foreground"> / {item.total_marks}</span>
+                                  </>
+                                )
+                                : (
+                                  <span className="text-muted-foreground">— / {item.total_marks || "—"}</span>
+                                )
+                              }
+                            </span>
+                            {item.my_result_status === "MARKED" ? (
+                              <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] w-fit">Marked</Badge>
+                            ) : item.my_result_status === "NOT_MARKED" ? (
+                              <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] w-fit">Submitted</Badge>
+                            ) : (
+                              <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] w-fit">Not submitted</Badge>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-sm font-mono">
+                            {item.total_marks || "—"}
+                            {item.passing_marks ? (
+                              <span className="text-muted-foreground text-xs"> / pass {item.passing_marks}</span>
+                            ) : null}
+                          </span>
+                        )}
                       </TableCell>
                       <TableCell>
                         <span className="text-xs text-muted-foreground flex items-center gap-1">
@@ -890,11 +1019,24 @@ export default function AssessmentsPage() {
                             <TableCell>{markedBadge(sub.is_marked)}</TableCell>
                             <TableCell>
                               <div className="flex justify-end gap-1">
-                                {(sub.file_url || sub.answer_link) && (
+                                {sub.file_url && (
                                   <a
-                                    href={sub.file_url ?? sub.answer_link ?? "#"}
+                                    href={sub.file_url}
                                     target="_blank"
                                     rel="noopener noreferrer"
+                                    title="Open uploaded file"
+                                  >
+                                    <Button variant="ghost" size="icon" className="h-7 w-7">
+                                      <FileText className="h-3.5 w-3.5" />
+                                    </Button>
+                                  </a>
+                                )}
+                                {sub.answer_link && (
+                                  <a
+                                    href={sub.answer_link}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    title="Open answer link"
                                   >
                                     <Button variant="ghost" size="icon" className="h-7 w-7">
                                       <Link2 className="h-3.5 w-3.5" />
@@ -1075,33 +1217,124 @@ export default function AssessmentsPage() {
               <div className="py-4">
                 {markLoading ? (
                   <Skeleton className="h-24 w-full rounded-lg" />
-                ) : myMarkData ? (
-                  <div className="space-y-4">
-                    <div className="flex flex-col items-center justify-center gap-2 py-4">
-                      <div className="text-5xl font-bold text-primary">
-                        {(myMarkData as any)?.marks_obtained ?? "—"}
+                ) : (() => {
+                  const m = (myMarkData as any) ?? {}
+                  const obtained = m.obtained_marks ?? m.marks_obtained ?? null
+                  const feedback = m.feedback ?? m.marks_feedback ?? null
+                  const totalMarks = m.total_marks ?? markTarget.total_marks
+                  const resultStatus = m.result_status as string | undefined
+                  const submitted = m.submitted ?? Boolean(m.submission?.submitted_at)
+                  const sub = m.submission ?? {}
+                  const isMarked = resultStatus === "MARKED" || obtained !== null
+
+                  if (!submitted) {
+                    return (
+                      <div className="flex flex-col items-center justify-center h-24 gap-2 text-muted-foreground">
+                        <CheckCircle2 className="h-8 w-8 opacity-30" />
+                        <p className="text-sm">Not submitted yet.</p>
                       </div>
-                      <div className="text-muted-foreground text-sm">
-                        / {markTarget.total_marks} marks
+                    )
+                  }
+
+                  return (
+                    <div className="space-y-4">
+                      <div className="flex flex-col items-center justify-center gap-2 py-2">
+                        <div className="text-5xl font-bold text-primary">
+                          {isMarked ? obtained : "—"}
+                        </div>
+                        <div className="text-muted-foreground text-sm">
+                          / {totalMarks} marks
+                        </div>
+                        {isMarked ? (
+                          <Badge className="bg-emerald-100 text-emerald-700 mt-1">Marked ✓</Badge>
+                        ) : (
+                          <Badge className="bg-amber-100 text-amber-700 mt-1">Awaiting teacher's review</Badge>
+                        )}
                       </div>
-                      {(myMarkData as any)?.marks_obtained >= markTarget.passing_marks
-                        ? <Badge className="bg-emerald-100 text-emerald-700 mt-1">Passed ✓</Badge>
-                        : <Badge className="bg-rose-100 text-rose-700 mt-1">Failed</Badge>
-                      }
+
+                      <div className="rounded-lg border bg-muted/30 p-3 text-xs space-y-1">
+                        {sub.submitted_at && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">Submitted at</span>
+                            <span className="font-medium">{formatDateTime(sub.submitted_at)}</span>
+                          </div>
+                        )}
+                        {typeof sub.submission_count === "number" && sub.submission_count > 0 && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">Submission count</span>
+                            <span className="font-medium">{sub.submission_count}</span>
+                          </div>
+                        )}
+                        {sub.deadline_at && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">Deadline</span>
+                            <span className="font-medium">{formatDateTime(sub.deadline_at)}</span>
+                          </div>
+                        )}
+                        {sub.is_late !== undefined && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">Late submission</span>
+                            <span className={sub.is_late ? "text-rose-600 font-medium" : "text-emerald-600 font-medium"}>
+                              {sub.is_late ? "Yes" : "No"}
+                            </span>
+                          </div>
+                        )}
+                        {m.marked_at && (
+                          <div className="flex justify-between gap-3">
+                            <span className="text-muted-foreground">Marked at</span>
+                            <span className="font-medium">{formatDateTime(m.marked_at)}</span>
+                          </div>
+                        )}
+                      </div>
+
+                      {feedback && (
+                        <div className="rounded-lg border bg-muted/30 p-3 text-sm">
+                          <p className="text-muted-foreground text-xs mb-1">Teacher's Feedback</p>
+                          <p>{feedback}</p>
+                        </div>
+                      )}
+
+                      {(() => {
+                        // Recall what the student submitted from localStorage.
+                        // Backend doesn't return this on the student endpoints,
+                        // so we cache it at submit-time and read it back here.
+                        const mySub = readSubmittedAnswer(markTarget.id)
+                        if (!mySub || (!mySub.file_url && !mySub.answer_link)) return null
+                        return (
+                          <div className="rounded-lg border bg-muted/30 p-3 text-sm space-y-2">
+                            <p className="text-muted-foreground text-xs">Your submission</p>
+                            {mySub.file_url && (
+                              <a
+                                href={mySub.file_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-background"
+                              >
+                                <FileText className="h-3.5 w-3.5" />
+                                <span className="truncate max-w-[220px]">
+                                  {mySub.file_name || "Open uploaded file"}
+                                </span>
+                              </a>
+                            )}
+                            {mySub.answer_link && (
+                              <a
+                                href={mySub.answer_link}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="inline-flex items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium hover:bg-background"
+                              >
+                                <Link2 className="h-3.5 w-3.5" />
+                                <span className="truncate max-w-[220px]">
+                                  {mySub.answer_link}
+                                </span>
+                              </a>
+                            )}
+                          </div>
+                        )
+                      })()}
                     </div>
-                    {(myMarkData as any)?.marks_feedback && (
-                      <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                        <p className="text-muted-foreground text-xs mb-1">Teacher's Feedback</p>
-                        <p>{(myMarkData as any).marks_feedback}</p>
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center h-24 gap-2 text-muted-foreground">
-                    <CheckCircle2 className="h-8 w-8 opacity-30" />
-                    <p className="text-sm">Not marked yet.</p>
-                  </div>
-                )}
+                  )
+                })()}
               </div>
             </>
           )}

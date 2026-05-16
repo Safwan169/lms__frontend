@@ -576,11 +576,17 @@ export async function getSubmissionById(
   )
 }
 
+type MarkPayload = {
+  obtained_marks?: number
+  marks_obtained?: number
+  feedback?: string | null
+}
+
 export async function markSubmission(
   tenantId: string,
   assessmentId: string,
   submissionId: string,
-  payload: { marks_obtained: number; feedback?: string | null }
+  payload: MarkPayload
 ) {
   return withMockFallback(
     () => api.post(`/tenants/${tenantId}/assessments/${assessmentId}/submissions/${submissionId}/mark`, payload),
@@ -589,9 +595,10 @@ export async function markSubmission(
         s => s.assessment_id === assessmentId && s.id === submissionId
       )
       if (idx === -1) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
+      const score = payload.obtained_marks ?? payload.marks_obtained ?? 0
       mockSubmissionStore[idx] = {
         ...mockSubmissionStore[idx],
-        marks_obtained: payload.marks_obtained,
+        marks_obtained: score,
         marks_feedback: payload.feedback ?? null,
         is_marked: true,
       }
@@ -604,7 +611,7 @@ export async function updateMark(
   tenantId: string,
   assessmentId: string,
   submissionId: string,
-  payload: { marks_obtained: number; feedback?: string | null }
+  payload: MarkPayload
 ) {
   return withMockFallback(
     () => api.put(`/tenants/${tenantId}/assessments/${assessmentId}/submissions/${submissionId}/mark`, payload),
@@ -613,9 +620,10 @@ export async function updateMark(
         s => s.assessment_id === assessmentId && s.id === submissionId
       )
       if (idx === -1) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
+      const score = payload.obtained_marks ?? payload.marks_obtained ?? 0
       mockSubmissionStore[idx] = {
         ...mockSubmissionStore[idx],
-        marks_obtained: payload.marks_obtained,
+        marks_obtained: score,
         marks_feedback: payload.feedback ?? null,
         is_marked: true,
       }
