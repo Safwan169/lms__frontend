@@ -268,7 +268,6 @@ export default function ContentPage() {
       const isVideo = form.content_type === "VIDEO_LINK"
       const isOnline = form.content_type === "ONLINE_CLASS"
       const payload: Record<string, unknown> = {
-        ...(isAdmin ? {} : { class_id: form.class_id }),
         batch_id: form.batch_id,
         subject_id: form.subject_id,
         title: form.title,
