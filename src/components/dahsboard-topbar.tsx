@@ -22,12 +22,6 @@ import { Notification } from "./Notification";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/context/AuthContext";
 
-const buildNotifications = (href: string) => [
-  { id: 1, title: "Routine published for Science Morning A", message: "Teachers and students can now see the published weekly routine.", time: "2m ago", unread: true, href },
-  { id: 2, title: "Class cancelled on 16 Apr for Physics", message: "A date-specific override marked the class as cancelled.", time: "1h ago", unread: true, href },
-  { id: 3, title: "Teacher changed for Accounting on 18 Apr", message: "The schedule override updated the assigned teacher.", time: "Yesterday", unread: false, href },
-];
-
 export default function DashboardTopbar() {
   const { theme, setTheme } = useTheme();
   const { user, logout } = useAuth();
@@ -39,10 +33,6 @@ export default function DashboardTopbar() {
     ""
   ).toLowerCase();
   const canAccessSettings = !["teacher", "student"].includes(normalizedRole);
-  const moduleHref = ["teacher", "student"].includes(normalizedRole)
-    ? "/dashboard/my-class"
-    : "/dashboard/timetable";
-  const notifications = buildNotifications(moduleHref);
   const displayName = String((user as any)?.name ?? "Admin User");
   const displayEmail = String((user as any)?.email ?? "admin@lms.com");
   const displayAvatar = String(
@@ -87,7 +77,7 @@ export default function DashboardTopbar() {
 
         <Tooltip title="Notifications">
           <div>
-            <Notification notifications={notifications} />
+            <Notification />
           </div>
         </Tooltip>
 
