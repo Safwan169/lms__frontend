@@ -2,7 +2,7 @@ import * as React from "react"
 
 import { cn } from "@/lib/utils"
 
-type BadgeVariant = "default" | "secondary" | "destructive" | "outline" | "warning" | "info" | "muted"
+type BadgeVariant = "default" | "secondary" | "destructive" | "outline" | "warning" | "info" | "muted" | "success"
 
 function badgeVariantClasses(variant: BadgeVariant = "default") {
   switch (variant) {
@@ -18,6 +18,8 @@ function badgeVariantClasses(variant: BadgeVariant = "default") {
       return "border-transparent bg-blue-100 text-blue-800"
     case "muted":
       return "border-transparent bg-slate-100 text-slate-700"
+    case "success":
+      return "border-transparent bg-emerald-100 text-emerald-800"
     default:
       return "border-transparent bg-primary text-primary-foreground"
   }

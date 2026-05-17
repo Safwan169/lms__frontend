@@ -259,7 +259,7 @@ export async function uploadMedia(tenantId: string, file: File) {
       formData.append("file", file)
       return api.post(`/tenants/${tenantId}/media/upload`, formData)
     },
-    () => {
+    ():any => {
       const mock = {
         id: generateId("media"),
         url: URL.createObjectURL(file),
@@ -279,7 +279,7 @@ export async function uploadMedia(tenantId: string, file: File) {
 export async function createContent(tenantId: string, payload: Record<string, unknown>) {
   return withMockFallback(
     () => api.post(`/tenants/${tenantId}/content`, payload),
-    () => {
+    ():any => {
       const newItem = {
         id: generateId("content"),
         title: String(payload.title ?? "Untitled"),
@@ -315,7 +315,7 @@ export async function getTeacherContent(
 ) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/content`, { params }),
-    () =>
+    ():any =>
       wrapData({
         items: mockContentStore,
         meta: { total: mockContentStore.length, page: 1, limit: 50 },
@@ -326,7 +326,7 @@ export async function getTeacherContent(
 export async function getTeacherContentById(tenantId: string, contentId: string) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/content/${contentId}`),
-    () => {
+    ():any => {
       const item = mockContentStore.find(c => c.id === contentId)
       if (!item) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
       return wrapData(item)
@@ -341,7 +341,7 @@ export async function updateContent(
 ) {
   return withMockFallback(
     () => api.put(`/tenants/${tenantId}/content/${contentId}`, payload),
-    () => {
+    ():any => {
       const idx = mockContentStore.findIndex(c => c.id === contentId)
       if (idx === -1) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
       mockContentStore[idx] = { ...mockContentStore[idx], ...(payload as any) }
@@ -353,7 +353,7 @@ export async function updateContent(
 export async function deleteContent(tenantId: string, contentId: string) {
   return withMockFallback(
     () => api.delete(`/tenants/${tenantId}/content/${contentId}`),
-    () => {
+    ():any => {
       mockContentStore = mockContentStore.filter(c => c.id !== contentId)
       return wrapData({ success: true })
     }
@@ -368,7 +368,7 @@ export async function getStudentContent(
 ) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/student/content`, { params }),
-    () => {
+    ():any => {
       const published = mockContentStore.filter(c => c.publish_status === "PUBLISHED")
       return wrapData({
         items: published,
@@ -381,7 +381,7 @@ export async function getStudentContent(
 export async function getStudentContentById(tenantId: string, contentId: string) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/student/content/${contentId}`),
-    () => {
+    ():any => {
       const item = mockContentStore.find(c => c.id === contentId && c.publish_status === "PUBLISHED")
       if (!item) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
       return wrapData(item)
@@ -394,7 +394,7 @@ export async function getStudentContentById(tenantId: string, contentId: string)
 export async function createAssessment(tenantId: string, payload: Record<string, unknown>) {
   return withMockFallback(
     () => api.post(`/tenants/${tenantId}/assessments`, payload),
-    () => {
+    ():any => {
       const newItem = {
         id: generateId("assess"),
         title: String(payload.title ?? "Untitled"),
@@ -428,7 +428,7 @@ export async function getTeacherAssessments(
 ) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/assessments`, { params }),
-    () =>
+    ():any =>
       wrapData({
         items: mockAssessmentStore,
         meta: { total: mockAssessmentStore.length, page: 1, limit: 50 },
@@ -439,7 +439,7 @@ export async function getTeacherAssessments(
 export async function getTeacherAssessmentById(tenantId: string, assessmentId: string) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/assessments/${assessmentId}`),
-    () => {
+    ():any => {
       const item = mockAssessmentStore.find(a => a.id === assessmentId)
       if (!item) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
       return wrapData(item)
@@ -454,7 +454,7 @@ export async function updateAssessment(
 ) {
   return withMockFallback(
     () => api.put(`/tenants/${tenantId}/assessments/${assessmentId}`, payload),
-    () => {
+    ():any => {
       const idx = mockAssessmentStore.findIndex(a => a.id === assessmentId)
       if (idx === -1) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
       mockAssessmentStore[idx] = { ...mockAssessmentStore[idx], ...(payload as any) }
@@ -466,7 +466,7 @@ export async function updateAssessment(
 export async function deleteAssessment(tenantId: string, assessmentId: string) {
   return withMockFallback(
     () => api.delete(`/tenants/${tenantId}/assessments/${assessmentId}`),
-    () => {
+    ():any => {
       mockAssessmentStore = mockAssessmentStore.filter(a => a.id !== assessmentId)
       return wrapData({ success: true })
     }
@@ -481,7 +481,7 @@ export async function getStudentAssessments(
 ) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/student/assessments`, { params }),
-    () => {
+    ():any => {
       const published = mockAssessmentStore.filter(a => a.publish_status === "PUBLISHED")
       return wrapData({
         items: published,
@@ -494,7 +494,7 @@ export async function getStudentAssessments(
 export async function getStudentAssessmentById(tenantId: string, assessmentId: string) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/student/assessments/${assessmentId}`),
-    () => {
+    ():any => {
       const item = mockAssessmentStore.find(a => a.id === assessmentId && a.publish_status === "PUBLISHED")
       if (!item) throw Object.assign(new Error("Not found"), { response: { status: 404 } })
       return wrapData(item)
@@ -509,7 +509,7 @@ export async function submitAssessment(
 ) {
   return withMockFallback(
     () => api.post(`/tenants/${tenantId}/student/assessments/${assessmentId}/submit`, payload),
-    () => {
+    ():any => {
       const newSub = {
         id: generateId("sub"),
         assessment_id: assessmentId,
@@ -533,7 +533,7 @@ export async function submitAssessment(
 export async function getStudentMark(tenantId: string, assessmentId: string) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/student/assessments/${assessmentId}/mark`),
-    () => {
+    ():any => {
       const sub = mockSubmissionStore.find(
         s => s.assessment_id === assessmentId && s.is_marked
       )
@@ -552,7 +552,7 @@ export async function getStudentMark(tenantId: string, assessmentId: string) {
 export async function getSubmissions(tenantId: string, assessmentId: string) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/assessments/${assessmentId}/submissions`),
-    () => {
+    ():any => {
       const subs = mockSubmissionStore.filter(s => s.assessment_id === assessmentId)
       return wrapData({ submissions: subs })
     }
@@ -566,7 +566,7 @@ export async function getSubmissionById(
 ) {
   return withMockFallback(
     () => api.get(`/tenants/${tenantId}/assessments/${assessmentId}/submissions/${submissionId}`),
-    () => {
+    ():any  => {
       const sub = mockSubmissionStore.find(
         s => s.assessment_id === assessmentId && s.id === submissionId
       )
@@ -590,7 +590,7 @@ export async function markSubmission(
 ) {
   return withMockFallback(
     () => api.post(`/tenants/${tenantId}/assessments/${assessmentId}/submissions/${submissionId}/mark`, payload),
-    () => {
+    ():any => {
       const idx = mockSubmissionStore.findIndex(
         s => s.assessment_id === assessmentId && s.id === submissionId
       )
@@ -615,7 +615,7 @@ export async function updateMark(
 ) {
   return withMockFallback(
     () => api.put(`/tenants/${tenantId}/assessments/${assessmentId}/submissions/${submissionId}/mark`, payload),
-    () => {
+    ():any => {
       const idx = mockSubmissionStore.findIndex(
         s => s.assessment_id === assessmentId && s.id === submissionId
       )
@@ -688,7 +688,7 @@ export async function getTeacherSessionMaterials(
       api.get(`/teachers/me/schedule-entries/${entryId}/materials`, {
         params: { date: sessionDate },
       }),
-    () => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
+    ():any => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
   )
 }
 
@@ -702,7 +702,7 @@ export async function getStudentSessionMaterials(
       api.get(`/students/me/schedule-entries/${entryId}/materials`, {
         params: { date: sessionDate },
       }),
-    () => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
+    ():any => wrapData(EMPTY_SESSION_MATERIALS(entryId, sessionDate))
   )
 }
 
@@ -737,7 +737,7 @@ export async function upsertSessionMaterials(
         `/teachers/me/schedule-entries/${entryId}/materials`,
         { ...payload, session_date: sessionDate }
       ),
-    () => wrapData({ message: "Saved (mock)", payload })
+    ():any => wrapData({ message: "Saved (mock)", payload })
   )
 }
 

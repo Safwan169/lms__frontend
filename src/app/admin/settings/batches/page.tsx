@@ -167,13 +167,13 @@ export default function SettingsBatchesPage() {
       const rawItems = extractArrayPayload(payload)
 
       return rawItems
-        .map((item: any) => ({
+        .map((item: any): ClassOption => ({
           id: String(item?.id ?? item?.class_id ?? "").trim(),
           name: String(item?.class_name ?? item?.name ?? `Class ${item?.id ?? ""}`).trim(),
           status: String(item?.status ?? "ACTIVE").toUpperCase() === "INACTIVE" ? "INACTIVE" : "ACTIVE",
           subjects: Array.isArray(item?.class_subjects)
             ? item.class_subjects
-                .map((subject: any) => ({
+                .map((subject: any): SubjectOption => ({
                   id: String(subject?.subject_id ?? subject?.subject?.id ?? "").trim(),
                   name: String(subject?.subject?.name ?? subject?.name ?? "").trim(),
                 }))
@@ -228,7 +228,7 @@ export default function SettingsBatchesPage() {
       const rawItems = extractArrayPayload(payload)
 
       return rawItems
-        .map((item: any) => ({
+        .map((item: any): BatchRow => ({
           id: String(item?.id ?? item?.batch_id ?? "").trim(),
           batch_name: String(item?.batch_name ?? item?.name ?? "Unnamed Batch").trim(),
           class_id: String(item?.class_id ?? item?.class?.id ?? "").trim(),

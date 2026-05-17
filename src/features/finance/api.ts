@@ -178,6 +178,11 @@ export const financeApi = {
     return unwrapPayload(response)
   },
 
+  async recalculateInvoice(invoiceId: string) {
+    const response = await api.post(`/v1/invoices/${invoiceId}/recalculate`)
+    return unwrapPayload(response)
+  },
+
   async createReceipt(payload: { invoice_id?: string; payment_record_id?: string; notes?: string }) {
     const response = await api.post("/v1/receipts", payload)
     return unwrapPayload(response)

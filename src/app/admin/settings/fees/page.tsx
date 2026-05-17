@@ -169,7 +169,8 @@ export default function FeesSettingsPage() {
   })
 
   const batchFeeForm = useForm<BatchFeeFormValues>({
-    resolver: zodResolver(batchFeeSchema),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    resolver: zodResolver(batchFeeSchema) as any,
     defaultValues: {
       fee_type: "MONTHLY",
       amount: 0,

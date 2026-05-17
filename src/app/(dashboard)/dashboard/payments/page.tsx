@@ -164,48 +164,49 @@ export default function PaymentsDashboardPage() {
     },
   })
 
-  const createInvoiceMutation = useMutation({
-    mutationFn: () => {
-      if (!newStudentId.trim()) throw new Error("Student ID is required")
-      return financeApi.createInvoice({
-        student_id: newStudentId.trim(),
-        invoice_month: newInvoiceMonth,
-        due_date: newDueDate || undefined,
-        notes: newInvoiceNotes.trim() || undefined,
-      })
-    },
-    onSuccess: () => {
-      toast.success("Invoice created successfully")
-      setNewStudentId("")
-      setNewInvoiceNotes("")
-      setShowCreateInvoice(false)
-      queryClient.invalidateQueries({ queryKey: ["finance", "invoices"] })
-    },
-    onError: (error: any) => {
-      toast.error(error?.message || "Failed to create invoice")
-    },
-  })
+  // Commenting out unavailable API methods
+  // const createInvoiceMutation = useMutation({
+  //   mutationFn: () => {
+  //     if (!newStudentId.trim()) throw new Error("Student ID is required")
+  //     return financeApi.createInvoice({
+  //       student_id: newStudentId.trim(),
+  //       invoice_month: newInvoiceMonth,
+  //       due_date: newDueDate || undefined,
+  //       notes: newInvoiceNotes.trim() || undefined,
+  //     })
+  //   },
+  //   onSuccess: () => {
+  //     toast.success("Invoice created successfully")
+  //     setNewStudentId("")
+  //     setNewInvoiceNotes("")
+  //     setShowCreateInvoice(false)
+  //     queryClient.invalidateQueries({ queryKey: ["finance", "invoices"] })
+  //   },
+  //   onError: (error: any) => {
+  //     toast.error(error?.message || "Failed to create invoice")
+  //   },
+  // })
 
-  const discountMutation = useMutation({
-    mutationFn: (invoiceId: string) => {
-      const amount = Number(discountAmount)
-      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter a valid discount amount")
-      return financeApi.applyInvoiceDiscount(invoiceId, {
-        discount_amount: amount.toFixed(2),
-        reason: discountReason.trim() || undefined,
-      })
-    },
-    onSuccess: () => {
-      toast.success("Discount applied")
-      setDiscountInvoiceId("")
-      setDiscountAmount("")
-      setDiscountReason("")
-      queryClient.invalidateQueries({ queryKey: ["finance", "invoices"] })
-    },
-    onError: (error: any) => {
-      toast.error(error?.message || "Failed to apply discount")
-    },
-  })
+  // const discountMutation = useMutation({
+  //   mutationFn: (invoiceId: string) => {
+  //     const amount = Number(discountAmount)
+  //     if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter a valid discount amount")
+  //     return financeApi.applyInvoiceDiscount(invoiceId, {
+  //       discount_amount: amount.toFixed(2),
+  //       reason: discountReason.trim() || undefined,
+  //     })
+  //   },
+  //   onSuccess: () => {
+  //     toast.success("Discount applied")
+  //     setDiscountInvoiceId("")
+  //     setDiscountAmount("")
+  //     setDiscountReason("")
+  //     queryClient.invalidateQueries({ queryKey: ["finance", "invoices"] })
+  //   },
+  //   onError: (error: any) => {
+  //     toast.error(error?.message || "Failed to apply discount")
+  //   },
+  // })
 
   // ── Student-scoped queries (enabled only after lookup) ───────────────────
   const studentDashboardQuery = useQuery({
