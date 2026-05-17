@@ -78,7 +78,7 @@ export default function AdminSettingsLayout({
     if (!user) return
     if (!canAccessPage) {
       if (normalizedRole === "teacher") {
-        router.replace("/dashboard/dashboard-empty")
+        router.replace("/dashboard")
         return
       }
       if (normalizedRole === "student") {

@@ -88,9 +88,7 @@ const LoginForm: React.FC = () => {
         const routeByRole =
             normalizedRole === 'superadmin'
                 ? '/dashboard/admins'
-                : normalizedRole === 'teacher'
-                    ? '/dashboard/dashboard-empty'
-                    : '/dashboard';
+                : '/dashboard';
 
         router.replace(routeByRole);
     }, [isAuthReady, user, router]);

@@ -43,8 +43,10 @@ function normalizeRole(user: any) {
 
 function getDefaultRouteForRole(role: string) {
   if (role === "superadmin") return "/dashboard/admins"
-  if (role === "teacher") return "/dashboard/dashboard-empty"
+  if (role === "teacher") return "/dashboard"
   if (role === "student") return "/dashboard"
+  if (role === "accountant") return "/dashboard"
+  if (role === "admin") return "/dashboard"
   return "/dashboard"
 }
 

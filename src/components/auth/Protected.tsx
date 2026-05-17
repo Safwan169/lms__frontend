@@ -46,7 +46,7 @@ function isAllowedDashboardPath(role: string, pathname: string) {
 
   if (role === "teacher") {
     return [
-      "/dashboard/dashboard-empty",
+      "/dashboard",
       "/dashboard/classrooms",
       "/dashboard/my-class",
       "/dashboard/attendance",
@@ -76,8 +76,6 @@ function isAllowedDashboardPath(role: string, pathname: string) {
 
 function getDefaultRouteForRole(role: string) {
   if (role === "superadmin") return "/dashboard/admins";
-  if (role === "teacher") return "/dashboard/dashboard-empty";
-  if (role === "student") return "/dashboard";
   return "/dashboard";
 }
 

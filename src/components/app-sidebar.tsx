@@ -72,13 +72,7 @@ const navData: NavItem[] = [
     title: "Dashboard",
     url: "/dashboard",
     icon: LayoutDashboard,
-    roles: ["admin", "user", "rektor", "student"],
-  },
-  {
-    title: "Dashboard",
-    url: "/dashboard/dashboard-empty",
-    icon: LayoutDashboard,
-    roles: ["teacher"],
+    roles: ["admin", "user", "rektor", "student", "teacher", "accountant"],
   },
   // {
   //   title: "Data Master",
