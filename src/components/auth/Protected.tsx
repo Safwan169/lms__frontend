@@ -13,12 +13,31 @@ function normalizeRole(user: any) {
   ).toLowerCase();
 }
 
+const FINANCE_PREFIXES = [
+  "/dashboard/payments",
+  "/dashboard/payroll",
+  "/dashboard/accountant",
+  "/dashboard/accountants",
+];
+
+const FINANCE_ALLOWED_ROLES = new Set(["admin", "rektor", "accountant", "superadmin"]);
+
+function isFinancePath(pathname: string) {
+  return FINANCE_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`));
+}
+
 function isAllowedDashboardPath(role: string, pathname: string) {
   if (!pathname.startsWith("/dashboard")) return true;
 
   // Notice Board is available to every authenticated role
   if (pathname === "/dashboard/notices" || pathname.startsWith("/dashboard/notices/")) {
     return true;
+  }
+
+  // Finance modules (payments, payroll, accounting, accountants list)
+  // are restricted to admin / rektor / accountant / superadmin only.
+  if (isFinancePath(pathname)) {
+    return FINANCE_ALLOWED_ROLES.has(role);
   }
 
   if (role === "superadmin") {
