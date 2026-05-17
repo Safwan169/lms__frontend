@@ -69,7 +69,7 @@ export default function AccountantDashboard({ user }: { user: AnyUser }) {
   const name = pickName(user)
   return (
     <div className="min-h-full bg-slate-50/60 p-4 md:p-6">
-      <div className="mx-auto max-w-7xl space-y-6">
+      <div className="mx-auto max-w-8xl space-y-6">
         {/* Greeting */}
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
