@@ -65,34 +65,24 @@ function batchesQuery(tenantId: string) {
 
 function usersQuery(tenantId: string) {
   return async (): Promise<Option[]> => {
-    const endpoints = ["teachers", "students", "accountants", "employees"] as const
-    const settled = await Promise.allSettled(
-      endpoints.map((e) =>
-        api.get(`/tenants/${tenantId}/${e}`, {
-          params: { limit: 100 },
-          _suppressToast: true,
-        } as any),
-      ),
-    )
+    const resp = await api.get(`/tenants/${tenantId}/notices/audience/users`, {
+      _suppressToast: true,
+    } as any)
+    const payload = resp?.data?.data ?? resp?.data
+    const groups: Array<{ role: string; users: any[] }> = payload?.groups ?? []
 
     const collected: Option[] = []
-    settled.forEach((res, idx) => {
-      if (res.status !== "fulfilled") return
-      const role = endpoints[idx].slice(0, -1).toUpperCase() // teacher → TEACHER
-      for (const u of unwrapList<any>(res.value)) {
-        const id = u.user_id ?? u.userId ?? u.id ?? u.uuid
-        if (!id) continue
-        const name = u.name ?? u.full_name ?? u.fullName ?? u.username ?? u.email ?? id
+    for (const g of groups) {
+      for (const u of g.users ?? []) {
+        if (!u?.id) continue
         collected.push({
-          id: String(id),
-          label: name,
-          sublabel: `${role} · ${u.email ?? u.phone ?? ""}`.replace(/\s·\s$/, ""),
+          id: String(u.id),
+          label: u.name ?? u.email ?? u.id,
+          sublabel: `${u.role ?? g.role} · ${u.email ?? ""}`.replace(/\s·\s$/, ""),
         })
       }
-    })
-
-    const seen = new Set<string>()
-    return collected.filter((o) => (seen.has(o.id) ? false : (seen.add(o.id), true)))
+    }
+    return collected
   }
 }
 
