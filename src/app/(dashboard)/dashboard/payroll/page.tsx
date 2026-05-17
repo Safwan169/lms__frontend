@@ -276,23 +276,27 @@ export default function PayrollDashboardPage() {
   })
 
   // ── Sync This Month ─────────────────────────────────────────────────────────
-  // Pulls fresh server state for the selected month. Pure refresh — does NOT
-  // chain any destructive mutations (Run Payroll, Open/Close Month, Finalize
-  // remain explicit operator actions accessible via their own buttons).
+  // Pushes PAID payroll records for the selected month into the accounting
+  // ledger as expense entries (idempotent — already-synced records are skipped),
+  // then refreshes local payroll queries.
   const syncMutation = useMutation({
     mutationFn: async () => {
+      const result = await financeApi.syncExpensePayrollPayments({ month, status: "PAID" })
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["finance", "payrolls"] }),
         queryClient.refetchQueries({ queryKey: ["finance", "payroll-months"] }),
         queryClient.refetchQueries({ queryKey: ["finance", "salary-configs"] }),
         queryClient.refetchQueries({ queryKey: ["finance", "payroll-payments"] }),
       ])
+      return result as { synced_count?: number; skipped_count?: number; message?: string }
     },
-    onSuccess: () => {
-      toast.success("Payroll data synced")
+    onSuccess: (result) => {
+      const synced = result?.synced_count ?? 0
+      const skipped = result?.skipped_count ?? 0
+      toast.success(result?.message || `Expense sync — ${synced} synced, ${skipped} skipped`)
     },
     onError: (error: any) => {
-      toast.error(error?.message || "Failed to sync payroll data")
+      toast.error(error?.message || "Failed to sync payrolls to accounting")
     },
   })
 
@@ -379,7 +383,7 @@ export default function PayrollDashboardPage() {
           <Button
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending || !month}
-            title={`Open the month and run payroll calculation for ${month}`}
+            title={`Push PAID payrolls for ${month} into the accounting ledger as expenses`}
           >
             {syncMutation.isPending ? (
               <Loader2 className="mr-2 size-4 animate-spin" />

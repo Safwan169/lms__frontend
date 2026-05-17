@@ -269,21 +269,25 @@ export default function PaymentsDashboardPage() {
   })
 
   // ── Sync This Month ─────────────────────────────────────────────────────────
-  // Pulls fresh server state for the selected month. Pure refresh — does NOT
-  // chain any destructive mutations (Run Billing, Apply Fine, Send Reminders
-  // remain explicit operator actions accessible via their own buttons).
+  // Pushes COMPLETED payment records for the selected month into the accounting
+  // ledger as revenue entries (idempotent — already-synced records are skipped),
+  // then refreshes local invoice/billing queries.
   const syncMutation = useMutation({
     mutationFn: async () => {
+      const result = await financeApi.syncRevenuePayments({ month, payment_status: "COMPLETED" })
       await Promise.all([
         queryClient.refetchQueries({ queryKey: ["finance", "invoices"] }),
         queryClient.refetchQueries({ queryKey: ["finance", "billing-cycles"] }),
       ])
+      return result as { synced_count?: number; skipped_count?: number; message?: string }
     },
-    onSuccess: () => {
-      toast.success("Payment data synced")
+    onSuccess: (result) => {
+      const synced = result?.synced_count ?? 0
+      const skipped = result?.skipped_count ?? 0
+      toast.success(result?.message || `Revenue sync — ${synced} synced, ${skipped} skipped`)
     },
     onError: (error: any) => {
-      toast.error(error?.message || "Failed to sync payment data")
+      toast.error(error?.message || "Failed to sync payments to accounting")
     },
   })
 
@@ -302,7 +306,7 @@ export default function PaymentsDashboardPage() {
           <Button
             onClick={() => syncMutation.mutate()}
             disabled={syncMutation.isPending || !month}
-            title={`Run billing, apply fines and send reminders for ${month}`}
+            title={`Push COMPLETED payments for ${month} into the accounting ledger as revenue`}
           >
             {syncMutation.isPending ? (
               <Loader2 className="mr-2 size-4 animate-spin" />

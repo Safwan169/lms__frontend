@@ -325,6 +325,22 @@ export const financeApi = {
     const response = await api.post("/v1/payroll/finalize", payload)
     return unwrapPayload(response)
   },
+
+  async syncRevenuePayments(payload: {
+    month?: string
+    payment_status?: "COMPLETED" | "PENDING" | "FAILED" | "REFUNDED"
+  } = {}) {
+    const response = await api.post("/v1/accounting/revenue/sync/payments", payload)
+    return unwrapPayload(response)
+  },
+
+  async syncExpensePayrollPayments(payload: {
+    month?: string
+    status?: "PAID" | "PENDING" | "CANCELLED"
+  } = {}) {
+    const response = await api.post("/v1/accounting/expenses/sync/payroll-payments", payload)
+    return unwrapPayload(response)
+  },
 }
 
 export default financeApi
