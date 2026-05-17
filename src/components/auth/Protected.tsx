@@ -16,6 +16,11 @@ function normalizeRole(user: any) {
 function isAllowedDashboardPath(role: string, pathname: string) {
   if (!pathname.startsWith("/dashboard")) return true;
 
+  // Notice Board is available to every authenticated role
+  if (pathname === "/dashboard/notices" || pathname.startsWith("/dashboard/notices/")) {
+    return true;
+  }
+
   if (role === "superadmin") {
     return pathname === "/dashboard/admins";
   }

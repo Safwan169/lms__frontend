@@ -15,6 +15,7 @@ import {
   CalendarDays,
   ClipboardCheck,
   ClipboardList,
+  Megaphone,
   School,
   GraduationCap,
   Users,
@@ -221,6 +222,12 @@ const navData: NavItem[] = [
     url: "/dashboard/profile",
     icon: UserRound,
     roles: ["teacher", "student"],
+  },
+  {
+    title: "Notice Board",
+    url: "/dashboard/notices",
+    icon: Megaphone,
+    roles: ["admin", "rektor", "superadmin", "teacher", "student", "accountant", "employee"],
   },
   
   // {

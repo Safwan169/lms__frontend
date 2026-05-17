@@ -97,6 +97,17 @@ export default function PaymentsDashboardPage() {
   const [discountAmount, setDiscountAmount] = useState("")
   const [discountReason, setDiscountReason] = useState("")
 
+  // ── Student Lookup state ─────────────────────────────────────────────────
+  // A focused panel that exposes the student-portal billing endpoints
+  // (`/v1/billing/dashboard`, `/v1/invoices/student/:id`,
+  //  `/v1/payments/student/:id`, `/v1/wallet/:id`) so an admin can drill into
+  // one student's billing picture from this page without leaving it.
+  const [studentLookupId, setStudentLookupId] = useState("")
+  const [activeStudentId, setActiveStudentId] = useState("")
+  const [walletInvoiceId, setWalletInvoiceId] = useState("")
+  const [walletAmount, setWalletAmount] = useState("")
+  const [walletNotes, setWalletNotes] = useState("")
+
   const invoicesQuery = useQuery({
     queryKey: ["finance", "invoices", month, status],
     queryFn: () => financeApi.listInvoices({ month, status: status === "all" ? undefined : status }),
@@ -136,7 +147,21 @@ export default function PaymentsDashboardPage() {
 
   const receiptMutation = useMutation({
     mutationFn: (invoiceId: string) => financeApi.createReceipt({ invoice_id: invoiceId, notes: "Auto-issued from finance desk" }),
-    onSuccess: () => toast.success("Receipt issued"),
+    onSuccess: () => {
+      toast.success("Receipt issued")
+      // Refresh invoices + any student panel so the issued receipt and any
+      // invoice-side changes (paid_amount / status) reflect right away.
+      queryClient.invalidateQueries({ queryKey: ["finance", "invoices"] })
+      queryClient.invalidateQueries({ queryKey: ["finance", "billing-cycles"] })
+      if (activeStudentId) {
+        queryClient.invalidateQueries({ queryKey: ["finance", "student-invoices", activeStudentId] })
+        queryClient.invalidateQueries({ queryKey: ["finance", "student-payments", activeStudentId] })
+        queryClient.invalidateQueries({ queryKey: ["finance", "student-dashboard", activeStudentId] })
+      }
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to issue receipt")
+    },
   })
 
   const createInvoiceMutation = useMutation({
@@ -182,6 +207,56 @@ export default function PaymentsDashboardPage() {
     },
   })
 
+  // ── Student-scoped queries (enabled only after lookup) ───────────────────
+  const studentDashboardQuery = useQuery({
+    queryKey: ["finance", "student-dashboard", activeStudentId],
+    enabled: Boolean(activeStudentId),
+    queryFn: () => financeApi.getStudentBillingDashboard({ student_id: activeStudentId }),
+  })
+  const studentWalletQuery = useQuery({
+    queryKey: ["finance", "student-wallet", activeStudentId],
+    enabled: Boolean(activeStudentId),
+    queryFn: () => financeApi.getStudentWallet(activeStudentId),
+  })
+  const studentInvoicesQuery = useQuery({
+    queryKey: ["finance", "student-invoices", activeStudentId],
+    enabled: Boolean(activeStudentId),
+    queryFn: () => financeApi.getStudentInvoices(activeStudentId),
+  })
+  const studentPaymentsQuery = useQuery({
+    queryKey: ["finance", "student-payments", activeStudentId],
+    enabled: Boolean(activeStudentId),
+    queryFn: () => financeApi.getStudentPayments(activeStudentId),
+  })
+
+  const applyWalletMutation = useMutation({
+    mutationFn: () => {
+      const amount = Number(walletAmount)
+      if (!activeStudentId) throw new Error("Look up a student first")
+      if (!walletInvoiceId.trim()) throw new Error("Invoice ID is required")
+      if (!Number.isFinite(amount) || amount <= 0) throw new Error("Enter a valid wallet amount")
+      return financeApi.applyWallet({
+        student_id: activeStudentId,
+        invoice_id: walletInvoiceId.trim(),
+        amount: amount.toFixed(2),
+        notes: walletNotes.trim() || undefined,
+      })
+    },
+    onSuccess: () => {
+      toast.success("Wallet credit applied")
+      setWalletInvoiceId("")
+      setWalletAmount("")
+      setWalletNotes("")
+      queryClient.invalidateQueries({ queryKey: ["finance", "student-wallet", activeStudentId] })
+      queryClient.invalidateQueries({ queryKey: ["finance", "student-invoices", activeStudentId] })
+      queryClient.invalidateQueries({ queryKey: ["finance", "student-payments", activeStudentId] })
+      queryClient.invalidateQueries({ queryKey: ["finance", "invoices"] })
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to apply wallet credit")
+    },
+  })
+
   const recalculateMutation = useMutation({
     mutationFn: (invoiceId: string) => financeApi.recalculateInvoice(invoiceId),
     onSuccess: () => {
@@ -194,45 +269,21 @@ export default function PaymentsDashboardPage() {
   })
 
   // ── Sync This Month ─────────────────────────────────────────────────────────
-  // Runs the canonical bulk operations for the selected month in order:
-  //   1) generate monthly billing invoices (POST /v1/billing/run)
-  //   2) apply fines to overdue invoices (POST /v1/invoices/apply-fine)
-  //   3) send reminders for due/overdue invoices (POST /v1/reminders/send)
-  // Each step is reported individually so the operator can see what happened
-  // even if a later step fails.
+  // Pulls fresh server state for the selected month. Pure refresh — does NOT
+  // chain any destructive mutations (Run Billing, Apply Fine, Send Reminders
+  // remain explicit operator actions accessible via their own buttons).
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const results: { step: string; ok: boolean; message?: string }[] = []
-      try {
-        await financeApi.runBilling({ month, due_date: dueDate || undefined, remarks: `Sync — billing for ${month}` })
-        results.push({ step: "Billing run", ok: true })
-      } catch (err: any) {
-        results.push({ step: "Billing run", ok: false, message: err?.message })
-      }
-      try {
-        await financeApi.applyInvoiceFine({
-          month,
-          status: "overdue",
-          fine_amount: Number(fineAmount || 0).toFixed(2),
-          title: "Late payment fine",
-        })
-        results.push({ step: "Fines applied", ok: true })
-      } catch (err: any) {
-        results.push({ step: "Fines applied", ok: false, message: err?.message })
-      }
-      try {
-        await financeApi.sendInvoiceReminder({ month, status: "overdue" })
-        results.push({ step: "Reminders sent", ok: true })
-      } catch (err: any) {
-        results.push({ step: "Reminders sent", ok: false, message: err?.message })
-      }
-      return results
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["finance", "invoices"] }),
+        queryClient.refetchQueries({ queryKey: ["finance", "billing-cycles"] }),
+      ])
     },
-    onSuccess: (results) => {
-      results.forEach((r) =>
-        r.ok ? toast.success(`${r.step} ✓`) : toast.error(`${r.step}: ${r.message || "failed"}`),
-      )
-      queryClient.invalidateQueries({ queryKey: ["finance"] })
+    onSuccess: () => {
+      toast.success("Payment data synced")
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to sync payment data")
     },
   })
 
@@ -296,6 +347,8 @@ export default function PaymentsDashboardPage() {
         </CardContent>
       </Card>
 
+      
+
       <div className="grid gap-4 md:grid-cols-1">
         <Card>
           <CardHeader>
@@ -322,7 +375,7 @@ export default function PaymentsDashboardPage() {
       </div>
 
       {/* Create Invoice manually */}
-      <Card>
+      {/* <Card>
         <CardHeader>
           <div className="flex items-center justify-between">
             <CardTitle>Create Invoice Manually</CardTitle>
@@ -369,7 +422,7 @@ export default function PaymentsDashboardPage() {
             </div>
           </CardContent>
         ) : null}
-      </Card>
+      </Card> */}
 
       {/* Apply Discount to invoice */}
       {/* <Card>

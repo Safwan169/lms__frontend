@@ -276,41 +276,23 @@ export default function PayrollDashboardPage() {
   })
 
   // ── Sync This Month ─────────────────────────────────────────────────────────
-  // Re-runs the canonical payroll pipeline for the selected month:
-  //   1) Ensure the payroll month is open (POST /v1/payroll/months/open)
-  //      — silently ignore "already open" type errors.
-  //   2) Run payroll calculations (POST /v1/payroll/run) — recalculates
-  //      payroll records from current salary configs, attendance, etc.
-  // Finalize is intentionally NOT auto-triggered here because finalizing
-  // locks the month; that should stay an explicit operator action.
+  // Pulls fresh server state for the selected month. Pure refresh — does NOT
+  // chain any destructive mutations (Run Payroll, Open/Close Month, Finalize
+  // remain explicit operator actions accessible via their own buttons).
   const syncMutation = useMutation({
     mutationFn: async () => {
-      const results: { step: string; ok: boolean; message?: string }[] = []
-      try {
-        await financeApi.openPayrollMonth({ month, remarks: `Sync — open ${month}` })
-        results.push({ step: "Month opened", ok: true })
-      } catch (err: any) {
-        // Already open is fine — note but don't treat as fatal.
-        results.push({
-          step: "Month opened",
-          ok: false,
-          message: err?.message || "month may already be open",
-        })
-      }
-      try {
-        await financeApi.runPayroll({ month, remarks: `Sync — run payroll for ${month}` })
-        results.push({ step: "Payroll run", ok: true })
-      } catch (err: any) {
-        results.push({ step: "Payroll run", ok: false, message: err?.message })
-      }
-      return results
+      await Promise.all([
+        queryClient.refetchQueries({ queryKey: ["finance", "payrolls"] }),
+        queryClient.refetchQueries({ queryKey: ["finance", "payroll-months"] }),
+        queryClient.refetchQueries({ queryKey: ["finance", "salary-configs"] }),
+        queryClient.refetchQueries({ queryKey: ["finance", "payroll-payments"] }),
+      ])
     },
-    onSuccess: (results) => {
-      results.forEach((r) =>
-        r.ok ? toast.success(`${r.step} ✓`) : toast(`${r.step}: ${r.message || "skipped"}`),
-      )
-      queryClient.invalidateQueries({ queryKey: ["finance", "payrolls"] })
-      queryClient.invalidateQueries({ queryKey: ["finance", "payroll-months"] })
+    onSuccess: () => {
+      toast.success("Payroll data synced")
+    },
+    onError: (error: any) => {
+      toast.error(error?.message || "Failed to sync payroll data")
     },
   })
 
