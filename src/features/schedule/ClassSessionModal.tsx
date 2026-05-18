@@ -68,6 +68,12 @@ type ClassSessionModalProps = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function stripOverrideSuffix(id: string): string {
   const idx = id.indexOf("__override__")
   return idx === -1 ? id : id.slice(0, idx)
@@ -221,7 +227,7 @@ export default function ClassSessionModal({
     onError: () => toast.error("Could not save"),
   })
 
-  const uploadingRef = useRef(false)
+  const [isUploading, setIsUploading] = useState(false)
 
   // ── Open uploaded PDF/file ────────────────────────────────────────────────
   // The session-materials endpoint returns only `file_id` (no URL). Fetch the
@@ -259,16 +265,18 @@ export default function ClassSessionModal({
     if (attachmentMode === "FILE") {
       if (!attachmentFile) return toast.error("Choose a file")
       try {
-        uploadingRef.current = true
+        setIsUploading(true)
         const res = await learningApi.uploadMedia(tenantId, attachmentFile)
         fileId = (res?.data as any)?.id
         if (!fileId) {
-          toast.error("Upload failed")
-          uploadingRef.current = false
+          toast.error("Upload failed — please try again")
           return
         }
+      } catch {
+        toast.error("File upload failed — please try again")
+        return
       } finally {
-        uploadingRef.current = false
+        setIsUploading(false)
       }
     } else {
       if (!attachmentExternalUrl.trim()) return toast.error("Link required")
@@ -276,6 +284,7 @@ export default function ClassSessionModal({
 
     const payload: Parameters<typeof learningApi.upsertSessionMaterials>[3] = {
       title: attachmentTitle.trim(),
+      note: attachmentNote.trim() || undefined,
       class_type: classTypeDraft,
       content:
         attachmentMode === "FILE"
@@ -535,67 +544,118 @@ export default function ClassSessionModal({
 
           {/* Inline add-attachment form */}
           {isTeacher && addAttachmentOpen ? (
-            <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+            <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">
+              {/* Mode toggle */}
               <div className="flex gap-2">
                 {(["FILE", "LINK"] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
+                    disabled={isUploading || upsertMut.isPending}
                     onClick={() => setAttachmentMode(m)}
                     className={cn(
-                      "rounded-lg border px-3 py-1 text-xs font-medium transition",
+                      "rounded-lg border px-3 py-1.5 text-xs font-medium transition",
                       attachmentMode === m
                         ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-700"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                      (isUploading || upsertMut.isPending) && "pointer-events-none opacity-60"
                     )}
                   >
                     {m === "FILE" ? "PDF / file" : "Video / external link"}
                   </button>
                 ))}
               </div>
+
               <Input
                 placeholder="Attachment title (e.g. Chapter 3 PDF)"
                 value={attachmentTitle}
+                disabled={isUploading || upsertMut.isPending}
                 onChange={(e) => setAttachmentTitle(e.target.value)}
               />
               <Textarea
                 placeholder="Optional note for students"
                 rows={2}
                 value={attachmentNote}
+                disabled={isUploading || upsertMut.isPending}
                 onChange={(e) => setAttachmentNote(e.target.value)}
               />
+
               {attachmentMode === "FILE" ? (
-                <div className="flex items-center gap-2">
+                <div className="space-y-2">
                   <input
                     ref={fileInputRef}
                     type="file"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
                     className="hidden"
                     onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="mr-1 h-3.5 w-3.5" />
-                    {attachmentFile ? "Change file" : "Choose file"}
-                  </Button>
                   {attachmentFile ? (
-                    <span className="truncate text-xs text-slate-600">{attachmentFile.name}</span>
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-slate-800">{attachmentFile.name}</p>
+                          <p className="text-xs text-slate-400">{formatFileSize(attachmentFile.size)}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isUploading || upsertMut.isPending}
+                        onClick={() => {
+                          setAttachmentFile(null)
+                          if (fileInputRef.current) fileInputRef.current.value = ""
+                        }}
+                        className="shrink-0 rounded p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-40"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isUploading || upsertMut.isPending}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-white py-4 text-sm text-slate-500 transition hover:border-slate-400 hover:text-slate-700 disabled:opacity-60"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Click to choose a file
+                    </button>
+                  )}
+                  {attachmentFile ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={isUploading || upsertMut.isPending}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-xs"
+                    >
+                      Change file
+                    </Button>
                   ) : null}
                 </div>
               ) : (
                 <Input
                   placeholder="https://youtu.be/… or https://drive.google.com/…"
                   value={attachmentExternalUrl}
+                  disabled={isUploading || upsertMut.isPending}
                   onChange={(e) => setAttachmentExternalUrl(e.target.value)}
                 />
               )}
+
+              {/* Upload progress feedback */}
+              {(isUploading || upsertMut.isPending) ? (
+                <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                  {isUploading ? "Uploading file… please wait" : "Saving attachment…"}
+                </div>
+              ) : null}
+
               <div className="flex justify-end gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={isUploading || upsertMut.isPending}
                   onClick={() => {
                     setAddAttachmentOpen(false)
                     setAttachmentFile(null)
@@ -606,11 +666,17 @@ export default function ClassSessionModal({
                 >
                   Cancel
                 </Button>
-                <Button size="sm" onClick={handleUploadAttachment} disabled={upsertMut.isPending}>
-                  {upsertMut.isPending ? (
+                <Button
+                  size="sm"
+                  onClick={handleUploadAttachment}
+                  disabled={isUploading || upsertMut.isPending}
+                >
+                  {isUploading || upsertMut.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Upload
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  {isUploading ? "Uploading…" : upsertMut.isPending ? "Saving…" : "Upload"}
                 </Button>
               </div>
             </div>
