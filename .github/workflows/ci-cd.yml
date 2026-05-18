@@ -1,0 +1,73 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  # ─────────────────────────────────────────────
+  # CI — Lint & Build
+  # ─────────────────────────────────────────────
+  ci:
+    name: Lint · Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Build
+        run: npm run build
+
+  # ─────────────────────────────────────────────
+  # CD — Deploy to VPS via SSH (main only)
+  # ─────────────────────────────────────────────
+  deploy:
+    name: Deploy to VPS
+    runs-on: ubuntu-latest
+    needs: ci
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          username: ${{ secrets.SSH_USER }}
+          key: ${{ secrets.SSH_PRIVATE_KEY }}
+          port: ${{ secrets.SSH_PORT }}
+          script: |
+            set -e
+
+            cd ~/cc-lms/cc-lms-nextjs-frontend
+
+            echo "==> Pull latest code"
+            git pull origin main
+
+            echo "==> Rebuild containers"
+            docker compose build
+
+            echo "==> Restart containers"
+            docker compose up -d
+
+            echo "==> Remove unused images"
+            docker image prune -af
+
+            echo "==> Deployment complete"
