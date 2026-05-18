@@ -1,321 +1,233 @@
 "use client"
 
-import Link from "next/link"
-import { useState } from "react"
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
-import {
-  Activity,
-  ArrowDownCircle,
-  ArrowUpCircle,
-  BookOpen,
-  Banknote,
-  Calculator,
-  ClipboardList,
-  FileBarChart,
-  Loader2,
-  RefreshCcw,
-  Wallet,
-} from "lucide-react"
-import toast from "react-hot-toast"
+import { useQuery } from "@tanstack/react-query"
+import { Banknote, CreditCard, Smartphone, TrendingUp } from "lucide-react"
 
-import accountingApi from "@/features/accounting/api"
-import { formatDate, formatMoney, monthNow } from "@/features/accounting/helpers"
+import api from "@/lib/api"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table-primitive"
 
-type Snapshot = {
-  tenant?: { name?: string }
-  as_of?: string
-  overview?: SummaryNumbers
-  current_month?: SummaryNumbers
-  current_year?: SummaryNumbers
-  balances?: { summary?: BalanceSummary; accounts?: BalanceAccount[] }
-  ledgers?: LedgerCounts
-  recent_activity?: ActivityItem[]
+type PaymentMethodSummary = {
+  method: string
+  total_amount: string
+  total_discount: string
+  net_amount: string
+  count: number
 }
 
-type SummaryNumbers = {
-  total_revenue?: string | number
-  total_expense?: string | number
-  net_amount?: string | number
-  revenue_count?: number
-  expense_count?: number
+type SummaryResponse = {
+  summary: PaymentMethodSummary[]
+  meta: {
+    grand_total: string
+    grand_discount: string
+    grand_net: string
+  }
 }
 
-type BalanceSummary = {
-  cash_total?: string | number
-  bank_total?: string | number
-  overall_total?: string | number
-  account_count?: number
-}
-
-type BalanceAccount = {
+type PaymentStudent = {
   id: string
-  type?: string
-  account_type?: string
-  account_name?: string
-  current_balance?: string | number
+  name: string
+  email: string
+  phone: string
 }
 
-type LedgerCounts = {
-  draft?: number
-  posted?: number
-  reversed?: number
-  archived?: number
-  total?: number
-}
-
-type ActivityItem = {
+type Payment = {
   id: string
-  transaction_type?: string
-  action?: string
-  created_at?: string
+  amount: string
+  discount: string
+  net_amount: string
+  method: string
+  payment_status: string
+  transaction_id: string
+  paid_at: string | null
+  month: string | null
+  notes: string | null
+  created_at: string
+  student: PaymentStudent
+  enrollment_id: string
+  batch_id: string
+  class_id: string
 }
 
-const QUICK_LINKS = [
-  { href: "/dashboard/accountant/revenue", title: "Revenue", icon: ArrowUpCircle, description: "Posted revenue entries from billing & manual sources" },
-  { href: "/dashboard/accountant/expenses", title: "Expenses", icon: ArrowDownCircle, description: "Posted expense entries from payroll & manual sources" },
-  { href: "/dashboard/accountant/ledger", title: "Ledger", icon: BookOpen, description: "All journal entries with debit/credit detail" },
-  { href: "/dashboard/accountant/categories", title: "Categories", icon: ClipboardList, description: "Classify revenue & expense by category" },
-  { href: "/dashboard/accountant/balances", title: "Balances", icon: Wallet, description: "Cash & bank account balances + transfers" },
-  { href: "/dashboard/accountant/reports", title: "Reports", icon: FileBarChart, description: "P&L, cashflow, trends, downloads" },
-  { href: "/dashboard/accountant/reconciliation", title: "Reconciliation", icon: Calculator, description: "Detect mismatches between ledger & sources" },
-  { href: "/dashboard/accountant/periods", title: "Periods", icon: Activity, description: "Open / close monthly accounting periods" },
-]
+type PaymentsResponse = {
+  data: Payment[]
+  meta: {
+    total: number
+    page: number
+    limit: number
+    totalPages: number
+    hasNext: boolean
+    hasPrev: boolean
+  }
+}
 
-export default function AccountantDashboardPage() {
-  const queryClient = useQueryClient()
-  const [syncMonth, setSyncMonth] = useState(monthNow())
+function formatMoney(value: unknown) {
+  const num = Number(value ?? 0)
+  if (!Number.isFinite(num)) return "0.00"
+  return num.toLocaleString("en-BD", { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
 
-  const dashboardQuery = useQuery({
-    queryKey: ["accounting", "dashboard"],
-    queryFn: () => accountingApi.getDashboard() as Promise<Snapshot>,
-  })
+function formatDate(value: unknown) {
+  if (!value) return "—"
+  const date = new Date(String(value))
+  if (Number.isNaN(date.getTime())) return "—"
+  return date.toLocaleString("en-GB", { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" })
+}
 
-  const data = dashboardQuery.data
+function findMethod(summary: PaymentMethodSummary[], method: string) {
+  return summary.find((s) => s.method === method)
+}
 
-  const syncRevenueMutation = useMutation({
-    mutationFn: () => accountingApi.syncRevenuePayments({ month: syncMonth, payment_status: "COMPLETED" }),
-    onSuccess: (result: any) => {
-      const synced = result?.synced_count ?? 0
-      const skipped = result?.skipped_count ?? 0
-      toast.success(`Revenue sync — ${synced} synced, ${skipped} skipped`)
-      queryClient.invalidateQueries({ queryKey: ["accounting"] })
+function statusBadgeVariant(status: string): "default" | "warning" | "destructive" | "muted" {
+  const key = String(status ?? "").toUpperCase()
+  if (key === "COMPLETED") return "default"
+  if (key === "PENDING") return "warning"
+  if (key === "FAILED" || key === "CANCELLED") return "destructive"
+  return "muted"
+}
+
+function methodLabel(method: string) {
+  const map: Record<string, string> = {
+    CASH: "Cash",
+    POS: "Card",
+    BANK_TRANSFER: "Bank Transfer",
+    BKASH: "bKash",
+    NAGAD: "Nagad",
+    ROCKET: "Rocket",
+    WAIVER: "Waiver",
+  }
+  return map[method] ?? method
+}
+
+export default function AccountingPage() {
+  const summaryQuery = useQuery<SummaryResponse>({
+    queryKey: ["admissions", "payments", "summary"],
+    queryFn: async () => {
+      const res = await api.get("/admissions/payments/summary")
+      return res.data
     },
-    onError: (error: any) => toast.error(error?.message || "Revenue sync failed"),
   })
 
-  const syncExpenseMutation = useMutation({
-    mutationFn: () => accountingApi.syncExpensePayrollPayments({ month: syncMonth, status: "PAID" }),
-    onSuccess: (result: any) => {
-      const synced = result?.synced_count ?? 0
-      const skipped = result?.skipped_count ?? 0
-      toast.success(`Expense sync — ${synced} synced, ${skipped} skipped`)
-      queryClient.invalidateQueries({ queryKey: ["accounting"] })
+  const paymentsQuery = useQuery<PaymentsResponse>({
+    queryKey: ["admissions", "payments"],
+    queryFn: async () => {
+      const res = await api.get("/admissions/payments")
+      return res.data
     },
-    onError: (error: any) => toast.error(error?.message || "Expense sync failed"),
   })
 
-  const reconcileMutation = useMutation({
-    mutationFn: () => accountingApi.runReconciliation({ period_key: syncMonth, notes: "Dashboard quick reconcile" }),
-    onSuccess: (result: any) => {
-      const mismatchCount = result?.mismatch_count ?? 0
-      const status = String(result?.status ?? "").toUpperCase()
-      toast.success(`Reconciliation: ${status}${mismatchCount ? ` — ${mismatchCount} mismatches` : ""}`)
-      queryClient.invalidateQueries({ queryKey: ["accounting"] })
-    },
-    onError: (error: any) => toast.error(error?.message || "Reconciliation failed"),
-  })
+  const summary = summaryQuery.data?.summary ?? []
+  const meta = summaryQuery.data?.meta
+  const payments = paymentsQuery.data?.data ?? []
+
+  const cash = findMethod(summary, "CASH")
+  const card = findMethod(summary, "POS")
+  const bkash = findMethod(summary, "BKASH")
 
   return (
     <div className="space-y-6 p-1 md:p-2">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold">Accountant Workspace</h1>
-          <p className="text-sm text-muted-foreground">
-            {data?.tenant?.name ? `${data.tenant.name} — ` : ""}
-            As of {data?.as_of ? formatDate(data.as_of) : "—"}
-          </p>
-        </div>
-        <Button variant="outline" onClick={() => queryClient.invalidateQueries({ queryKey: ["accounting"] })}>
-          <RefreshCcw className="mr-2 size-4" /> Refresh
-        </Button>
+      <div>
+        <h1 className="text-2xl font-semibold">Accounting</h1>
+        <p className="text-sm text-muted-foreground">Payment summary and transaction history</p>
       </div>
 
-      {/* ── Sync Control Strip ───────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Monthly Sync</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-4">
-          <div>
-            <p className="mb-1 text-xs text-muted-foreground">Month</p>
-            <Input type="month" value={syncMonth} onChange={(e) => setSyncMonth(e.target.value)} />
-          </div>
-          <Button
-            className="self-end"
-            onClick={() => syncRevenueMutation.mutate()}
-            disabled={syncRevenueMutation.isPending || !syncMonth}
-            title="Push COMPLETED payments → revenue ledger"
-          >
-            {syncRevenueMutation.isPending ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : (
-              <ArrowUpCircle className="mr-2 size-4" />
-            )}
-            Sync Payments → Revenue
-          </Button>
-          <Button
-            className="self-end"
-            onClick={() => syncExpenseMutation.mutate()}
-            disabled={syncExpenseMutation.isPending || !syncMonth}
-            title="Push PAID payrolls → expense ledger"
-          >
-            {syncExpenseMutation.isPending ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : (
-              <ArrowDownCircle className="mr-2 size-4" />
-            )}
-            Sync Payroll → Expense
-          </Button>
-          <Button
-            className="self-end"
-            variant="outline"
-            onClick={() => reconcileMutation.mutate()}
-            disabled={reconcileMutation.isPending || !syncMonth}
-            title="Run a reconciliation check for this month"
-          >
-            {reconcileMutation.isPending ? (
-              <Loader2 className="mr-2 size-4 animate-spin" />
-            ) : (
-              <Calculator className="mr-2 size-4" />
-            )}
-            Reconcile
-          </Button>
-        </CardContent>
-      </Card>
-
-      {/* ── Top KPIs ─────────────────────────────────────────────────────── */}
-      <div className="grid gap-3 md:grid-cols-3">
-        <KpiCard
-          title="This Month"
-          loading={dashboardQuery.isLoading}
-          revenue={data?.current_month?.total_revenue}
-          expense={data?.current_month?.total_expense}
-          net={data?.current_month?.net_amount}
+      {/* ── Summary Cards ─────────────────────────────────────────────────── */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <SummaryCard
+          title="Cash"
+          icon={<Banknote className="size-5 text-emerald-500" />}
+          amount={cash?.total_amount ?? "0.00"}
+          count={cash?.count ?? 0}
+          loading={summaryQuery.isLoading}
         />
-        <KpiCard
-          title="This Year"
-          loading={dashboardQuery.isLoading}
-          revenue={data?.current_year?.total_revenue}
-          expense={data?.current_year?.total_expense}
-          net={data?.current_year?.net_amount}
+        <SummaryCard
+          title="Card (POS)"
+          icon={<CreditCard className="size-5 text-blue-500" />}
+          amount={card?.total_amount ?? "0.00"}
+          count={card?.count ?? 0}
+          loading={summaryQuery.isLoading}
         />
-        <KpiCard
-          title="All Time"
-          loading={dashboardQuery.isLoading}
-          revenue={data?.overview?.total_revenue}
-          expense={data?.overview?.total_expense}
-          net={data?.overview?.net_amount}
+        <SummaryCard
+          title="bKash"
+          icon={<Smartphone className="size-5 text-pink-500" />}
+          amount={bkash?.total_amount ?? "0.00"}
+          count={bkash?.count ?? 0}
+          loading={summaryQuery.isLoading}
+        />
+        <SummaryCard
+          title="Total Amount"
+          icon={<TrendingUp className="size-5 text-violet-500" />}
+          amount={meta?.grand_total ?? "0.00"}
+          count={payments.length}
+          loading={summaryQuery.isLoading}
+          highlight
         />
       </div>
 
-      {/* ── Balances + Ledger Status ─────────────────────────────────────── */}
-      <div className="grid gap-3 md:grid-cols-3">
-        <Card className="md:col-span-2">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Banknote className="size-4" /> Balances
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <div className="mb-3 grid grid-cols-3 gap-3 text-sm">
-              <Stat label="Cash" value={`BDT ${formatMoney(data?.balances?.summary?.cash_total)}`} />
-              <Stat label="Bank" value={`BDT ${formatMoney(data?.balances?.summary?.bank_total)}`} />
-              <Stat label="Overall" value={`BDT ${formatMoney(data?.balances?.summary?.overall_total)}`} />
-            </div>
-            <div className="space-y-1">
-              {(data?.balances?.accounts ?? []).slice(0, 5).map((account) => (
-                <div key={account.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
-                  <div>
-                    <p className="font-medium">{account.account_name ?? "—"}</p>
-                    <p className="text-xs text-muted-foreground">{account.type ?? account.account_type ?? "—"}</p>
-                  </div>
-                  <span>BDT {formatMoney(account.current_balance)}</span>
-                </div>
-              ))}
-              {(data?.balances?.accounts ?? []).length === 0 && !dashboardQuery.isLoading ? (
-                <p className="text-sm text-muted-foreground">No balance accounts found.</p>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle>Ledger Status</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2 text-sm">
-            <Row label="Draft" value={data?.ledgers?.draft ?? 0} />
-            <Row label="Posted" value={data?.ledgers?.posted ?? 0} />
-            <Row label="Reversed" value={data?.ledgers?.reversed ?? 0} />
-            <Row label="Archived" value={data?.ledgers?.archived ?? 0} />
-            <div className="mt-2 flex items-center justify-between rounded-md bg-muted/50 p-2 text-sm font-medium">
-              <span>Total</span>
-              <span>{data?.ledgers?.total ?? 0}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* ── Quick Links ──────────────────────────────────────────────────── */}
+      {/* ── Payments List ──────────────────────────────────────────────────── */}
       <Card>
         <CardHeader>
-          <CardTitle>Modules</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-          {QUICK_LINKS.map((link) => (
-            <Link
-              key={link.href}
-              href={link.href}
-              className="group flex items-start gap-3 rounded-lg border p-3 transition hover:bg-muted/40"
-            >
-              <link.icon className="mt-0.5 size-5 text-muted-foreground group-hover:text-foreground" />
-              <div>
-                <p className="text-sm font-medium">{link.title}</p>
-                <p className="text-xs text-muted-foreground">{link.description}</p>
-              </div>
-            </Link>
-          ))}
-        </CardContent>
-      </Card>
-
-      {/* ── Recent Activity ──────────────────────────────────────────────── */}
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent Activity</CardTitle>
+          <CardTitle>All Transactions</CardTitle>
         </CardHeader>
         <CardContent>
-          {dashboardQuery.isLoading ? (
-            <p className="text-sm text-muted-foreground">Loading activity…</p>
-          ) : (data?.recent_activity ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No recent activity.</p>
-          ) : (
-            <div className="space-y-1">
-              {(data?.recent_activity ?? []).map((entry) => (
-                <div key={entry.id} className="flex items-center justify-between rounded-md border p-2 text-sm">
-                  <div>
-                    <p className="font-medium">{entry.action ?? "—"}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {entry.transaction_type ?? "SYSTEM"} · {formatDate(entry.created_at)}
-                    </p>
-                  </div>
-                  <Badge variant="muted">{entry.transaction_type ?? "—"}</Badge>
-                </div>
-              ))}
-            </div>
+          <div className="overflow-x-auto rounded-lg border">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Student</TableHead>
+                  <TableHead>Amount</TableHead>
+                  <TableHead>Method</TableHead>
+                  <TableHead>Status</TableHead>
+                  <TableHead>Notes</TableHead>
+                  <TableHead>Date</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {paymentsQuery.isLoading ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                      Loading transactions…
+                    </TableCell>
+                  </TableRow>
+                ) : payments.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                      No transactions found.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  payments.map((payment) => (
+                    <TableRow key={payment.id}>
+                      <TableCell>
+                        <p className="font-medium text-sm">{payment.student?.name ?? "—"}</p>
+                        <p className="text-xs text-muted-foreground">{payment.student?.phone ?? ""}</p>
+                      </TableCell>
+                      <TableCell className="font-medium">৳ {formatMoney(payment.amount)}</TableCell>
+                      <TableCell>
+                        <Badge variant="muted">{methodLabel(payment.method)}</Badge>
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={statusBadgeVariant(payment.payment_status)}>
+                          {payment.payment_status}
+                        </Badge>
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate">
+                        {payment.notes ?? "—"}
+                      </TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {formatDate(payment.paid_at ?? payment.created_at)}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+          {paymentsQuery.data?.meta && (
+            <p className="mt-2 text-xs text-muted-foreground">
+              Showing {payments.length} of {paymentsQuery.data.meta.total} transactions
+            </p>
           )}
         </CardContent>
       </Card>
@@ -323,64 +235,39 @@ export default function AccountantDashboardPage() {
   )
 }
 
-function KpiCard({
+function SummaryCard({
   title,
+  icon,
+  amount,
+  count,
   loading,
-  revenue,
-  expense,
-  net,
+  highlight = false,
 }: {
   title: string
+  icon: React.ReactNode
+  amount: string
+  count: number
   loading: boolean
-  revenue?: string | number
-  expense?: string | number
-  net?: string | number
+  highlight?: boolean
 }) {
-  const netNumber = Number(net ?? 0)
-  const isProfit = Number.isFinite(netNumber) && netNumber >= 0
   return (
-    <Card>
-      <CardHeader className="pb-2">
-        <CardTitle className="text-sm text-muted-foreground">{title}</CardTitle>
+    <Card className={highlight ? "border-violet-200 bg-violet-50/30 dark:bg-violet-950/10" : ""}>
+      <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+        <CardTitle className="text-sm font-medium text-muted-foreground">{title}</CardTitle>
+        {icon}
       </CardHeader>
       <CardContent>
         {loading ? (
           <p className="text-sm text-muted-foreground">Loading…</p>
         ) : (
           <>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Revenue</span>
-              <span className="font-medium text-emerald-600">BDT {formatMoney(revenue)}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Expense</span>
-              <span className="font-medium text-red-600">BDT {formatMoney(expense)}</span>
-            </div>
-            <div className="mt-2 flex items-center justify-between border-t pt-2 text-sm font-semibold">
-              <span>Net</span>
-              <span className={isProfit ? "text-emerald-700" : "text-red-700"}>BDT {formatMoney(net)}</span>
-            </div>
+            <p className={`text-2xl font-bold ${highlight ? "text-violet-700 dark:text-violet-400" : ""}`}>
+              ৳ {formatMoney(amount)}
+            </p>
+            <p className="text-xs text-muted-foreground mt-1">{count} transaction{count !== 1 ? "s" : ""}</p>
           </>
         )}
       </CardContent>
     </Card>
-  )
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border p-2">
-      <p className="text-xs text-muted-foreground">{label}</p>
-      <p className="text-sm font-medium">{value}</p>
-    </div>
-  )
-}
-
-function Row({ label, value }: { label: string; value: number | string }) {
-  return (
-    <div className="flex items-center justify-between rounded-md border p-2">
-      <span>{label}</span>
-      <span className="font-medium">{value}</span>
-    </div>
   )
 }

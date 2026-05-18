@@ -138,17 +138,6 @@ const navData: NavItem[] = [
     url: "/dashboard/accountant",
     icon: BarChart2,
     roles: ["admin", "rektor", "accountant", "superadmin"],
-    items: [
-      { title: "Dashboard", url: "/dashboard/accountant" },
-      { title: "Revenue", url: "/dashboard/accountant/revenue" },
-      { title: "Expenses", url: "/dashboard/accountant/expenses" },
-      { title: "Ledger", url: "/dashboard/accountant/ledger" },
-      { title: "Categories", url: "/dashboard/accountant/categories" },
-      { title: "Balances", url: "/dashboard/accountant/balances" },
-      { title: "Reports", url: "/dashboard/accountant/reports" },
-      { title: "Reconciliation", url: "/dashboard/accountant/reconciliation" },
-      { title: "Periods", url: "/dashboard/accountant/periods" },
-    ],
   },
   {
     title: "Class Rooms",

@@ -3,9 +3,9 @@ import { createApi, fetchBaseQuery } from "@reduxjs/toolkit/query/react";
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from "@reduxjs/toolkit/query";
 
 function resolveApiBaseUrl() {
-  const raw = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8089"
-  const trimmed = raw.replace(/\/+$/, "")
-  return trimmed.replace(/\/api$/i, "")
+  const raw = process.env.NEXT_PUBLIC_API_URL 
+  const trimmed = raw?.replace(/\/+$/, "")
+  return trimmed?.replace(/\/api$/i, "")
 }
 
 function normalizeApiPath(url: string) {

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from "react"
 import { useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
-  AlertCircle, BookCheck, Calendar, CheckCircle2, ChevronRight,
+  AlertCircle, Calendar, CheckCircle2, ChevronRight,
   ClipboardList, Eye, FilePlus2, FileText, Link2, Loader2, Monitor,
   Pencil, Plus, RefreshCw, Search, Star, Trash2, Upload, Video, X,
 } from "lucide-react"
@@ -13,6 +13,7 @@ import toast from "react-hot-toast"
 import { useAuth } from "@/context/AuthContext"
 import api from "@/lib/api"
 import { learningApi } from "@/features/learning/api"
+import financeApi from "@/features/finance/api"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -48,7 +49,16 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-type AssessmentType = "ASSIGNMENT" | "QUIZ" | "EXAM"
+type ListPayload<T> = T[] | { items?: T[]; data?: T[] }
+type LookupOption = { id: string; name: string }
+
+function asList<T>(payload: ListPayload<T> | undefined | null): T[] {
+  if (!payload) return []
+  if (Array.isArray(payload)) return payload
+  return (payload.items ?? payload.data ?? []) as T[]
+}
+
+type AssessmentType = "ASSIGNMENT" | "QUIZ"
 type PublishStatus = "DRAFT" | "PUBLISHED"
 
 type Assessment = {
@@ -94,16 +104,14 @@ type Submission = {
 type CreateForm = {
   title: string
   description: string
-  class_id: string
+  class_id: string   // UI only — for filtering batches, not sent to API
   batch_id: string
   subject_id: string
   assessment_type: AssessmentType
-  total_marks: string
-  passing_marks: string
-  instructions: string
-  deadline: string
-  visibility: string
-  publish_status: PublishStatus
+  marks: string
+  submission_value: string
+  submission_unit: "HOURS" | "DAYS"
+  link: string
 }
 
 const EMPTY_FORM: CreateForm = {
@@ -113,25 +121,21 @@ const EMPTY_FORM: CreateForm = {
   batch_id: "",
   subject_id: "",
   assessment_type: "ASSIGNMENT",
-  total_marks: "100",
-  passing_marks: "40",
-  instructions: "",
-  deadline: "",
-  visibility: "BATCH_ONLY",
-  publish_status: "DRAFT",
+  marks: "",
+  submission_value: "7",
+  submission_unit: "DAYS",
+  link: "",
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function typeIcon(type: AssessmentType) {
   if (type === "QUIZ") return <ClipboardList className="h-4 w-4 text-sky-500" />
-  if (type === "EXAM") return <BookCheck className="h-4 w-4 text-rose-500" />
   return <FileText className="h-4 w-4 text-amber-500" />
 }
 
 function typeLabel(type: AssessmentType) {
   if (type === "QUIZ") return "Quiz"
-  if (type === "EXAM") return "Exam"
   return "Assignment"
 }
 
@@ -302,24 +306,67 @@ export default function AssessmentsPage() {
   })
 
 
+  // ─── Lookup queries (classes / batches / subjects for create form) ───────────
+
+  const classesQuery = useQuery({
+    queryKey: ["assessment", "classes", tenantId],
+    enabled: Boolean(tenantId) && isTeacherOrAdmin,
+    queryFn: () => financeApi.listTenantClasses(String(tenantId), { page: 1, limit: 50 }),
+  })
+
+  const batchesQuery = useQuery({
+    queryKey: ["assessment", "batches", tenantId, form.class_id],
+    enabled: Boolean(tenantId) && isTeacherOrAdmin,
+    queryFn: () =>
+      financeApi.listTenantBatches(String(tenantId), {
+        page: 1,
+        limit: 50,
+        class_id: form.class_id || undefined,
+      }),
+  })
+
+  const subjectsQuery = useQuery({
+    queryKey: ["assessment", "subjects", tenantId],
+    enabled: Boolean(tenantId) && isTeacherOrAdmin,
+    queryFn: async () => {
+      const res = await api.get(`/tenants/${tenantId}/subjects`, { params: { page: 1, limit: 50 } })
+      return res.data
+    },
+  })
+
+  const classOptions = useMemo<LookupOption[]>(() => {
+    return asList<Record<string, unknown>>(classesQuery.data as ListPayload<Record<string, unknown>>)
+      .map(r => ({ id: String(r.id ?? "").trim(), name: String(r.name ?? r.class_name ?? "Unnamed").trim() }))
+      .filter(r => r.id.length > 0)
+  }, [classesQuery.data])
+
+  const batchOptions = useMemo<LookupOption[]>(() => {
+    return asList<Record<string, unknown>>(batchesQuery.data as ListPayload<Record<string, unknown>>)
+      .map(r => ({ id: String(r.id ?? r.batch_id ?? "").trim(), name: String(r.name ?? r.batch_name ?? r.section ?? "Unnamed").trim() }))
+      .filter(r => r.id.length > 0)
+  }, [batchesQuery.data])
+
+  const subjectOptions = useMemo<LookupOption[]>(() => {
+    return asList<Record<string, unknown>>(subjectsQuery.data as ListPayload<Record<string, unknown>>)
+      .map(r => ({ id: String(r.id ?? r.subject_id ?? "").trim(), name: String(r.name ?? r.subject_name ?? "Unnamed").trim() }))
+      .filter(r => r.id.length > 0)
+  }, [subjectsQuery.data])
+
   // ─── Mutations ──────────────────────────────────────────────────────────────
 
   const createMut = useMutation({
     mutationFn: async () => {
       if (!tenantId) throw new Error("Tenant ID missing")
       const payload: Record<string, unknown> = {
-        class_id: form.class_id,
         batch_id: form.batch_id,
         subject_id: form.subject_id,
-        title: form.title,
+        title: form.title || undefined,
         description: form.description,
         assessment_type: form.assessment_type,
-        total_marks: Number(form.total_marks),
-        passing_marks: Number(form.passing_marks),
-        instructions: form.instructions || null,
-        deadline: form.deadline ? new Date(form.deadline).toISOString() : null,
-        visibility: form.visibility,
-        publish_status: form.publish_status,
+        submission_value: Number(form.submission_value),
+        submission_unit: form.submission_unit,
+        ...(form.marks && Number(form.marks) > 0 ? { marks: Number(form.marks) } : {}),
+        ...(form.link.trim() ? { link: form.link.trim() } : {}),
       }
       return learningApi.createAssessment(tenantId, payload)
     },
@@ -534,7 +581,7 @@ export default function AssessmentsPage() {
   const allSubsList: Submission[] = (subsData as any)?.submissions ?? []
 
   const canCreate = useMemo(() =>
-    Boolean(form.title.trim() && form.class_id.trim() && form.batch_id.trim() && form.subject_id.trim() && Number(form.total_marks) > 0),
+    Boolean(form.class_id.trim() && form.batch_id.trim() && form.subject_id.trim() && form.description.trim() && Number(form.submission_value) >= 1),
     [form]
   )
 
@@ -610,7 +657,6 @@ export default function AssessmentsPage() {
           <option value="ALL">All Types</option>
           <option value="ASSIGNMENT">Assignment</option>
           <option value="QUIZ">Quiz</option>
-          <option value="EXAM">Exam</option>
         </select>
         {!isStudent && (
           <select
@@ -824,7 +870,7 @@ export default function AssessmentsPage() {
           <div className="grid gap-4 py-2">
             {/* Type selector */}
             <div className="grid grid-cols-3 gap-2">
-              {(["ASSIGNMENT", "QUIZ", "EXAM"] as AssessmentType[]).map(at => (
+              {(["ASSIGNMENT", "QUIZ"] as AssessmentType[]).map(at => (
                 <button
                   key={at}
                   type="button"
@@ -848,77 +894,95 @@ export default function AssessmentsPage() {
 
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Class ID *</label>
-                <Input placeholder="class-uuid" value={form.class_id} onChange={e => f("class_id", e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Batch ID *</label>
-                <Input placeholder="batch-uuid" value={form.batch_id} onChange={e => f("batch_id", e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Subject ID *</label>
-                <Input placeholder="sub-uuid" value={form.subject_id} onChange={e => f("subject_id", e.target.value)} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Total Marks *</label>
-                <Input type="number" min="1" value={form.total_marks} onChange={e => f("total_marks", e.target.value)} />
-              </div>
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Passing Marks</label>
-                <Input type="number" min="0" value={form.passing_marks} onChange={e => f("passing_marks", e.target.value)} />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-2">
-              <div className="space-y-1.5">
-                <label className="text-xs font-medium">Visibility</label>
+                <label className="text-xs font-medium">Class *</label>
                 <select
-                  value={form.visibility}
-                  onChange={e => f("visibility", e.target.value)}
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={form.class_id}
+                  onChange={e => setForm(p => ({ ...p, class_id: e.target.value, batch_id: "", subject_id: "" }))}
+                  disabled={classesQuery.isLoading}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
-                  <option value="BATCH_ONLY">Batch Only</option>
-                  <option value="CLASS_ALL_BATCHES">All Batches</option>
+                  <option value="">Select class</option>
+                  {classOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Status</label>
+                <label className="text-xs font-medium">Batch *</label>
                 <select
-                  value={form.publish_status}
-                  onChange={e => f("publish_status", e.target.value)}
-                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                  value={form.batch_id}
+                  onChange={e => f("batch_id", e.target.value)}
+                  disabled={batchesQuery.isLoading || !form.class_id}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
-                  <option value="DRAFT">Draft</option>
-                  <option value="PUBLISHED">Published</option>
+                  <option value="">Select batch</option>
+                  {batchOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
+                </select>
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Subject *</label>
+                <select
+                  value={form.subject_id}
+                  onChange={e => f("subject_id", e.target.value)}
+                  disabled={subjectsQuery.isLoading}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
+                >
+                  <option value="">Select subject</option>
+                  {subjectOptions.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
                 </select>
               </div>
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-xs font-medium">Deadline</label>
-              <Input type="datetime-local" value={form.deadline} onChange={e => f("deadline", e.target.value)} />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Instructions</label>
-              <Textarea
-                placeholder="Write instructions for students..."
-                value={form.instructions}
-                onChange={e => f("instructions", e.target.value)}
-                rows={3}
-              />
-            </div>
-
-            <div className="space-y-1.5">
-              <label className="text-sm font-medium">Description</label>
+              <label className="text-sm font-medium">Description *</label>
               <Textarea
                 placeholder="Brief description of this assessment..."
                 value={form.description}
                 onChange={e => f("description", e.target.value)}
                 rows={2}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Submission Window *</label>
+                <Input
+                  type="number"
+                  min="1"
+                  value={form.submission_value}
+                  onChange={e => f("submission_value", e.target.value)}
+                  placeholder="e.g. 7"
+                />
+              </div>
+              <div className="space-y-1.5">
+                <label className="text-xs font-medium">Unit *</label>
+                <select
+                  value={form.submission_unit}
+                  onChange={e => f("submission_unit", e.target.value)}
+                  className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+                >
+                  <option value="DAYS">Days</option>
+                  <option value="HOURS">Hours</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Marks (optional)</label>
+              <Input
+                type="number"
+                min="1"
+                max="10000"
+                placeholder="e.g. 100"
+                value={form.marks}
+                onChange={e => f("marks", e.target.value)}
+              />
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="text-xs font-medium">Answer Link (optional)</label>
+              <Input
+                placeholder="https://docs.google.com/..."
+                value={form.link}
+                onChange={e => f("link", e.target.value)}
               />
             </div>
           </div>
