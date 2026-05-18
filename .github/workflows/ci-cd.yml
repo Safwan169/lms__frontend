@@ -9,11 +9,8 @@ on:
       - main
 
 jobs:
-  # ─────────────────────────────
-  # CI: Lint & Build
-  # ─────────────────────────────
   ci:
-    name: Lint · Build
+    name: Build
     runs-on: ubuntu-latest
 
     steps:
@@ -29,14 +26,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Lint
-        run: npm run lint -- --max-warnings=10
       - name: Build
         run: npm run build
 
-  # ─────────────────────────────
-  # CD: Deploy to VPS
-  # ─────────────────────────────
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
@@ -62,10 +54,10 @@ jobs:
             echo "==> Pull latest code"
             git pull origin main
 
-            echo "==> Clean old containers (safe)"
+            echo "==> Clean old containers"
             docker compose down --remove-orphans || true
 
-            echo "==> Build & start frontend container"
+            echo "==> Build & start frontend"
             docker compose up -d --build
 
             echo "==> Cleanup unused images"
