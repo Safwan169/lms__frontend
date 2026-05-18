@@ -1,4 +1,4 @@
-name: CI/CD Pipeline
+name: Frontend CI/CD Pipeline
 
 on:
   push:
@@ -9,9 +9,9 @@ on:
       - main
 
 jobs:
-  # ─────────────────────────────────────────────
-  # CI — Lint & Build
-  # ─────────────────────────────────────────────
+  # ─────────────────────────────
+  # CI: Lint & Build
+  # ─────────────────────────────
   ci:
     name: Lint · Build
     runs-on: ubuntu-latest
@@ -20,29 +20,29 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Node.js 20
+      - name: Setup Node.js 20
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: "npm"
-          cache-dependency-path: package-lock.json
+          cache: npm
 
       - name: Install dependencies
         run: npm ci
 
       - name: Lint
-        run: npm run lint
+        run: npm run lint --if-present
 
       - name: Build
         run: npm run build
 
-  # ─────────────────────────────────────────────
-  # CD — Deploy to VPS via SSH (main only)
-  # ─────────────────────────────────────────────
+  # ─────────────────────────────
+  # CD: Deploy to VPS
+  # ─────────────────────────────
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
     needs: ci
+
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
@@ -53,21 +53,23 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           port: ${{ secrets.SSH_PORT }}
+
           script: |
             set -e
 
+            echo "==> Go to frontend directory"
             cd ~/cc-lms/cc-lms-nextjs-frontend
 
             echo "==> Pull latest code"
             git pull origin main
 
-            echo "==> Rebuild containers"
-            docker compose build
+            echo "==> Clean old containers (safe)"
+            docker compose down --remove-orphans || true
 
-            echo "==> Restart containers"
-            docker compose up -d
+            echo "==> Build & start frontend container"
+            docker compose up -d --build
 
-            echo "==> Remove unused images"
+            echo "==> Cleanup unused images"
             docker image prune -af
 
-            echo "==> Deployment complete"
+            echo "==> Deployment successful 🚀"
