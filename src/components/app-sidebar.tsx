@@ -134,7 +134,7 @@ const navData: NavItem[] = [
     roles: ["admin", "rektor", "accountant"],
   },
   {
-    title: "Accounting",
+    title: "Accounts",
     url: "/dashboard/accountant",
     icon: BarChart2,
     roles: ["admin", "rektor", "accountant", "superadmin"],

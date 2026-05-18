@@ -149,7 +149,7 @@ export default function AccountingPage() {
           loading={summaryQuery.isLoading}
         />
         <SummaryCard
-          title="bKash"
+          title="MFS"
           icon={<Smartphone className="size-5 text-pink-500" />}
           amount={bkash?.total_amount ?? "0.00"}
           count={bkash?.count ?? 0}
