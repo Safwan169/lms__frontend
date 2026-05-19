@@ -145,12 +145,7 @@ const navData: NavItem[] = [
     icon: School,
     roles: [],
   },
-  {
-    title: "Class Access",
-    url: "/dashboard/class-access",
-    icon: BookOpen,
-    roles: ["student"],
-  },
+ 
   {
     title: "My Class",
     url: "/dashboard/my-class",
