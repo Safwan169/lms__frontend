@@ -278,29 +278,48 @@ export default function StudentsListPage() {
           ? apiPayload
           : []
 
-  const apiRows: Student[] = apiItems.map((item: any) => ({
+  const apiRows: Student[] = apiItems.map((item: any) => {
+    const admission = item.admission ?? {}
+    const admClass = admission.class ?? {}
+    const admBatch = admission.batch ?? {}
+    const profile = item.studentProfile ?? {}
+    const batchLabel = String(admBatch.name ?? admBatch.section ?? "").trim()
+    const batchWithSection =
+      admBatch.name && admBatch.section
+        ? `${admBatch.name} · ${admBatch.section}`
+        : batchLabel
+    const apiStatus = String(item.status ?? (item.is_active === false ? "Inactive" : "Active"))
+    return ({
     id: String(item.id ?? item.user_id ?? ""),
     name: String(item.full_name ?? item.student_name ?? item.name ?? ""),
-    studentId: String(item.student_id ?? item.roll_number ?? ""),
-    classId: String(item.class_id ?? item.class?.id ?? ""),
-    className: String(item.class?.name ?? item.class_name ?? ""),
-    batchId: String(item.batch_id ?? item.batch?.id ?? ""),
-    batchName: String(item.batch?.name ?? item.batch_name ?? ""),
+    studentId: String(item.student_id ?? profile.student_id ?? item.machine_id ?? item.roll_number ?? ""),
+    classId: String(admClass.id ?? item.class_id ?? item.class?.id ?? ""),
+    className: String(admClass.name ?? item.class?.name ?? item.class_name ?? ""),
+    batchId: String(admBatch.id ?? item.batch_id ?? item.batch?.id ?? ""),
+    batchName: String(batchWithSection || item.batch?.name || item.batch_name || ""),
     session: String(item.session ?? ""),
-    status: (item.status ?? "Active") as Student["status"],
+    status: apiStatus as Student["status"],
     phone: String(item.phone ?? item.student_phone ?? ""),
-    parentPhone: String(item.parent_phone ?? ""),
+    parentPhone: String(
+      profile.guardian_phone ??
+      profile.parent_phone ??
+      profile.father_phone ??
+      profile.mother_phone ??
+      item.guardian_phone ??
+      item.parent_phone ??
+      ""
+    ),
     email: String(item.email ?? item.student_email ?? ""),
-    gender: (item.gender ?? "Male") as Student["gender"],
-    dob: String(item.dob ?? ""),
-    address: String(item.address ?? ""),
-    fatherName: String(item.father_name ?? ""),
-    motherName: String(item.mother_name ?? ""),
-    enrolledOn: String(item.admitted_at ?? item.created_at ?? ""),
+    gender: (profile.gender ?? item.gender ?? "Male") as Student["gender"],
+    dob: String(profile.date_of_birth ?? item.dob ?? ""),
+    address: String(profile.present_address ?? profile.permanent_address ?? item.address ?? ""),
+    fatherName: String(profile.father_name ?? item.father_name ?? ""),
+    motherName: String(profile.mother_name ?? item.mother_name ?? ""),
+    enrolledOn: String(admission.enrolled_at ?? item.admitted_at ?? item.created_at ?? ""),
     enrolledBy: String(item.enrolled_by ?? "System"),
-    portalBlocked: Boolean(item.portal_blocked ?? false),
+    portalBlocked: Boolean(item.portal_blocked ?? item.is_active === false),
     loginIdentifier: String(item.phone ?? item.student_phone ?? item.email ?? item.student_email ?? ""),
-    photoUrl: item.photo ?? item.photo_url ?? undefined,
+    photoUrl: item.avatar_url ?? item.photo ?? item.photo_url ?? undefined,
     admissionFee: {
       amount: Number(item.payment?.amount ?? 0),
       method: String(item.payment?.method ?? "-"),
@@ -312,7 +331,8 @@ export default function StudentsListPage() {
     statusHistory: [],
     promotionHistory: [],
     documents: [],
-  }))
+    })
+  })
 
   const useApiData = !(!tenantId || tenantId === "demo-tenant") && listQuery.data != null
 
