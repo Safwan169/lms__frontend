@@ -157,6 +157,8 @@ export interface PlannerEntry {
   is_overridden: boolean
   is_now: boolean
   notes: string | null
+  /** True when a content attachment (teaching material) is linked to this class. */
+  has_material?: boolean
 }
 
 export interface TeachingPlannerResult {
@@ -222,6 +224,45 @@ export function useStudentTodaysClasses() {
     queryKey: ["student-dashboard", "todays-classes", tenantId],
     queryFn: () => fetchJson(`/tenants/${tenantId}/student-dashboard/todays-classes`),
     enabled: !!tenantId,
+  })
+}
+
+export interface StudentAssessmentDetail {
+  id: string
+  title: string | null
+  description: string
+  assessment_type: string
+  batch_id: string
+  subject_id: string
+  subject_name: string
+  file: { id: string; url: string; mime_type: string | null } | null
+  link: string | null
+  marks: number | null
+  publish_status: string
+  published_at: string | null
+  deadline_at: string | null
+  is_submission_open: boolean
+  my_submission: {
+    submitted: boolean
+    submission: {
+      id: string
+      submitted_at: string
+      first_submitted_at: string
+      submission_count: number
+      is_late: boolean
+      deadline_at: string | null
+    } | null
+    obtained_marks: number | null
+    result_status: "NOT_SUBMITTED" | "NOT_MARKED" | "MARKED"
+  }
+}
+
+export function useStudentAssessmentDetail(assessmentId: string | null) {
+  const tenantId = useTenantId()
+  return useQuery<StudentAssessmentDetail>({
+    queryKey: ["student-dashboard", "assessment-detail", tenantId, assessmentId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/student/assessments/${assessmentId}`),
+    enabled: !!tenantId && !!assessmentId,
   })
 }
 

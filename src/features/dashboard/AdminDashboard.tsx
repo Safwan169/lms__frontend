@@ -67,14 +67,16 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
           ? `${s.active_students.delta_pct > 0 ? "+" : ""}${s.active_students.delta_pct}%`
           : null,
       icon: Users,
-      tone: "text-indigo-600 bg-indigo-50",
+      tone: "text-indigo-600 bg-indigo-100",
+      cornerTone: "bg-indigo-500",
     },
     {
       label: "Active Teachers",
       value: s?.active_teachers.total != null ? String(s.active_teachers.total) : "—",
       hint: s?.active_teachers.on_leave_today != null ? `${s.active_teachers.on_leave_today} on leave today` : "No data",
       icon: GraduationCap,
-      tone: "text-sky-600 bg-sky-50",
+      tone: "text-sky-600 bg-sky-100",
+      cornerTone: "bg-sky-500",
     },
     {
       label: "Pending Admissions",
@@ -82,7 +84,8 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
       hint:
         s?.pending_admissions.awaiting_review != null ? `${s.pending_admissions.awaiting_review} awaiting review` : "No data",
       icon: UserPlus,
-      tone: "text-amber-600 bg-amber-50",
+      tone: "text-amber-600 bg-amber-100",
+      cornerTone: "bg-amber-500",
     },
     {
       label: "Today's Classes",
@@ -92,7 +95,8 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
           ? `${s.todays_classes.ongoing} ongoing · ${s.todays_classes.upcoming} upcoming`
           : "No data",
       icon: CalendarDays,
-      tone: "text-violet-600 bg-violet-50",
+      tone: "text-violet-600 bg-violet-100",
+      cornerTone: "bg-violet-500",
     },
     {
       label: "Pending Dues",
@@ -102,7 +106,8 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
           ? `${s.pending_dues.overdue_invoice_count} invoices overdue`
           : "No data",
       icon: Wallet,
-      tone: "text-rose-600 bg-rose-50",
+      tone: "text-rose-600 bg-rose-100",
+      cornerTone: "bg-rose-500",
     },
     {
       label: "Active Live Sessions",
@@ -113,7 +118,8 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
           : "No data",
       badge: s && s.active_live_sessions.count > 0 ? "Now" : null,
       icon: Video,
-      tone: "text-emerald-600 bg-emerald-50",
+      tone: "text-emerald-600 bg-emerald-100",
+      cornerTone: "bg-emerald-500",
     },
   ]
 
@@ -155,8 +161,9 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
           {kpis.map((k) => {
             const Icon = k.icon
             return (
-              <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-2">
+              <div key={k.label} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <span className={`pointer-events-none absolute -bottom-2.5 -right-2.5 h-[70px] w-[70px] rounded-full opacity-10 ${k.cornerTone}`} />
+                <div className="relative flex items-start justify-between gap-2">
                   <span className={`rounded-xl p-2 ${k.tone}`}>
                     <Icon className="h-5 w-5" />
                   </span>
@@ -167,7 +174,7 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
                     </span>
                   )}
                 </div>
-                <div className="mt-3">
+                <div className="relative mt-3">
                   <div className="text-3xl font-semibold text-slate-900 tabular-nums">
                     {statsQ.isLoading ? "…" : k.value}
                   </div>
@@ -211,7 +218,7 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
             subtitle={ops ? formatDateLong(ops.date) : undefined}
             action={
               <button className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
-                Open schedule <ArrowRight className="h-3.5 w-3.5" />
+                <Link href="/dashboard/timetable">View full schedule</Link> <ArrowRight className="h-3.5 w-3.5" />
               </button>
             }
           >
@@ -272,7 +279,7 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
             subtitle="Current cycle"
             action={
               <button className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
-                Open payments <ArrowRight className="h-3.5 w-3.5" />
+                <Link href="/dashboard/payments">View details</Link> <ArrowRight className="h-3.5 w-3.5" />
               </button>
             }
           >
@@ -318,9 +325,9 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
               : undefined
           }
           action={
-            <a href="/dashboard/admissions" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
+            <Link href="/dashboard/admissions" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
               View all <ArrowRight className="h-3.5 w-3.5" />
-            </a>
+            </Link>
           }
         >
           <EmptyState
@@ -372,9 +379,9 @@ export default function AdminDashboard({ user }: { user: AnyUser }) {
             iconTone="bg-sky-50 text-sky-600"
             title="Communication & notice"
             action={
-              <a href="/dashboard/notices" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
+              <Link href="/dashboard/notices" className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
                 Open notices <ArrowRight className="h-3.5 w-3.5" />
-              </a>
+              </Link>
             }
           >
             <EmptyState icon={<BellRing className="h-5 w-5" />} title="Open the Notices module" detail="Recent announcements and delivery health live there." />
