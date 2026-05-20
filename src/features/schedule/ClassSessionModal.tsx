@@ -68,6 +68,12 @@ type ClassSessionModalProps = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+function formatFileSize(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function stripOverrideSuffix(id: string): string {
   const idx = id.indexOf("__override__")
   return idx === -1 ? id : id.slice(0, idx)
@@ -221,7 +227,7 @@ export default function ClassSessionModal({
     onError: () => toast.error("Could not save"),
   })
 
-  const uploadingRef = useRef(false)
+  const [isUploading, setIsUploading] = useState(false)
 
   // ── Open uploaded PDF/file ────────────────────────────────────────────────
   // The session-materials endpoint returns only `file_id` (no URL). Fetch the
@@ -259,16 +265,18 @@ export default function ClassSessionModal({
     if (attachmentMode === "FILE") {
       if (!attachmentFile) return toast.error("Choose a file")
       try {
-        uploadingRef.current = true
+        setIsUploading(true)
         const res = await learningApi.uploadMedia(tenantId, attachmentFile)
         fileId = (res?.data as any)?.id
         if (!fileId) {
-          toast.error("Upload failed")
-          uploadingRef.current = false
+          toast.error("Upload failed — please try again")
           return
         }
+      } catch {
+        toast.error("File upload failed — please try again")
+        return
       } finally {
-        uploadingRef.current = false
+        setIsUploading(false)
       }
     } else {
       if (!attachmentExternalUrl.trim()) return toast.error("Link required")
@@ -276,6 +284,7 @@ export default function ClassSessionModal({
 
     const payload: Parameters<typeof learningApi.upsertSessionMaterials>[3] = {
       title: attachmentTitle.trim(),
+      note: attachmentNote.trim() || undefined,
       class_type: classTypeDraft,
       content:
         attachmentMode === "FILE"
@@ -340,7 +349,7 @@ export default function ClassSessionModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+      <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto space-y-4">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <BookOpen className="h-5 w-5 text-slate-600" />
@@ -423,16 +432,24 @@ export default function ClassSessionModal({
             ) : null}
           </section>
         ) : liveLink ? (
-          <section className="rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
-            <p className="text-sm font-semibold text-indigo-900">Live class link</p>
+          <section className="flex items-center justify-between gap-3 rounded-2xl border border-indigo-200 bg-indigo-50/60 p-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-indigo-100">
+                <Video className="h-4 w-4 text-indigo-700" />
+              </div>
+              <div className="min-w-0">
+                <p className="text-sm font-semibold text-indigo-900">Live class link</p>
+                <p className="truncate text-xs text-indigo-700/70">{liveLink}</p>
+              </div>
+            </div>
             <a
               href={liveLink}
               target="_blank"
               rel="noopener noreferrer"
-              className="mt-2 inline-flex items-center gap-2 text-sm font-medium text-indigo-700 underline"
+              className="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700 transition-colors"
             >
-              <Video className="h-4 w-4" />
-              {liveLink}
+              <Video className="h-3.5 w-3.5" />
+              Join class
             </a>
           </section>
         ) : null}
@@ -481,26 +498,41 @@ export default function ClassSessionModal({
               <Skeleton className="h-9 w-full" />
             </div>
           ) : contents.length === 0 ? (
-            <p className="text-sm italic text-slate-400">No attachments uploaded.</p>
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-6 text-center">
+              <Paperclip className="h-5 w-5 text-slate-300" />
+              <p className="mt-1.5 text-sm text-slate-500">No attachments yet</p>
+              {isStudent ? (
+                <p className="text-xs text-slate-400">Your teacher hasn't shared any materials</p>
+              ) : null}
+            </div>
           ) : (
             <ul className="space-y-2">
               {contents.map((c) => (
                 <li
                   key={c.id}
-                  className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3"
                 >
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-sm font-medium text-slate-900">{c.title}</p>
-                    {c.description ? (
-                      <p className="mt-0.5 line-clamp-2 text-xs text-slate-500">{c.description}</p>
-                    ) : null}
-                    <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                      <Badge variant="muted" className="text-xs">
-                        {c.content_type}
-                      </Badge>
-                      {c.publish_status === "DRAFT" ? (
-                        <Badge className="bg-amber-100 text-amber-800">Draft</Badge>
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100">
+                      {c.content_type === "VIDEO_LINK" ? (
+                        <Video className="h-4 w-4 text-slate-500" />
+                      ) : (
+                        <FileText className="h-4 w-4 text-slate-500" />
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className="truncate text-sm font-medium text-slate-900">{c.title}</p>
+                      {c.description ? (
+                        <p className="mt-0.5 line-clamp-1 text-xs text-slate-500">{c.description}</p>
                       ) : null}
+                      <div className="mt-1 flex flex-wrap items-center gap-1.5">
+                        <Badge variant="muted" className="text-xs">
+                          {c.content_type === "VIDEO_LINK" ? "VIDEO" : c.content_type}
+                        </Badge>
+                        {c.publish_status === "DRAFT" ? (
+                          <Badge className="bg-amber-100 text-amber-800 text-xs">Draft</Badge>
+                        ) : null}
+                      </div>
                     </div>
                   </div>
                   {c.external_url ? (
@@ -508,7 +540,7 @@ export default function ClassSessionModal({
                       href={c.external_url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
                     >
                       <ExternalLink className="h-3 w-3" />
                       Open
@@ -518,7 +550,7 @@ export default function ClassSessionModal({
                       type="button"
                       onClick={() => openContentFile(c.id)}
                       disabled={openingFileId === c.id}
-                      className="inline-flex items-center gap-1 rounded-lg border border-slate-200 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60"
+                      className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-60 transition-colors"
                     >
                       {openingFileId === c.id ? (
                         <Loader2 className="h-3 w-3 animate-spin" />
@@ -535,67 +567,118 @@ export default function ClassSessionModal({
 
           {/* Inline add-attachment form */}
           {isTeacher && addAttachmentOpen ? (
-            <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-3">
+            <div className="space-y-3 rounded-xl border border-dashed border-slate-300 bg-slate-50 p-4">
+              {/* Mode toggle */}
               <div className="flex gap-2">
                 {(["FILE", "LINK"] as const).map((m) => (
                   <button
                     key={m}
                     type="button"
+                    disabled={isUploading || upsertMut.isPending}
                     onClick={() => setAttachmentMode(m)}
                     className={cn(
-                      "rounded-lg border px-3 py-1 text-xs font-medium transition",
+                      "rounded-lg border px-3 py-1.5 text-xs font-medium transition",
                       attachmentMode === m
                         ? "border-slate-900 bg-slate-900 text-white"
-                        : "border-slate-200 bg-white text-slate-700"
+                        : "border-slate-200 bg-white text-slate-700 hover:border-slate-300",
+                      (isUploading || upsertMut.isPending) && "pointer-events-none opacity-60"
                     )}
                   >
                     {m === "FILE" ? "PDF / file" : "Video / external link"}
                   </button>
                 ))}
               </div>
+
               <Input
                 placeholder="Attachment title (e.g. Chapter 3 PDF)"
                 value={attachmentTitle}
+                disabled={isUploading || upsertMut.isPending}
                 onChange={(e) => setAttachmentTitle(e.target.value)}
               />
               <Textarea
                 placeholder="Optional note for students"
                 rows={2}
                 value={attachmentNote}
+                disabled={isUploading || upsertMut.isPending}
                 onChange={(e) => setAttachmentNote(e.target.value)}
               />
+
               {attachmentMode === "FILE" ? (
-                <div className="flex items-center gap-2">
+                <div className="space-y-2">
                   <input
                     ref={fileInputRef}
                     type="file"
+                    accept=".pdf,.doc,.docx,.ppt,.pptx,.xls,.xlsx,.png,.jpg,.jpeg"
                     className="hidden"
                     onChange={(e) => setAttachmentFile(e.target.files?.[0] ?? null)}
                   />
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => fileInputRef.current?.click()}
-                  >
-                    <Upload className="mr-1 h-3.5 w-3.5" />
-                    {attachmentFile ? "Change file" : "Choose file"}
-                  </Button>
                   {attachmentFile ? (
-                    <span className="truncate text-xs text-slate-600">{attachmentFile.name}</span>
+                    <div className="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-3 py-2">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <FileText className="h-4 w-4 shrink-0 text-slate-500" />
+                        <div className="min-w-0">
+                          <p className="truncate text-xs font-medium text-slate-800">{attachmentFile.name}</p>
+                          <p className="text-xs text-slate-400">{formatFileSize(attachmentFile.size)}</p>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={isUploading || upsertMut.isPending}
+                        onClick={() => {
+                          setAttachmentFile(null)
+                          if (fileInputRef.current) fileInputRef.current.value = ""
+                        }}
+                        className="shrink-0 rounded p-0.5 text-slate-400 hover:text-slate-600 disabled:opacity-40"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={isUploading || upsertMut.isPending}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="flex w-full items-center justify-center gap-2 rounded-lg border-2 border-dashed border-slate-200 bg-white py-4 text-sm text-slate-500 transition hover:border-slate-400 hover:text-slate-700 disabled:opacity-60"
+                    >
+                      <Upload className="h-4 w-4" />
+                      Click to choose a file
+                    </button>
+                  )}
+                  {attachmentFile ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="sm"
+                      disabled={isUploading || upsertMut.isPending}
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-xs"
+                    >
+                      Change file
+                    </Button>
                   ) : null}
                 </div>
               ) : (
                 <Input
                   placeholder="https://youtu.be/… or https://drive.google.com/…"
                   value={attachmentExternalUrl}
+                  disabled={isUploading || upsertMut.isPending}
                   onChange={(e) => setAttachmentExternalUrl(e.target.value)}
                 />
               )}
+
+              {/* Upload progress feedback */}
+              {(isUploading || upsertMut.isPending) ? (
+                <div className="flex items-center gap-2 rounded-lg bg-slate-100 px-3 py-2 text-xs text-slate-600">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-500" />
+                  {isUploading ? "Uploading file… please wait" : "Saving attachment…"}
+                </div>
+              ) : null}
+
               <div className="flex justify-end gap-2">
                 <Button
                   variant="ghost"
                   size="sm"
+                  disabled={isUploading || upsertMut.isPending}
                   onClick={() => {
                     setAddAttachmentOpen(false)
                     setAttachmentFile(null)
@@ -606,11 +689,17 @@ export default function ClassSessionModal({
                 >
                   Cancel
                 </Button>
-                <Button size="sm" onClick={handleUploadAttachment} disabled={upsertMut.isPending}>
-                  {upsertMut.isPending ? (
+                <Button
+                  size="sm"
+                  onClick={handleUploadAttachment}
+                  disabled={isUploading || upsertMut.isPending}
+                >
+                  {isUploading || upsertMut.isPending ? (
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  ) : null}
-                  Upload
+                  ) : (
+                    <Upload className="mr-2 h-4 w-4" />
+                  )}
+                  {isUploading ? "Uploading…" : upsertMut.isPending ? "Saving…" : "Upload"}
                 </Button>
               </div>
             </div>
@@ -640,49 +729,51 @@ export default function ClassSessionModal({
           {loading ? (
             <Skeleton className="h-12 w-full" />
           ) : assessments.length === 0 ? (
-            <p className="text-sm italic text-slate-400">
-              No assessment linked to this class yet.
-              {isStudent ? " Check back later." : ""}
-            </p>
+            <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-200 bg-slate-50/50 py-6 text-center">
+              <ClipboardList className="h-5 w-5 text-slate-300" />
+              <p className="mt-1.5 text-sm text-slate-500">No assessment linked yet</p>
+              {isStudent ? (
+                <p className="text-xs text-slate-400">Check back later</p>
+              ) : null}
+            </div>
           ) : (
             <ul className="space-y-2">
               {assessments.map((a) => (
                 <li
                   key={a.id}
-                  className="flex items-start justify-between gap-3 rounded-xl border border-slate-200 bg-white p-3"
+                  className="flex items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-3.5 py-3"
                 >
-                  <button
-                    type="button"
-                    onClick={() => handleAssessmentClick(a.id)}
-                    className="min-w-0 flex-1 text-left"
-                  >
-                    <p className="truncate text-sm font-semibold text-slate-900 group-hover:underline">
-                      {a.title}
-                    </p>
-                    <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-slate-600">
-                      <Badge variant="muted">{a.assessment_type}</Badge>
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium text-slate-900">{a.title}</p>
+                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-slate-500">
+                      <span>{a.assessment_type}</span>
                       <span className="inline-flex items-center gap-1">
                         <CalendarDays className="h-3 w-3" />
                         Due {formatDateTimeShort(a.deadline_at)}
                       </span>
-                      {typeof a.marks === "number" ? (
-                        <span>{a.marks} marks</span>
-                      ) : null}
-                      {a.publish_status === "DRAFT" ? (
-                        <Badge className="bg-amber-100 text-amber-800">Draft</Badge>
-                      ) : (
-                        <Badge className="bg-emerald-100 text-emerald-800">Published</Badge>
-                      )}
+                      {typeof a.marks === "number" ? <span>{a.marks} marks</span> : null}
                     </div>
-                  </button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleAssessmentClick(a.id)}
-                  >
-                    {isStudent ? "Open & submit" : "Open"}
-                    <ExternalLink className="ml-1 h-3 w-3" />
-                  </Button>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1.5">
+                    {a.link ? (
+                      <a
+                        href={a.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                        Paper
+                      </a>
+                    ) : null}
+                    <button
+                      type="button"
+                      onClick={() => handleAssessmentClick(a.id)}
+                      className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-700 transition-colors"
+                    >
+                      {isStudent ? "Submit" : "Open"}
+                    </button>
+                  </div>
                 </li>
               ))}
             </ul>

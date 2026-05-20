@@ -81,6 +81,8 @@ type Assessment = {
   submission_count?: number
   teacher?: { id: string; name: string } | null
   created_at: string
+  link?: string
+  file?: { id: string; url: string; mime_type?: string } | null
   // student-only fields (surfaced by the student listing endpoint)
   my_submitted?: boolean
   my_is_late?: boolean
@@ -112,6 +114,7 @@ type CreateForm = {
   submission_value: string
   submission_unit: "HOURS" | "DAYS"
   link: string
+  file_id: string  // UUID returned after upload
 }
 
 const EMPTY_FORM: CreateForm = {
@@ -125,6 +128,7 @@ const EMPTY_FORM: CreateForm = {
   submission_value: "7",
   submission_unit: "DAYS",
   link: "",
+  file_id: "",
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -200,6 +204,10 @@ export default function AssessmentsPage() {
 
   // ── Student: My Mark Dialog ──
   const [markTarget, setMarkTarget] = useState<Assessment | null>(null)
+
+  // ── Create: file upload ──
+  const [createUploading, setCreateUploading] = useState(false)
+  const [createUploadedMeta, setCreateUploadedMeta] = useState<{ id: string; url: string; name: string } | null>(null)
 
   // ── Delete ──
   const [deleteTarget, setDeleteTarget] = useState<Assessment | null>(null)
@@ -366,17 +374,22 @@ export default function AssessmentsPage() {
         submission_value: Number(form.submission_value),
         submission_unit: form.submission_unit,
         ...(form.marks && Number(form.marks) > 0 ? { marks: Number(form.marks) } : {}),
+        ...(form.file_id.trim() ? { file_id: form.file_id.trim() } : {}),
         ...(form.link.trim() ? { link: form.link.trim() } : {}),
       }
       return learningApi.createAssessment(tenantId, payload)
     },
     onSuccess: () => {
-      toast.success("Assessment created")
+      toast.success("Assessment created successfully")
       qc.invalidateQueries({ queryKey: listKey })
       setCreateOpen(false)
       setForm(EMPTY_FORM)
+      setCreateUploadedMeta(null)
     },
-    onError: () => toast.error("Failed to create"),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message ?? err?.message ?? "Failed to create assessment"
+      toast.error(typeof msg === "string" ? msg : Array.isArray(msg) ? msg[0] : "Failed to create assessment")
+    },
   })
 
   const deleteMut = useMutation({
@@ -492,6 +505,29 @@ export default function AssessmentsPage() {
   // URL (not just the file_id) at submit-time.
   const [uploadedFileMeta, setUploadedFileMeta] = useState<{ id: string; url: string; name: string } | null>(null)
 
+  // File upload for create assessment (teacher attaches reference material)
+  const handleCreateUploadFile = async (file: File) => {
+    if (!tenantId) return
+    setCreateUploading(true)
+    try {
+      const res = await learningApi.uploadMedia(tenantId, file)
+      const data = (res.data as any) ?? {}
+      const fileId = String(data?.id ?? "")
+      if (!fileId) throw new Error("Upload returned no file id")
+      f("file_id", fileId)
+      setCreateUploadedMeta({
+        id: fileId,
+        url: String(data?.url ?? data?.secure_url ?? ""),
+        name: String(data?.original_name ?? data?.file_name ?? file.name ?? ""),
+      })
+      toast.success("File uploaded")
+    } catch {
+      toast.error("File upload failed")
+    } finally {
+      setCreateUploading(false)
+    }
+  }
+
   // File upload for student submit
   const handleUploadFile = async (file: File) => {
     if (!tenantId) return
@@ -525,26 +561,18 @@ export default function AssessmentsPage() {
   // view dialog, submit dialog and mark dialog all read the right values.
   const normalizeAssessment = (raw: any): Assessment => ({
     ...raw,
-    total_marks:
-      raw?.total_marks ??
-      raw?.marks ??
-      0,
-    passing_marks:
-      raw?.passing_marks ??
-      raw?.pass_marks ??
-      0,
-    deadline:
-      raw?.deadline ??
-      raw?.deadline_at ??
-      undefined,
-    submission_count:
-      raw?.submission_count ??
-      raw?.total_submissions ??
-      0,
+    total_marks: raw?.total_marks ?? raw?.marks ?? 0,
+    passing_marks: raw?.passing_marks ?? raw?.pass_marks ?? 0,
+    deadline: raw?.deadline ?? raw?.deadline_at ?? undefined,
+    submission_count: raw?.submission_count ?? raw?.total_submissions ?? 0,
     class_id: raw?.class_id ?? "",
     class_name: raw?.class_name ?? undefined,
     batch_id: raw?.batch_id ?? "",
     batch_name: raw?.batch_name ?? undefined,
+    subject_id: raw?.subject_id ?? "",
+    subject_name: raw?.subject_name ?? undefined,
+    link: raw?.link ?? undefined,
+    file: raw?.file ?? null,
     my_submitted: raw?.my_submission?.submitted,
     my_is_late: raw?.my_submission?.is_late,
     my_obtained_marks: raw?.my_submission?.obtained_marks ?? null,
@@ -580,8 +608,17 @@ export default function AssessmentsPage() {
   }, [focusId, allItems, isStudent, isTeacherOrAdmin])
   const allSubsList: Submission[] = (subsData as any)?.submissions ?? []
 
+  const hasAttachment = Boolean(form.file_id.trim() || form.link.trim())
+
   const canCreate = useMemo(() =>
-    Boolean(form.class_id.trim() && form.batch_id.trim() && form.subject_id.trim() && form.description.trim() && Number(form.submission_value) >= 1),
+    Boolean(
+      form.class_id.trim() &&
+      form.batch_id.trim() &&
+      form.subject_id.trim() &&
+      form.description.trim() &&
+      Number(form.submission_value) >= 1 &&
+      (form.file_id.trim() || form.link.trim())
+    ),
     [form]
   )
 
@@ -703,12 +740,12 @@ export default function AssessmentsPage() {
             <div className="overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow className="hover:bg-transparent">
-                    <TableHead>Title</TableHead>
-                    <TableHead>Type</TableHead>
-                    <TableHead>Class / Batch</TableHead>
+                  <TableRow className="hover:bg-transparent bg-muted/30">
+                    <TableHead className="w-[260px]">Assessment</TableHead>
+                    <TableHead>Batch & Subject</TableHead>
                     <TableHead>Marks</TableHead>
                     <TableHead>Deadline</TableHead>
+                    <TableHead>Attachments</TableHead>
                     {isTeacherOrAdmin && <TableHead className="text-center">Submissions</TableHead>}
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Actions</TableHead>
@@ -716,95 +753,130 @@ export default function AssessmentsPage() {
                 </TableHeader>
                 <TableBody>
                   {allItems.map((item) => (
-                    <TableRow key={item.id}>
+                    <TableRow key={item.id} className="group">
+                      {/* Assessment title + type */}
                       <TableCell>
-                        <div className="flex items-center gap-2">
-                          {typeIcon(item.assessment_type)}
-                          <span className="font-medium text-sm max-w-40 truncate">{item.title}</span>
+                        <div className="flex items-start gap-2.5">
+                          <div className={`mt-0.5 shrink-0 rounded-md p-1.5 ${item.assessment_type === "QUIZ" ? "bg-sky-100 dark:bg-sky-900/40" : "bg-amber-100 dark:bg-amber-900/40"}`}>
+                            {typeIcon(item.assessment_type)}
+                          </div>
+                          <div className="min-w-0">
+                            <p className="font-medium text-sm leading-tight truncate max-w-[200px]">{item.title || <span className="text-muted-foreground italic">Untitled</span>}</p>
+                            <p className="text-[11px] text-muted-foreground mt-0.5 truncate max-w-[200px]">{item.description || "—"}</p>
+                          </div>
                         </div>
                       </TableCell>
+
+                      {/* Batch + Subject */}
                       <TableCell>
-                        <Badge variant="outline" className="text-xs gap-1">
-                          {typeIcon(item.assessment_type)}
-                          {typeLabel(item.assessment_type)}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="text-sm">
-                          {item.class_name || item.batch_name || item.subject_name ? (
-                            <>
-                              {item.class_name ? (
-                                <span className="font-medium">{item.class_name}</span>
-                              ) : null}
-                              {item.batch_name ? (
-                                <span className="text-muted-foreground">
-                                  {item.class_name ? " / " : ""}
-                                  {item.batch_name}
-                                </span>
-                              ) : null}
-                              {!item.class_name && !item.batch_name && item.subject_name ? (
-                                <span className="font-medium">{item.subject_name}</span>
-                              ) : null}
-                            </>
-                          ) : (
+                        <div className="flex flex-col gap-0.5 text-xs">
+                          {item.batch_name ? (
+                            <span className="inline-flex items-center gap-1 font-medium text-foreground">
+                              <span className="h-1.5 w-1.5 rounded-full bg-primary shrink-0" />
+                              {item.batch_name}
+                            </span>
+                          ) : null}
+                          {item.subject_name ? (
+                            <span className="text-muted-foreground pl-2.5">{item.subject_name}</span>
+                          ) : null}
+                          {!item.batch_name && !item.subject_name && item.class_name ? (
+                            <span className="font-medium">{item.class_name}</span>
+                          ) : null}
+                          {!item.batch_name && !item.subject_name && !item.class_name ? (
                             <span className="text-muted-foreground">—</span>
-                          )}
+                          ) : null}
                         </div>
                       </TableCell>
+
+                      {/* Marks */}
                       <TableCell>
                         {isStudent ? (
                           <div className="flex flex-col gap-0.5">
                             <span className="text-sm font-mono">
-                              {item.my_result_status === "MARKED"
-                                ? (
-                                  <>
-                                    <span className="font-semibold text-primary">{item.my_obtained_marks}</span>
-                                    <span className="text-muted-foreground"> / {item.total_marks}</span>
-                                  </>
-                                )
-                                : (
-                                  <span className="text-muted-foreground">— / {item.total_marks || "—"}</span>
-                                )
-                              }
+                              {item.my_result_status === "MARKED" ? (
+                                <>
+                                  <span className="font-semibold text-primary">{item.my_obtained_marks}</span>
+                                  <span className="text-muted-foreground"> / {item.total_marks}</span>
+                                </>
+                              ) : (
+                                <span className="text-muted-foreground">— / {item.total_marks || "—"}</span>
+                              )}
                             </span>
                             {item.my_result_status === "MARKED" ? (
                               <Badge className="bg-emerald-100 text-emerald-700 border-emerald-200 text-[10px] w-fit">Marked</Badge>
                             ) : item.my_result_status === "NOT_MARKED" ? (
                               <Badge className="bg-amber-100 text-amber-700 border-amber-200 text-[10px] w-fit">Submitted</Badge>
                             ) : (
-                              <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] w-fit">Not submitted</Badge>
+                              <Badge className="bg-slate-100 text-slate-600 border-slate-200 text-[10px] w-fit">Pending</Badge>
                             )}
                           </div>
                         ) : (
-                          <span className="text-sm font-mono">
-                            {item.total_marks || "—"}
-                            {item.passing_marks ? (
-                              <span className="text-muted-foreground text-xs"> / pass {item.passing_marks}</span>
-                            ) : null}
-                          </span>
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-sm font-semibold font-mono text-foreground">
+                              {item.total_marks > 0 ? item.total_marks : "—"}
+                            </span>
+                            {item.total_marks > 0 && <span className="text-[11px] text-muted-foreground">total marks</span>}
+                          </div>
                         )}
                       </TableCell>
+
+                      {/* Deadline */}
                       <TableCell>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          {item.deadline
-                            ? <><Calendar className="h-3 w-3" />{formatDate(item.deadline)}</>
-                            : "—"
-                          }
-                        </span>
+                        {item.deadline ? (
+                          <div className="flex flex-col gap-0.5">
+                            <span className="text-xs font-medium flex items-center gap-1">
+                              <Calendar className="h-3 w-3 text-muted-foreground shrink-0" />
+                              {formatDate(item.deadline)}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-muted-foreground text-xs">—</span>
+                        )}
                       </TableCell>
+
+                      {/* Attachments */}
+                      <TableCell>
+                        <div className="flex items-center gap-1.5">
+                          {item.file?.url ? (
+                            <a href={item.file.url} target="_blank" rel="noopener noreferrer" title="Open attached file">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-violet-100 dark:bg-violet-900/30 text-violet-700 dark:text-violet-300 px-1.5 py-0.5 text-[10px] font-medium hover:bg-violet-200 transition-colors">
+                                <FileText className="h-3 w-3" />
+                                File
+                              </span>
+                            </a>
+                          ) : null}
+                          {item.link ? (
+                            <a href={item.link} target="_blank" rel="noopener noreferrer" title="Open reference link">
+                              <span className="inline-flex items-center gap-1 rounded-md bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 px-1.5 py-0.5 text-[10px] font-medium hover:bg-blue-200 transition-colors">
+                                <Link2 className="h-3 w-3" />
+                                Link
+                              </span>
+                            </a>
+                          ) : null}
+                          {!item.file?.url && !item.link && <span className="text-muted-foreground text-xs">—</span>}
+                        </div>
+                      </TableCell>
+
+                      {/* Submission count */}
                       {isTeacherOrAdmin && (
                         <TableCell className="text-center">
-                          <Badge variant="outline" className="text-xs">{item.submission_count ?? 0}</Badge>
+                          <span className={`inline-flex items-center justify-center rounded-full text-xs font-semibold min-w-[1.5rem] h-6 px-2 ${(item.submission_count ?? 0) > 0 ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"}`}>
+                            {item.submission_count ?? 0}
+                          </span>
                         </TableCell>
                       )}
+
+                      {/* Status */}
                       <TableCell>{publishBadge(item.publish_status)}</TableCell>
+
+                      {/* Actions */}
                       <TableCell>
                         <div className="flex justify-end gap-1">
                           {isTeacherOrAdmin && (
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7"
+                              className="h-7 w-7 opacity-70 group-hover:opacity-100"
                               onClick={() => setViewAssessment(item)}
                               title="View Submissions"
                             >
@@ -837,7 +909,7 @@ export default function AssessmentsPage() {
                             <Button
                               variant="ghost"
                               size="icon"
-                              className="h-7 w-7 text-destructive hover:text-destructive"
+                              className="h-7 w-7 text-destructive hover:text-destructive opacity-70 group-hover:opacity-100"
                               onClick={() => setDeleteTarget(item)}
                             >
                               <Trash2 className="h-3.5 w-3.5" />
@@ -857,7 +929,7 @@ export default function AssessmentsPage() {
       {/* ═══════════════════════════════════════════════════════════════════════
           TEACHER: Create Assessment Dialog
          ═══════════════════════════════════════════════════════════════════════ */}
-      <Dialog open={createOpen} onOpenChange={open => { setCreateOpen(open); if (!open) setForm(EMPTY_FORM) }}>
+      <Dialog open={createOpen} onOpenChange={open => { setCreateOpen(open); if (!open) { setForm(EMPTY_FORM); setCreateUploadedMeta(null) } }}>
         <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle className="flex items-center gap-2">
@@ -869,16 +941,16 @@ export default function AssessmentsPage() {
 
           <div className="grid gap-4 py-2">
             {/* Type selector */}
-            <div className="grid grid-cols-3 gap-2">
+            <div className="grid grid-cols-2 gap-2">
               {(["ASSIGNMENT", "QUIZ"] as AssessmentType[]).map(at => (
                 <button
                   key={at}
                   type="button"
                   onClick={() => f("assessment_type", at)}
-                  className={`flex flex-col items-center gap-1.5 rounded-lg border-2 p-3 text-xs font-medium transition-colors ${
+                  className={`flex items-center justify-center gap-2 rounded-lg border-2 p-3 text-sm font-medium transition-colors ${
                     form.assessment_type === at
                       ? "border-primary bg-primary/5 text-primary"
-                      : "border-border hover:border-primary/50"
+                      : "border-border hover:border-primary/50 text-muted-foreground"
                   }`}
                 >
                   {typeIcon(at)}
@@ -888,16 +960,16 @@ export default function AssessmentsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Title *</label>
+              <label className="text-sm font-medium">Title</label>
               <Input placeholder="e.g. Mid-Term Assignment" value={form.title} onChange={e => f("title", e.target.value)} />
             </div>
 
             <div className="grid grid-cols-3 gap-2">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Class *</label>
+                <label className="text-xs font-medium">Class <span className="text-destructive">*</span></label>
                 <select
                   value={form.class_id}
-                  onChange={e => setForm(p => ({ ...p, class_id: e.target.value, batch_id: "", subject_id: "" }))}
+                  onChange={e => setForm(p => ({ ...p, class_id: e.target.value, batch_id: "" }))}
                   disabled={classesQuery.isLoading}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
@@ -906,7 +978,7 @@ export default function AssessmentsPage() {
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Batch *</label>
+                <label className="text-xs font-medium">Batch <span className="text-destructive">*</span></label>
                 <select
                   value={form.batch_id}
                   onChange={e => f("batch_id", e.target.value)}
@@ -918,7 +990,7 @@ export default function AssessmentsPage() {
                 </select>
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Subject *</label>
+                <label className="text-xs font-medium">Subject <span className="text-destructive">*</span></label>
                 <select
                   value={form.subject_id}
                   onChange={e => f("subject_id", e.target.value)}
@@ -932,7 +1004,7 @@ export default function AssessmentsPage() {
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-sm font-medium">Description *</label>
+              <label className="text-sm font-medium">Description <span className="text-destructive">*</span></label>
               <Textarea
                 placeholder="Brief description of this assessment..."
                 value={form.description}
@@ -943,7 +1015,7 @@ export default function AssessmentsPage() {
 
             <div className="grid grid-cols-2 gap-2">
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Submission Window *</label>
+                <label className="text-xs font-medium">Submission Window <span className="text-destructive">*</span></label>
                 <Input
                   type="number"
                   min="1"
@@ -953,7 +1025,7 @@ export default function AssessmentsPage() {
                 />
               </div>
               <div className="space-y-1.5">
-                <label className="text-xs font-medium">Unit *</label>
+                <label className="text-xs font-medium">Unit <span className="text-destructive">*</span></label>
                 <select
                   value={form.submission_unit}
                   onChange={e => f("submission_unit", e.target.value)}
@@ -977,21 +1049,92 @@ export default function AssessmentsPage() {
               />
             </div>
 
-            <div className="space-y-1.5">
-              <label className="text-xs font-medium">Answer Link (optional)</label>
-              <Input
-                placeholder="https://docs.google.com/..."
-                value={form.link}
-                onChange={e => f("link", e.target.value)}
-              />
+            {/* Attachment — at least one required */}
+            <div className={`rounded-lg border-2 p-3 space-y-3 transition-colors ${hasAttachment ? "border-emerald-300 bg-emerald-50/50 dark:bg-emerald-900/10 dark:border-emerald-800" : "border-dashed border-amber-300 bg-amber-50/50 dark:bg-amber-900/10 dark:border-amber-800"}`}>
+              <div className="flex items-center gap-2">
+                <FilePlus2 className={`h-4 w-4 ${hasAttachment ? "text-emerald-600" : "text-amber-600"}`} />
+                <span className="text-sm font-medium">
+                  Assessment Material <span className="text-destructive">*</span>
+                </span>
+                {!hasAttachment && (
+                  <span className="text-xs text-amber-600 ml-auto">Attach a file or link</span>
+                )}
+                {hasAttachment && (
+                  <span className="text-xs text-emerald-600 flex items-center gap-1 ml-auto">
+                    <CheckCircle2 className="h-3 w-3" /> Attached
+                  </span>
+                )}
+              </div>
+
+              {/* File upload */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Upload File</label>
+                {createUploadedMeta ? (
+                  <div className="flex items-center gap-2 rounded-md border bg-background px-3 py-2">
+                    <FileText className="h-4 w-4 text-emerald-600 shrink-0" />
+                    <span className="text-xs font-medium flex-1 truncate">{createUploadedMeta.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => { setCreateUploadedMeta(null); f("file_id", "") }}
+                      className="text-muted-foreground hover:text-destructive transition-colors"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <label className={`flex-1 flex items-center gap-2 rounded-md border border-dashed px-3 py-2 cursor-pointer hover:bg-muted/50 transition-colors ${createUploading ? "opacity-50 pointer-events-none" : ""}`}>
+                      {createUploading ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : (
+                        <Upload className="h-4 w-4 text-muted-foreground" />
+                      )}
+                      <span className="text-xs text-muted-foreground">
+                        {createUploading ? "Uploading…" : "Click to upload (PDF, DOC, images)"}
+                      </span>
+                      <input
+                        type="file"
+                        className="hidden"
+                        disabled={createUploading}
+                        onChange={e => { const file = e.target.files?.[0]; if (file) handleCreateUploadFile(file) }}
+                      />
+                    </label>
+                  </div>
+                )}
+              </div>
+
+              {/* Divider */}
+              <div className="flex items-center gap-2">
+                <div className="h-px flex-1 bg-border" />
+                <span className="text-xs text-muted-foreground">or</span>
+                <div className="h-px flex-1 bg-border" />
+              </div>
+
+              {/* Link */}
+              <div className="space-y-1.5">
+                <label className="text-xs text-muted-foreground font-medium">Reference Link</label>
+                <div className="relative">
+                  <Link2 className="absolute left-3 top-2.5 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="https://docs.google.com/..."
+                    value={form.link}
+                    onChange={e => f("link", e.target.value)}
+                    className="pl-8"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 
-          <DialogFooter>
+          <DialogFooter className="gap-2">
             <Button variant="outline" onClick={() => setCreateOpen(false)}>Cancel</Button>
-            <Button onClick={() => createMut.mutate()} disabled={!canCreate || createMut.isPending} className="gap-2">
+            <Button
+              onClick={() => createMut.mutate()}
+              disabled={!canCreate || createMut.isPending || createUploading}
+              className="gap-2"
+            >
               {createMut.isPending && <Loader2 className="h-4 w-4 animate-spin" />}
-              Create
+              Create Assessment
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -1014,29 +1157,83 @@ export default function AssessmentsPage() {
                 </DialogDescription>
               </DialogHeader>
 
-              {/* Assessment details */}
-              <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm py-2">
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Type</span>
-                  <Badge variant="outline">{typeLabel(viewAssessment.assessment_type)}</Badge>
+              {/* Assessment details grid */}
+              <div className="rounded-lg border bg-muted/20 divide-y text-sm">
+                <div className="grid grid-cols-2 divide-x">
+                  <div className="flex flex-col gap-0.5 px-4 py-2.5">
+                    <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Type</span>
+                    <div className="flex items-center gap-1.5 font-medium">
+                      {typeIcon(viewAssessment.assessment_type)}
+                      {typeLabel(viewAssessment.assessment_type)}
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-0.5 px-4 py-2.5">
+                    <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Status</span>
+                    <div>{publishBadge(viewAssessment.publish_status)}</div>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Total Marks</span>
-                  <span className="font-mono">{viewAssessment.total_marks} (pass: {viewAssessment.passing_marks})</span>
+                <div className="grid grid-cols-2 divide-x">
+                  <div className="flex flex-col gap-0.5 px-4 py-2.5">
+                    <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Batch</span>
+                    <span className="font-medium">{viewAssessment.batch_name || <span className="text-muted-foreground">—</span>}</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5 px-4 py-2.5">
+                    <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Subject</span>
+                    <span className="font-medium">{viewAssessment.subject_name || <span className="text-muted-foreground">—</span>}</span>
+                  </div>
                 </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Deadline</span>
-                  <span>{formatDateTime(viewAssessment.deadline)}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-muted-foreground">Status</span>
-                  {publishBadge(viewAssessment.publish_status)}
+                <div className="grid grid-cols-2 divide-x">
+                  <div className="flex flex-col gap-0.5 px-4 py-2.5">
+                    <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Total Marks</span>
+                    <span className="font-semibold font-mono text-base text-foreground">{viewAssessment.total_marks > 0 ? viewAssessment.total_marks : "—"}</span>
+                  </div>
+                  <div className="flex flex-col gap-0.5 px-4 py-2.5">
+                    <span className="text-[11px] text-muted-foreground uppercase tracking-wide font-medium">Deadline</span>
+                    <span className="font-medium flex items-center gap-1">
+                      <Calendar className="h-3.5 w-3.5 text-muted-foreground" />
+                      {viewAssessment.deadline ? formatDateTime(viewAssessment.deadline) : <span className="text-muted-foreground">—</span>}
+                    </span>
+                  </div>
                 </div>
               </div>
 
+              {/* Attachments */}
+              {(viewAssessment.link || viewAssessment.file?.url) && (
+                <div className="rounded-lg border p-3 space-y-2">
+                  <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Attachments</p>
+                  <div className="flex flex-wrap gap-2">
+                    {viewAssessment.file?.url && (
+                      <a
+                        href={viewAssessment.file.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-md border bg-violet-50 dark:bg-violet-900/20 border-violet-200 dark:border-violet-800 px-3 py-1.5 text-xs font-medium text-violet-700 dark:text-violet-300 hover:bg-violet-100 transition-colors"
+                      >
+                        <FileText className="h-3.5 w-3.5 shrink-0" />
+                        View Attached File
+                        {viewAssessment.file.mime_type && (
+                          <span className="opacity-60 uppercase text-[10px]">{viewAssessment.file.mime_type.split("/")[1]}</span>
+                        )}
+                      </a>
+                    )}
+                    {viewAssessment.link && (
+                      <a
+                        href={viewAssessment.link}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-2 rounded-md border bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800 px-3 py-1.5 text-xs font-medium text-blue-700 dark:text-blue-300 hover:bg-blue-100 transition-colors"
+                      >
+                        <Link2 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="max-w-[260px] truncate">{viewAssessment.link}</span>
+                      </a>
+                    )}
+                  </div>
+                </div>
+              )}
+
               {viewAssessment.instructions && (
                 <div className="rounded-lg border bg-muted/30 p-3 text-sm">
-                  <p className="font-medium text-muted-foreground mb-1">Instructions</p>
+                  <p className="font-medium text-muted-foreground text-xs uppercase tracking-wide mb-1.5">Instructions</p>
                   <p>{viewAssessment.instructions}</p>
                 </div>
               )}
