@@ -1584,7 +1584,6 @@ export default function ScheduleWorkspace({
         delivery_mode: payload.deliveryMode,
         ...(resolvedRoomId ? { room_id: resolvedRoomId } : {}),
         ...(payload.liveSessionRef ? { live_session_ref: payload.liveSessionRef } : {}),
-        ...(payload.notes ? { notes: payload.notes } : {}),
       }
 
       if (editingEntryId) {
@@ -1619,7 +1618,6 @@ export default function ScheduleWorkspace({
         delivery_mode: mapDeliveryModeToBatchRoutineApi(payload.deliveryMode),
         ...(resolvedRoomId ? { room_id: resolvedRoomId } : {}),
         ...(payload.liveSessionRef ? { live_session_ref: payload.liveSessionRef } : {}),
-        ...(payload.notes ? { notes: payload.notes } : {}),
       }
 
       const response = await api.post(
@@ -2615,7 +2613,6 @@ export default function ScheduleWorkspace({
               {entryDraft.deliveryMode === "ON_SITE" || entryDraft.deliveryMode === "HYBRID" ? <div><FieldLabel label="Room" required /><SearchableInput listId="room-options-list" value={entryDraft.roomId} onChange={(value) => setEntryDraft((current) => ({ ...current, roomId: value }))} options={rooms} placeholder="Search room by id" strictMatch /><FieldError message={entryErrors.roomId} /></div> : null}
               {entryDraft.deliveryMode === "LIVE_ONLINE" || entryDraft.deliveryMode === "HYBRID" ? <div><FieldLabel label="Live Session URL" required /><Input type="url" value={entryDraft.liveSessionRef} onChange={(event) => setEntryDraft((current) => ({ ...current, liveSessionRef: event.target.value }))} placeholder="https://" /><FieldError message={entryErrors.liveSessionRef} /></div> : null}
             </div>
-            <div><FieldLabel label="Notes" /><Textarea value={entryDraft.notes} onChange={(event) => setEntryDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes for the session" /></div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600"><div className="flex items-center gap-2 font-medium text-slate-800">{conflictChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}Instant conflict detection</div><p className="mt-2">The form checks batch overlaps, teacher double-booking, and room availability after each update.</p></div>
           </div>
           <SheetFooter>
