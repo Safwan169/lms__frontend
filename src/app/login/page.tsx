@@ -2,7 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
-import { Mail, Lock, Eye, EyeOff, ArrowRight, GraduationCap } from 'lucide-react';
+import { Mail, Lock, Eye, EyeOff, ArrowRight, GraduationCap, Copy, Check } from 'lucide-react';
 import { toast } from 'sonner';
 import { useRouter } from 'next/navigation';
 import { useForgotPasswordMutation, useLoginMutation, useResetPasswordMutation } from '@/features/user/userApi';
@@ -61,6 +61,55 @@ const SubmitButton: React.FC<{ isLoading: boolean }> = ({ isLoading }) => (
     </button>
 );
 
+const DEMO_ACCOUNTS = [
+    { role: 'Admin',      email: 'admin@smartz.com',       password: 'Admin@123' },
+    { role: 'Teacher',    email: 'fatima.ali@smartz.com',  password: 'Teacher@123' },
+    { role: 'Student',    email: 'k17tasmia@gmail.com',    password: 'PkBCCeU@gn' },
+    { role: 'Accountant', email: 'accountant@smartz.com',  password: 'Accountant@123' },
+];
+
+function CopyButton({ text }: { text: string }) {
+    const [copied, setCopied] = useState(false);
+    const handleCopy = async (e: React.MouseEvent) => {
+        e.stopPropagation();
+        await navigator.clipboard.writeText(text);
+        setCopied(true);
+        setTimeout(() => setCopied(false), 1500);
+    };
+    return (
+        <button type="button" className={`lms-copy-btn${copied ? ' copied' : ''}`} onClick={handleCopy} title="Copy">
+            {copied ? <Check size={12} /> : <Copy size={12} />}
+        </button>
+    );
+}
+
+function DemoCredentials({ setValue }: { setValue: (field: 'identifier' | 'password', value: string) => void }) {
+    return (
+        <div className="lms-demo">
+            <p className="lms-demo-notice">
+                <span>⚠</span> Demo credentials — will be removed soon
+            </p>
+            <div className="lms-demo-list">
+                {DEMO_ACCOUNTS.map(({ role, email, password }) => (
+                    <div key={role} className="lms-demo-card">
+                        <div className="lms-demo-role">{role}</div>
+                        <div className="lms-demo-row">
+                            <span className="lms-demo-label">Email</span>
+                            <span className="lms-demo-value">{email}</span>
+                            <CopyButton text={email} />
+                        </div>
+                        <div className="lms-demo-row" style={{ marginTop: '2px' }}>
+                            <span className="lms-demo-label">Password</span>
+                            <span className="lms-demo-value">{password}</span>
+                            <CopyButton text={password} />
+                        </div>
+                    </div>
+                ))}
+            </div>
+        </div>
+    );
+}
+
 const LoginForm: React.FC = () => {
     const [showPassword, setShowPassword] = useState<boolean>(false);
     const [isLoadingLogin, setIsLoadingLogin] = useState<boolean>(false);
@@ -98,6 +147,7 @@ const LoginForm: React.FC = () => {
         handleSubmit,
         getValues,
         setError,
+        setValue,
         formState: { errors }
     } = useForm<LoginFormData>({
         resolver: zodResolver(loginSchema),
@@ -599,6 +649,88 @@ const LoginForm: React.FC = () => {
                     color: #e8e6e0;
                 }
 
+                /* Demo credentials */
+                .lms-demo {
+                    margin-top: 1.5rem;
+                    border: 1px solid rgba(99,102,241,0.2);
+                    border-radius: 12px;
+                    padding: 1rem;
+                    background: rgba(99,102,241,0.04);
+                }
+
+                .lms-demo-notice {
+                    font-size: 0.72rem;
+                    color: #f59e0b;
+                    margin-bottom: 0.75rem;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-weight: 500;
+                    letter-spacing: 0.02em;
+                    text-transform: uppercase;
+                }
+
+                .lms-demo-list {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                }
+
+                .lms-demo-card {
+                    background: rgba(255,255,255,0.03);
+                    border: 1px solid rgba(255,255,255,0.07);
+                    border-radius: 8px;
+                    padding: 0.55rem 0.75rem;
+                }
+
+                .lms-demo-role {
+                    font-size: 0.68rem;
+                    font-weight: 600;
+                    color: #818cf8;
+                    text-transform: uppercase;
+                    letter-spacing: 0.06em;
+                    margin-bottom: 4px;
+                }
+
+                .lms-demo-row {
+                    display: flex;
+                    align-items: center;
+                    justify-content: space-between;
+                    gap: 6px;
+                }
+
+                .lms-demo-label {
+                    font-size: 0.68rem;
+                    color: #4b5563;
+                    width: 52px;
+                    flex-shrink: 0;
+                }
+
+                .lms-demo-value {
+                    font-size: 0.75rem;
+                    color: #d1d5db;
+                    font-family: monospace;
+                    flex: 1;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                }
+
+                .lms-copy-btn {
+                    background: none;
+                    border: none;
+                    cursor: pointer;
+                    color: #4b5563;
+                    padding: 2px;
+                    display: flex;
+                    align-items: center;
+                    transition: color 0.15s;
+                    flex-shrink: 0;
+                }
+
+                .lms-copy-btn:hover { color: #818cf8; }
+                .lms-copy-btn.copied { color: #34d399; }
+
                 /* Footer text */
                 .lms-footer-text {
                     text-align: center;
@@ -815,6 +947,9 @@ const LoginForm: React.FC = () => {
                             <SocialButton icon={<GoogleIcon />} label="Google" onClick={() => handleSocialLogin('Google')} />
                             <SocialButton icon={<GitHubIcon />} label="GitHub" onClick={() => handleSocialLogin('GitHub')} />
                         </div> */}
+
+                        {/* Demo credentials */}
+                        <DemoCredentials setValue={setValue} />
 
                         {/* <p className="lms-footer-text">
                             Don't have an account?{' '}

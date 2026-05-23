@@ -25,6 +25,7 @@ type PayrollRow = {
   deduction?: string | number
   net_amount?: string | number
   status?: string
+  api_status?: string
   payroll_type?: string
   remarks?: string
 }
@@ -112,13 +113,13 @@ export default function MyPayrollPage() {
     }
   }
 
-  // Summary totals
+  // Summary totals — use api_status (lowercase) which the backend always provides
   const totalEarned = useMemo(
-    () => payrollRows.filter((r) => r.status === "paid").reduce((sum, r) => sum + Number(r.net_amount ?? 0), 0),
+    () => payrollRows.filter((r) => (r.api_status ?? r.status ?? "").toLowerCase() === "paid").reduce((sum, r) => sum + Number(r.net_amount ?? 0), 0),
     [payrollRows],
   )
   const totalPending = useMemo(
-    () => payrollRows.filter((r) => r.status !== "paid").reduce((sum, r) => sum + Number(r.net_amount ?? 0), 0),
+    () => payrollRows.filter((r) => (r.api_status ?? r.status ?? "").toLowerCase() !== "paid").reduce((sum, r) => sum + Number(r.net_amount ?? 0), 0),
     [payrollRows],
   )
 
@@ -251,7 +252,7 @@ export default function MyPayrollPage() {
                     <TableCell>BDT {formatMoney(record.deduction)}</TableCell>
                     <TableCell className="font-semibold">BDT {formatMoney(record.net_amount)}</TableCell>
                     <TableCell>
-                      <Badge variant={badgeVariant(String(record.status ?? "draft"))}>{String(record.status ?? "draft")}</Badge>
+                      <Badge variant={badgeVariant(String(record.api_status ?? record.status ?? "draft"))}>{String(record.api_status ?? record.status ?? "draft")}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <Button
