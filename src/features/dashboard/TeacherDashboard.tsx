@@ -27,10 +27,11 @@ import { useRouter } from "next/navigation"
 
 import {
   formatDateLong,
-  formatTimeHm,
   greetingFor,
+  useTeacherNextLiveClass,
   useTeacherPlanner,
   useTeacherStats,
+  type NextLiveClass,
   type PlannerEntry,
 } from "./api"
 import { EmptyState, LoadingBlock, SectionCard } from "./shared"
@@ -72,6 +73,7 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
 
   const statsQ = useTeacherStats()
   const plannerQ = useTeacherPlanner(range)
+  const nextLiveQ = useTeacherNextLiveClass()
 
   const s = statsQ.data
 
@@ -157,6 +159,7 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
               onClick={() => {
                 statsQ.refetch()
                 plannerQ.refetch()
+                nextLiveQ.refetch()
               }}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
             >
@@ -341,17 +344,9 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           {/* Next live class + pending work */}
           <div className="space-y-6">
             <NextLiveClassCard
-              next={s?.upcoming_live.next ?? null}
-              endTime={
-                s?.upcoming_live.next
-                  ? plannerQ.data?.data.find((e) => e.entry_id === s.upcoming_live.next!.id)?.end_time
-                  : undefined
-              }
-              startTime={
-                s?.upcoming_live.next
-                  ? plannerQ.data?.data.find((e) => e.entry_id === s.upcoming_live.next!.id)?.start_time
-                  : undefined
-              }
+              data={nextLiveQ.data?.next_live_class ?? null}
+              upcomingCount={nextLiveQ.data?.upcoming_count ?? 0}
+              loading={nextLiveQ.isLoading}
               onPrep={() => setLiveOpen(true)}
               onStart={() => setLiveOpen(true)}
             />
@@ -528,25 +523,35 @@ function useCountdown(targetIso: string | undefined) {
 }
 
 function NextLiveClassCard({
-  next,
-  startTime,
-  endTime,
+  data,
+  upcomingCount,
+  loading,
   onPrep,
   onStart,
 }: {
-  next: { id: string; title: string; scheduled_at: string; minutes_until: number; batch: { id: string; name: string } | null } | null
-  startTime?: string
-  endTime?: string
+  data: NextLiveClass | null
+  upcomingCount: number
+  loading: boolean
   onPrep: () => void
   onStart: () => void
 }) {
-  const countdown = useCountdown(next?.scheduled_at)
-  const windowLabel =
-    startTime && endTime
-      ? `${startTime} – ${endTime}`
-      : next
-      ? formatTimeHm(next.scheduled_at)
-      : "—"
+  const countdown = useCountdown(data?.scheduled_start_at)
+  const subjectName = data?.subject?.name ?? "Live class"
+  const className = data?.batch?.class?.name
+  const batchLabel = data
+    ? [className, data.batch?.name, data.batch?.section ? `Sec ${data.batch.section}` : null]
+        .filter(Boolean)
+        .join(" · ")
+    : ""
+  const windowLabel = data ? `${data.start_time} – ${data.end_time}` : "—"
+
+  function startLive() {
+    if (data?.meet_url && /^https?:\/\//i.test(data.meet_url)) {
+      window.open(data.meet_url, "_blank", "noopener,noreferrer")
+    } else {
+      onStart()
+    }
+  }
 
   return (
     <section className="overflow-hidden rounded-3xl border border-violet-100 bg-linear-to-b from-violet-50 to-white p-5 shadow-sm">
@@ -556,7 +561,7 @@ function NextLiveClassCard({
           <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
           Next live class
         </span>
-        {next && (
+        {data && (
           <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
             <span className="relative flex h-1.5 w-1.5">
               <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
@@ -567,17 +572,27 @@ function NextLiveClassCard({
         )}
       </div>
 
-      {next ? (
+      {loading ? (
+        <div className="mt-4">
+          <LoadingBlock rows={3} />
+        </div>
+      ) : data ? (
         <>
           {/* Title block */}
           <div className="mt-3">
-            <h4 className="text-xl font-semibold leading-tight text-slate-900">{next.title}</h4>
-            {next.batch?.name && (
-              <div className="mt-0.5 text-xs text-slate-500">
-                {next.batch.name}
-                <span className="px-1.5 text-slate-300">·</span>
-                Live class
-              </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-xl font-semibold leading-tight text-slate-900">{subjectName}</h4>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${modeBadgeClasses(data.delivery_mode)}`}>
+                {formatMode(data.delivery_mode)}
+              </span>
+              {data.is_overridden && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Updated
+                </span>
+              )}
+            </div>
+            {batchLabel && (
+              <div className="mt-0.5 text-xs text-slate-500">{batchLabel}</div>
             )}
           </div>
 
@@ -597,24 +612,49 @@ function NextLiveClassCard({
                   Window
                 </div>
                 <div className="mt-1 text-sm font-medium text-slate-700 tabular-nums">{windowLabel}</div>
+                <div className="mt-0.5 text-[11px] text-slate-400">
+                  {formatDateLong(data.scheduled_start_at)}
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Prep checklist */}
+          {/* Detail rows */}
           <ul className="mt-4 space-y-2.5 text-[13px]">
-            <PrepItem label="Camera & mic checked" tone="ok" />
-            <PrepItem label="Lecture slides attached (12 pages)" tone="ok" />
-            <PrepItem
-              label={`Quiz at ${startTime ?? formatTimeHm(next.scheduled_at)} — not yet pinned`}
-              tone="warn"
-            />
+            <li className="flex items-center gap-2 text-slate-700">
+              <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+              {capitalize(data.day_of_week)}
+            </li>
+            {data.room?.name && (
+              <li className="flex items-center gap-2 text-slate-700">
+                <Library className="h-3.5 w-3.5 text-slate-400" />
+                {data.room.name}
+              </li>
+            )}
+            <li className="flex items-center gap-2 text-slate-700">
+              <Users className="h-3.5 w-3.5 text-slate-400" />
+              {data.batch?.enrolled_students_count ?? 0} student
+              {data.batch?.enrolled_students_count === 1 ? "" : "s"} enrolled
+            </li>
+            <li className="flex items-center gap-2 text-slate-700">
+              {data.meet_url ? (
+                <>
+                  <Video className="h-3.5 w-3.5 text-emerald-500" />
+                  Meeting link ready
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  <span className="text-amber-700">Meeting link not set</span>
+                </>
+              )}
+            </li>
           </ul>
 
           {/* Action buttons */}
           <div className="mt-5 flex items-stretch gap-2">
             <button
-              onClick={onStart}
+              onClick={startLive}
               className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
             >
               <PlayCircle className="h-4 w-4" /> Start live class
@@ -626,6 +666,12 @@ function NextLiveClassCard({
               <Paperclip className="h-3.5 w-3.5" /> Prep
             </button>
           </div>
+
+          {upcomingCount > 1 && (
+            <div className="mt-3 text-center text-[11px] text-slate-400">
+              +{upcomingCount - 1} more upcoming session{upcomingCount - 1 === 1 ? "" : "s"}
+            </div>
+          )}
         </>
       ) : (
         <>
@@ -651,6 +697,11 @@ function NextLiveClassCard({
       )}
     </section>
   )
+}
+
+function capitalize(s: string): string {
+  if (!s) return s
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
 }
 
 function PrepItem({ label, tone }: { label: string; tone: "ok" | "warn" | "neutral" }) {
