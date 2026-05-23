@@ -1,31 +1,47 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   AlertTriangle,
   ArrowRight,
   BellRing,
   CalendarDays,
+  Check,
   ClipboardCheck,
+  Eye,
   FileText,
   Library,
+  Paperclip,
+  PlayCircle,
   Plus,
   RefreshCw,
+  TrendingDown,
   Upload,
   Users,
+  UserSquare2,
   Video,
 } from "lucide-react"
 
 import Link from "next/link"
+import { useRouter } from "next/navigation"
 
 import {
   formatDateLong,
-  formatTimeHm,
   greetingFor,
+  useTeacherNextLiveClass,
   useTeacherPlanner,
   useTeacherStats,
+  type NextLiveClass,
+  type PlannerEntry,
 } from "./api"
 import { EmptyState, LoadingBlock, SectionCard } from "./shared"
+import {
+  AttendanceModal,
+  EvaluationsModal,
+  LiveClassModal,
+  NoticesModal,
+  PlannerEntryModal,
+} from "./TeacherDashboardModals"
 
 type AnyUser = any
 
@@ -52,12 +68,20 @@ function statusLabel(status: string, minutesUntil: number) {
 
 export default function TeacherDashboard({ user }: { user: AnyUser }) {
   const name = pickName(user)
+  const router = useRouter()
   const [range, setRange] = useState<"today" | "week">("today")
 
   const statsQ = useTeacherStats()
   const plannerQ = useTeacherPlanner(range)
+  const nextLiveQ = useTeacherNextLiveClass()
 
   const s = statsQ.data
+
+  const [plannerEntry, setPlannerEntry] = useState<PlannerEntry | null>(null)
+  const [attBatch, setAttBatch] = useState<{ id: string; name: string } | null>(null)
+  const [evalOpen, setEvalOpen] = useState(false)
+  const [noticesOpen, setNoticesOpen] = useState(false)
+  const [liveOpen, setLiveOpen] = useState(false)
 
   const kpis = [
     {
@@ -68,7 +92,8 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           ? `${s.todays_classes.done ?? 0} done · ${s.todays_classes.ongoing ?? 0} ongoing · ${s.todays_classes.upcoming ?? 0} upcoming`
           : "No data",
       icon: CalendarDays,
-      tone: "text-indigo-600 bg-indigo-50",
+      tone: "text-indigo-600 bg-indigo-100",
+      cornerTone: "bg-indigo-500",
     },
     {
       label: "Pending Attendance",
@@ -78,7 +103,8 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           ? s.pending_attendance.batches.map((b) => b.batch_name).join(" & ")
           : "Nothing pending",
       icon: ClipboardCheck,
-      tone: "text-amber-600 bg-amber-50",
+      tone: "text-amber-600 bg-amber-100",
+      cornerTone: "bg-amber-500",
     },
     {
       label: "Pending Evaluations",
@@ -88,7 +114,8 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           ? `across ${s.pending_evaluations.assessment_count} assessments`
           : "No data",
       icon: FileText,
-      tone: "text-rose-600 bg-rose-50",
+      tone: "text-rose-600 bg-rose-100",
+      cornerTone: "bg-rose-500",
     },
     {
       label: "Upcoming Live",
@@ -98,7 +125,8 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           ? `${s.upcoming_live.next.title} · in ${s.upcoming_live.next.minutes_until} min`
           : "Nothing scheduled",
       icon: Video,
-      tone: "text-emerald-600 bg-emerald-50",
+      tone: "text-emerald-600 bg-emerald-100",
+      cornerTone: "bg-emerald-500",
     },
     {
       label: "Unread Notices",
@@ -108,7 +136,8 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           ? `${s.unread_notices.from_admin_count} from admin`
           : "No new notices",
       icon: BellRing,
-      tone: "text-sky-600 bg-sky-50",
+      tone: "text-sky-600 bg-sky-100",
+      cornerTone: "bg-sky-500",
     },
   ]
 
@@ -130,6 +159,7 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
               onClick={() => {
                 statsQ.refetch()
                 plannerQ.refetch()
+                nextLiveQ.refetch()
               }}
               className="inline-flex items-center gap-2 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
             >
@@ -148,11 +178,12 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           {kpis.map((k) => {
             const Icon = k.icon
             return (
-              <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <span className={`inline-flex rounded-xl p-2 ${k.tone}`}>
+              <div key={k.label} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <span className={`pointer-events-none absolute -bottom-2.5 -right-2.5 h-[70px] w-[70px] rounded-full opacity-10 ${k.cornerTone}`} />
+                <span className={`relative inline-flex rounded-xl p-2 ${k.tone}`}>
                   <Icon className="h-5 w-5" />
                 </span>
-                <div className="mt-3">
+                <div className="relative mt-3">
                   <div className="text-3xl font-semibold text-slate-900 tabular-nums">
                     {statsQ.isLoading ? "…" : k.value}
                   </div>
@@ -167,11 +198,10 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
         {/* Quick actions */}
         <div className="flex flex-wrap gap-2">
           {[
-            { label: "Take attendance", Icon: ClipboardCheck, href: "/dashboard/teacher-attendance" },
+            { label: "Take attendance", Icon: ClipboardCheck, href: "/dashboard/attendance" },
             { label: "Upload material", Icon: Upload, href: "/dashboard/content" },
             { label: "Create assessment", Icon: Plus, href: "/dashboard/assessments" },
             { label: "Review submissions", Icon: FileText, href: "/dashboard/assessments", count: s?.pending_evaluations.submission_count ?? null },
-            { label: "View schedule", Icon: CalendarDays, href: "/dashboard/timetable" },
             { label: "My class", Icon: Users, href: "/dashboard/my-class" },
           ].map((a) => (
             <Link
@@ -193,26 +223,34 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           <SectionCard
             icon={<CalendarDays className="h-4 w-4" />}
             iconTone="bg-indigo-50 text-indigo-600"
-            title="Teaching planner"
+            title="Today's teaching planner"
             subtitle={
               plannerQ.data
-                ? `${range === "today" ? "Today" : "This week"} · ${plannerQ.data.total_count} classes assigned`
+                ? `${formatDateLong(new Date().toISOString())} · ${plannerQ.data.total_count} classes assigned`
                 : undefined
             }
             action={
-              <div className="inline-flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs">
-                <button
-                  onClick={() => setRange("today")}
-                  className={`rounded-md px-2.5 py-1 font-medium ${range === "today" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+              <div className="flex items-center gap-3">
+                <div className="inline-flex rounded-full border border-slate-200 bg-slate-50 p-0.5 text-xs">
+                  <button
+                    onClick={() => setRange("today")}
+                    className={`rounded-full px-3 py-1 font-medium transition ${range === "today" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setRange("week")}
+                    className={`rounded-full px-3 py-1 font-medium transition ${range === "week" ? "bg-slate-900 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                  >
+                    This week
+                  </button>
+                </div>
+                <Link
+                  href="/dashboard/my-class"
+                  className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline"
                 >
-                  Today
-                </button>
-                <button
-                  onClick={() => setRange("week")}
-                  className={`rounded-md px-2.5 py-1 font-medium ${range === "week" ? "bg-white text-slate-900 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                >
-                  This week
-                </button>
+                  My class <ArrowRight className="h-3.5 w-3.5" />
+                </Link>
               </div>
             }
           >
@@ -221,322 +259,709 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
             ) : !plannerQ.data || plannerQ.data.data.length === 0 ? (
               <EmptyState icon={<CalendarDays className="h-5 w-5" />} title="No classes" detail="Nothing on your planner for this range." />
             ) : (
-              <div className="space-y-2">
-                {plannerQ.data.data.map((p) => (
-                  <div
-                    key={p.entry_id + p.date}
-                    className={`flex flex-col gap-3 rounded-2xl border p-3 sm:flex-row sm:items-center sm:gap-4 ${
-                      p.status === "COMPLETED"
-                        ? "border-slate-100 bg-slate-50/40 opacity-80"
-                        : p.is_now
-                        ? "border-sky-200 bg-sky-50/40"
-                        : "border-slate-100 bg-white"
-                    }`}
-                  >
-                    <div className="flex w-24 shrink-0 flex-col items-start">
-                      <span className="text-sm font-medium text-slate-900 tabular-nums">{p.start_time}</span>
-                      <span className="text-[11px] text-slate-500 tabular-nums">→ {p.end_time}</span>
-                      {p.is_now && (
-                        <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          Now
-                        </span>
-                      )}
-                    </div>
-                    <div className="flex-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-medium text-slate-900">{p.subject?.name ?? "Class"}</span>
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-600">{p.delivery_mode}</span>
-                        <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${statusTone(p.status, p.is_now)}`}>
-                          {statusLabel(p.status, p.minutes_until_start)}
-                        </span>
-                        {p.is_overridden && (
-                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">Updated</span>
-                        )}
-                      </div>
-                      <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
-                        {p.batch?.name && (
-                          <span className="inline-flex items-center gap-1">
-                            <Users className="h-3 w-3" /> {p.batch.name}
-                          </span>
-                        )}
-                        {p.room?.name && (
-                          <span className="inline-flex items-center gap-1">
-                            <Library className="h-3 w-3" /> {p.room.name}
+              <div>
+                {plannerQ.data.data.map((p) => {
+                  const isOngoing = p.is_now || p.status === "ONGOING"
+                  const isLive = p.delivery_mode === "LIVE_ONLINE" || p.delivery_mode === "ONLINE"
+                  const isLiveUpcoming = isLive && !isOngoing && p.status !== "COMPLETED"
+                  return (
+                    <div
+                      key={p.entry_id + p.date}
+                      className={`flex flex-col gap-3 border-t border-l-[3px] p-3 sm:flex-row sm:items-center sm:gap-4 ${
+                        isOngoing
+                          ? "border-t-slate-200 border-l-emerald-500 bg-emerald-50/70"
+                          : isLiveUpcoming
+                          ? "border-t-slate-200 border-l-violet-500 bg-violet-50/60"
+                          : p.status === "COMPLETED"
+                          ? "border-t-slate-100 border-l-transparent bg-white opacity-90"
+                          : "border-t-slate-100 border-l-transparent bg-white"
+                      }`}
+                    >
+                      <div className="flex w-20 shrink-0 flex-col items-start">
+                        <span className="text-sm font-semibold text-slate-900 tabular-nums">{p.start_time}</span>
+                        <span className="text-[11px] text-slate-500 tabular-nums">→ {p.end_time}</span>
+                        {p.is_now && (
+                          <span className="mt-1 inline-flex items-center gap-1 rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Now
                           </span>
                         )}
                       </div>
+                      <div className="flex-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="font-semibold text-slate-900">{p.subject?.name ?? "Class"}</span>
+                          <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${modeBadgeClasses(p.delivery_mode)}`}>
+                            {formatMode(p.delivery_mode)}
+                          </span>
+                          <PlannerStatusPill status={p.status} minutesUntil={p.minutes_until_start} />
+                          {p.is_overridden && (
+                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Updated
+                            </span>
+                          )}
+                        </div>
+                        <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
+                          {p.batch?.name && (
+                            <span className="inline-flex items-center gap-1">
+                              <Users className="h-3 w-3" /> {p.batch.name}
+                            </span>
+                          )}
+                          {p.room?.name && (
+                            <span className="inline-flex items-center gap-1">
+                              <Library className="h-3 w-3" /> {p.room.name}
+                            </span>
+                          )}
+                          {isLive && !p.room?.name && (
+                            <span className="inline-flex items-center gap-1">
+                              <Video className="h-3 w-3" /> Live
+                            </span>
+                          )}
+                          {p.has_material && (
+                            <span className="inline-flex items-center gap-1 font-medium text-emerald-600">
+                              <Paperclip className="h-3 w-3" /> Material attached
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                      <PlannerRowActions
+                        p={p}
+                        onOpen={() => setPlannerEntry(p)}
+                        onLive={() => setLiveOpen(true)}
+                        onMaterial={() => {
+                          const qs = new URLSearchParams({ create: "1" })
+                          if (p.subject?.id) qs.set("subject", p.subject.id)
+                          if (p.batch?.id) qs.set("batch", p.batch.id)
+                          router.push(`/dashboard/content?${qs.toString()}`)
+                        }}
+                        onAssessment={() => setEvalOpen(true)}
+                      />
                     </div>
-                    <div className="flex gap-2">
-                      {p.delivery_mode === "ONLINE" && p.status !== "COMPLETED" ? (
-                        <button className="rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">
-                          Start live
-                        </button>
-                      ) : (
-                        <button className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                          Open
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             )}
           </SectionCard>
 
           {/* Next live class + pending work */}
           <div className="space-y-6">
-            {/* Next live class — styled card matching mockup */}
-            <section className="rounded-3xl border border-rose-100 bg-linear-to-br from-rose-50/60 to-amber-50/40 p-5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <span className="inline-flex items-center gap-1 text-xs font-medium text-rose-700">
-                  <span className="h-1.5 w-1.5 rounded-full bg-rose-600" />
-                  Next live class
-                </span>
-                {s?.upcoming_live.next && (
-                  <span className="inline-flex items-center gap-1 rounded-full bg-rose-100 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
-                    <Video className="h-3 w-3" /> Live
-                  </span>
-                )}
-              </div>
-
-              {s?.upcoming_live.next ? (
-                <>
-                  <div className="mt-2 text-xl font-semibold text-slate-900">
-                    {s.upcoming_live.next.title}
-                  </div>
-                  {s.upcoming_live.next.batch?.name && (
-                    <div className="text-xs text-slate-500">{s.upcoming_live.next.batch.name}</div>
-                  )}
-
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-white p-3">
-                      <div className="text-[11px] text-slate-500">Starts in</div>
-                      <div className="text-xl font-semibold text-slate-900 tabular-nums">
-                        {s.upcoming_live.next.minutes_until > 0
-                          ? `${s.upcoming_live.next.minutes_until} min`
-                          : "Now"}
-                      </div>
-                    </div>
-                    <div className="rounded-xl bg-white p-3">
-                      <div className="text-[11px] text-slate-500">Scheduled</div>
-                      <div className="text-sm font-medium text-slate-900 tabular-nums">
-                        {formatTimeHm(s.upcoming_live.next.scheduled_at)}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Prep checklist — no backend signal, render neutral defaults */}
-                  <ul className="mt-4 space-y-1.5 text-xs">
-                    <li className="flex items-center gap-2 text-slate-500">
-                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100">·</span>
-                      Camera &amp; mic check pending
-                    </li>
-                    <li className="flex items-center gap-2 text-slate-500">
-                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100">·</span>
-                      Lecture material not attached
-                    </li>
-                    <li className="flex items-center gap-2 text-slate-500">
-                      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100">·</span>
-                      In-class quiz not pinned
-                    </li>
-                  </ul>
-
-                  <div className="mt-4 flex gap-2">
-                    <button className="inline-flex flex-1 items-center justify-center gap-1.5 rounded-lg bg-rose-600 px-3 py-2 text-xs font-semibold text-white hover:bg-rose-700">
-                      <Video className="h-3.5 w-3.5" /> Start live class
-                    </button>
-                    <button className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50">
-                      <FileText className="h-3.5 w-3.5" /> Prep
-                    </button>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div className="mt-2 text-xl font-semibold text-slate-400">No live class scheduled</div>
-                  <div className="text-xs text-slate-500">Your next live session will appear here.</div>
-                  <div className="mt-4 grid grid-cols-2 gap-3">
-                    <div className="rounded-xl bg-white p-3">
-                      <div className="text-[11px] text-slate-500">Starts in</div>
-                      <div className="text-xl font-semibold text-slate-300 tabular-nums">—</div>
-                    </div>
-                    <div className="rounded-xl bg-white p-3">
-                      <div className="text-[11px] text-slate-500">Scheduled</div>
-                      <div className="text-sm font-medium text-slate-300 tabular-nums">—</div>
-                    </div>
-                  </div>
-                </>
-              )}
-            </section>
+            <NextLiveClassCard
+              data={nextLiveQ.data?.next_live_class ?? null}
+              upcomingCount={nextLiveQ.data?.upcoming_count ?? 0}
+              loading={nextLiveQ.isLoading}
+              onPrep={() => setLiveOpen(true)}
+              onStart={() => setLiveOpen(true)}
+            />
 
             {/* Pending work — list style matching mockup */}
-            <SectionCard
-              icon={<ClipboardCheck className="h-4 w-4" />}
-              iconTone="bg-amber-50 text-amber-600"
-              title="Pending work"
-              subtitle={
-                s
-                  ? `${(s.pending_attendance.count ?? 0) + (s.pending_evaluations.submission_count > 0 ? 1 : 0) + (s.unread_notices.count > 0 ? 1 : 0)} items`
-                  : undefined
-              }
-            >
-              {statsQ.isLoading ? (
-                <LoadingBlock rows={3} />
-              ) : (
-                <div className="space-y-2">
-                  {s?.pending_attendance.batches?.length
-                    ? s.pending_attendance.batches.slice(0, 2).map((b) => (
-                        <div key={b.batch_id} className="flex items-start gap-3 rounded-xl bg-slate-50 p-3">
-                          <span className="rounded-lg bg-white p-1.5 text-amber-600">
-                            <ClipboardCheck className="h-3.5 w-3.5" />
-                          </span>
-                          <div className="flex-1">
-                            <div className="text-sm font-medium text-slate-900">Take attendance — {b.batch_name}</div>
-                            <div className="text-xs text-slate-500">Window closes soon</div>
-                          </div>
-                          <Link
-                            href="/dashboard/teacher-attendance"
-                            className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-white"
-                          >
-                            Open
-                          </Link>
-                        </div>
-                      ))
-                    : null}
-
-                  {s && s.pending_evaluations.submission_count > 0 && (
-                    <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3">
-                      <span className="rounded-lg bg-white p-1.5 text-rose-600">
-                        <FileText className="h-3.5 w-3.5" />
-                      </span>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-slate-900">
-                          Grade — {s.pending_evaluations.submission_count} submissions left
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          across {s.pending_evaluations.assessment_count} assessments
-                        </div>
-                      </div>
-                      <Link
-                        href="/dashboard/assessments"
-                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-white"
-                      >
-                        Open
-                      </Link>
-                    </div>
-                  )}
-
-                  {s && s.unread_notices.count > 0 && (
-                    <div className="flex items-start gap-3 rounded-xl bg-slate-50 p-3">
-                      <span className="rounded-lg bg-white p-1.5 text-violet-600">
-                        <BellRing className="h-3.5 w-3.5" />
-                      </span>
-                      <div className="flex-1">
-                        <div className="text-sm font-medium text-slate-900">
-                          {s.unread_notices.count} unread {s.unread_notices.count === 1 ? "notice" : "notices"}
-                        </div>
-                        {s.unread_notices.from_admin_count > 0 && (
-                          <div className="text-xs text-slate-500">
-                            {s.unread_notices.from_admin_count} from admin
-                          </div>
-                        )}
-                      </div>
-                      <Link
-                        href="/dashboard/notices"
-                        className="rounded-lg border border-slate-200 bg-white px-2.5 py-1 text-xs font-medium text-slate-700 hover:bg-white"
-                      >
-                        Open
-                      </Link>
-                    </div>
-                  )}
-
-                  {s &&
-                    !s.pending_attendance.batches?.length &&
-                    s.pending_evaluations.submission_count === 0 &&
-                    s.unread_notices.count === 0 && (
-                      <div className="rounded-xl bg-slate-50 p-4 text-center text-sm text-slate-500">
-                        All caught up — nothing pending right now.
-                      </div>
-                    )}
-                </div>
-              )}
-            </SectionCard>
+            <PendingWorkCard
+              loading={statsQ.isLoading}
+              stats={s}
+              onOpenAttendance={(b) => setAttBatch(b)}
+              onOpenEvaluations={() => setEvalOpen(true)}
+              onOpenNotices={() => setNoticesOpen(true)}
+            />
           </div>
         </div>
 
-        {/* Student performance insight + Teacher alerts — keep mockup structure */}
+        {/* Student performance insight + Teacher alerts — placeholder data matches mockup until analytics & alert endpoints exist */}
         <div className="grid gap-6 xl:grid-cols-2">
-          {/* Performance insight — 3-card layout from mockup, empty content (no analytics endpoint) */}
-          <SectionCard
-            icon={<Users className="h-4 w-4" />}
-            iconTone="bg-violet-50 text-violet-600"
-            title="Student performance insight"
-            subtitle="Across your assigned batches"
-          >
-            <div className="space-y-3">
-              <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-3">
-                <div>
-                  <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Weakest topic</div>
-                  <div className="mt-0.5 text-sm font-medium text-slate-400">No data available</div>
-                  <div className="mt-0.5 text-xs text-slate-400">Connect an analytics endpoint to surface weak topics.</div>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">—</span>
-              </div>
-
-              <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-3">
-                <div className="flex-1">
-                  <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Low performers</div>
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <span className="inline-flex h-7 w-7 items-center justify-center rounded-full bg-slate-200 text-[10px] font-semibold text-slate-500">—</span>
-                    <span className="text-xs text-slate-400">No performance data yet</span>
-                  </div>
-                </div>
-                <button
-                  disabled
-                  className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-400"
-                >
-                  Review
-                </button>
-              </div>
-
-              <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/50 p-3">
-                <div>
-                  <div className="text-[11px] font-medium uppercase tracking-wide text-slate-500">Absence pattern</div>
-                  <div className="mt-0.5 text-sm font-medium text-slate-400">No pattern detected</div>
-                  <div className="mt-0.5 text-xs text-slate-400">Attendance trends will appear when enough data is recorded.</div>
-                </div>
-                <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-500">Pattern</span>
-              </div>
-            </div>
-          </SectionCard>
-
-          {/* Teacher alerts — list structure with empty rows */}
-          <SectionCard
-            icon={<AlertTriangle className="h-4 w-4" />}
-            iconTone="bg-rose-50 text-rose-600"
-            title="Teacher alerts"
-            subtitle="Schedule changes, overrides, deadlines"
-            action={
-              <Link
-                href="/dashboard/notices"
-                className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline"
-              >
-                Notices <ArrowRight className="h-3.5 w-3.5" />
-              </Link>
-            }
-          >
-            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-6 text-center">
-              <span className="mx-auto mb-2 inline-flex h-10 w-10 items-center justify-center rounded-full bg-white text-slate-500 shadow-sm">
-                <AlertTriangle className="h-5 w-5" />
-              </span>
-              <div className="text-sm font-medium text-slate-700">No alerts right now</div>
-              <div className="mt-1 text-xs text-slate-500">
-                Schedule overrides and deadline reminders will appear here.
-              </div>
-            </div>
-          </SectionCard>
+          <PerformanceInsightCard />
+          <TeacherAlertsCard />
         </div>
       </div>
+
+      <PlannerEntryModal
+        entry={plannerEntry}
+        open={!!plannerEntry}
+        onOpenChange={(v) => !v && setPlannerEntry(null)}
+      />
+      <AttendanceModal
+        batchId={attBatch?.id ?? null}
+        batchName={attBatch?.name ?? null}
+        open={!!attBatch}
+        onOpenChange={(v) => !v && setAttBatch(null)}
+      />
+      <EvaluationsModal open={evalOpen} onOpenChange={setEvalOpen} />
+      <NoticesModal open={noticesOpen} onOpenChange={setNoticesOpen} />
+      <LiveClassModal
+        next={s?.upcoming_live.next ?? null}
+        open={liveOpen}
+        onOpenChange={setLiveOpen}
+      />
     </div>
+  )
+}
+
+function formatMode(mode: string): string {
+  if (mode === "ON_SITE") return "On Site"
+  if (mode === "LIVE_ONLINE" || mode === "ONLINE") return "Live"
+  if (mode === "HYBRID") return "Hybrid"
+  return mode
+}
+
+function modeBadgeClasses(mode: string): string {
+  if (mode === "ON_SITE") return "bg-blue-100 text-blue-700"
+  if (mode === "LIVE_ONLINE" || mode === "ONLINE") return "bg-violet-100 text-violet-700"
+  if (mode === "HYBRID") return "bg-amber-100 text-amber-800"
+  return "bg-slate-100 text-slate-600"
+}
+
+function PlannerStatusPill({
+  status,
+  minutesUntil,
+}: {
+  status: string
+  minutesUntil: number
+}) {
+  if (status === "COMPLETED") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Completed
+      </span>
+    )
+  }
+  if (status === "ONGOING") {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+        <span className="h-1.5 w-1.5 rounded-full bg-violet-500" /> Ongoing
+      </span>
+    )
+  }
+  if (minutesUntil > 0 && minutesUntil <= 60) {
+    return (
+      <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-800">
+        <span className="h-1.5 w-1.5 rounded-full bg-amber-500" />
+        Starts in {minutesUntil}m
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Upcoming
+    </span>
+  )
+}
+
+function PlannerRowActions({
+  p,
+  onOpen,
+  onLive,
+  onMaterial,
+  onAssessment,
+}: {
+  p: PlannerEntry
+  onOpen: () => void
+  onLive: () => void
+  onMaterial: () => void
+  onAssessment: () => void
+}) {
+  const isLive = p.delivery_mode === "LIVE_ONLINE" || p.delivery_mode === "ONLINE"
+
+  function startLive() {
+    if (p.live_session_ref && /^https?:\/\//i.test(p.live_session_ref)) {
+      window.open(p.live_session_ref, "_blank", "noopener,noreferrer")
+    } else {
+      onLive()
+    }
+  }
+
+  return (
+    <div className="flex flex-wrap gap-2">
+      {/* View — opens class details */}
+      <button
+        onClick={onOpen}
+        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+      >
+        <Eye className="h-3.5 w-3.5" /> View
+      </button>
+
+      {/* Start live — opens the live link in a new tab (live classes only) */}
+      {isLive && (
+        <button
+          onClick={startLive}
+          className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+        >
+          <PlayCircle className="h-3.5 w-3.5" /> Start live
+        </button>
+      )}
+
+      {/* Assessment — opens the assessment modal */}
+      <button
+        onClick={onAssessment}
+        className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+      >
+        <FileText className="h-3.5 w-3.5" /> Assessment
+      </button>
+
+      {/* Material — opens the attachment popup. Hidden once an attachment exists. */}
+      {!p.has_material && (
+        <button
+          onClick={onMaterial}
+          className="inline-flex items-center gap-1 rounded-lg bg-slate-900 px-3 py-1.5 text-xs font-semibold text-white hover:bg-slate-800"
+        >
+          <Upload className="h-3.5 w-3.5" /> Material
+        </button>
+      )}
+    </div>
+  )
+}
+
+function useCountdown(targetIso: string | undefined) {
+  const [now, setNow] = useState<number>(() => Date.now())
+  useEffect(() => {
+    if (!targetIso) return
+    const id = window.setInterval(() => setNow(Date.now()), 1000)
+    return () => window.clearInterval(id)
+  }, [targetIso])
+  if (!targetIso) return null
+  const diff = new Date(targetIso).getTime() - now
+  if (diff <= 0) return "00:00:00"
+  const totalSec = Math.floor(diff / 1000)
+  const hh = String(Math.floor(totalSec / 3600)).padStart(2, "0")
+  const mm = String(Math.floor((totalSec % 3600) / 60)).padStart(2, "0")
+  const ss = String(totalSec % 60).padStart(2, "0")
+  return `${hh}:${mm}:${ss}`
+}
+
+function NextLiveClassCard({
+  data,
+  upcomingCount,
+  loading,
+  onPrep,
+  onStart,
+}: {
+  data: NextLiveClass | null
+  upcomingCount: number
+  loading: boolean
+  onPrep: () => void
+  onStart: () => void
+}) {
+  const countdown = useCountdown(data?.scheduled_start_at)
+  const subjectName = data?.subject?.name ?? "Live class"
+  const className = data?.batch?.class?.name
+  const batchLabel = data
+    ? [className, data.batch?.name, data.batch?.section ? `Sec ${data.batch.section}` : null]
+        .filter(Boolean)
+        .join(" · ")
+    : ""
+  const windowLabel = data ? `${data.start_time} – ${data.end_time}` : "—"
+
+  function startLive() {
+    if (data?.meet_url && /^https?:\/\//i.test(data.meet_url)) {
+      window.open(data.meet_url, "_blank", "noopener,noreferrer")
+    } else {
+      onStart()
+    }
+  }
+
+  return (
+    <section className="overflow-hidden rounded-3xl border border-violet-100 bg-linear-to-b from-violet-50 to-white p-5 shadow-sm">
+      {/* Header row: label + LIVE badge */}
+      <div className="flex items-center justify-between">
+        <span className="inline-flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-violet-500" />
+          Next live class
+        </span>
+        {data && (
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-2.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-white">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-violet-400 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-violet-500" />
+            </span>
+            Live
+          </span>
+        )}
+      </div>
+
+      {loading ? (
+        <div className="mt-4">
+          <LoadingBlock rows={3} />
+        </div>
+      ) : data ? (
+        <>
+          {/* Title block */}
+          <div className="mt-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <h4 className="text-xl font-semibold leading-tight text-slate-900">{subjectName}</h4>
+              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${modeBadgeClasses(data.delivery_mode)}`}>
+                {formatMode(data.delivery_mode)}
+              </span>
+              {data.is_overridden && (
+                <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+                  <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Updated
+                </span>
+              )}
+            </div>
+            {batchLabel && (
+              <div className="mt-0.5 text-xs text-slate-500">{batchLabel}</div>
+            )}
+          </div>
+
+          {/* Countdown + Window block */}
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Starts in
+                </div>
+                <div className="mt-1 font-serif text-3xl font-semibold leading-none text-slate-900 tabular-nums">
+                  {countdown ?? "—"}
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">
+                  Window
+                </div>
+                <div className="mt-1 text-sm font-medium text-slate-700 tabular-nums">{windowLabel}</div>
+                <div className="mt-0.5 text-[11px] text-slate-400">
+                  {formatDateLong(data.scheduled_start_at)}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Detail rows */}
+          <ul className="mt-4 space-y-2.5 text-[13px]">
+            <li className="flex items-center gap-2 text-slate-700">
+              <CalendarDays className="h-3.5 w-3.5 text-slate-400" />
+              {capitalize(data.day_of_week)}
+            </li>
+            {data.room?.name && (
+              <li className="flex items-center gap-2 text-slate-700">
+                <Library className="h-3.5 w-3.5 text-slate-400" />
+                {data.room.name}
+              </li>
+            )}
+            <li className="flex items-center gap-2 text-slate-700">
+              <Users className="h-3.5 w-3.5 text-slate-400" />
+              {data.batch?.enrolled_students_count ?? 0} student
+              {data.batch?.enrolled_students_count === 1 ? "" : "s"} enrolled
+            </li>
+            <li className="flex items-center gap-2 text-slate-700">
+              {data.meet_url ? (
+                <>
+                  <Video className="h-3.5 w-3.5 text-emerald-500" />
+                  Meeting link ready
+                </>
+              ) : (
+                <>
+                  <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+                  <span className="text-amber-700">Meeting link not set</span>
+                </>
+              )}
+            </li>
+          </ul>
+
+          {/* Action buttons */}
+          <div className="mt-5 flex items-stretch gap-2">
+            <button
+              onClick={startLive}
+              className="inline-flex flex-1 items-center justify-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+            >
+              <PlayCircle className="h-4 w-4" /> Start live class
+            </button>
+            <button
+              onClick={onPrep}
+              className="inline-flex items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 shadow-sm hover:bg-slate-50"
+            >
+              <Paperclip className="h-3.5 w-3.5" /> Prep
+            </button>
+          </div>
+
+          {upcomingCount > 1 && (
+            <div className="mt-3 text-center text-[11px] text-slate-400">
+              +{upcomingCount - 1} more upcoming session{upcomingCount - 1 === 1 ? "" : "s"}
+            </div>
+          )}
+        </>
+      ) : (
+        <>
+          <div className="mt-3">
+            <h4 className="text-xl font-semibold leading-tight text-slate-400">No live class scheduled</h4>
+            <div className="mt-0.5 text-xs text-slate-500">Your next live session will appear here.</div>
+          </div>
+          <div className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Starts in</div>
+                <div className="mt-1 font-serif text-3xl font-semibold leading-none text-slate-300 tabular-nums">
+                  —
+                </div>
+              </div>
+              <div className="text-right">
+                <div className="text-[10px] font-semibold uppercase tracking-[0.12em] text-slate-500">Window</div>
+                <div className="mt-1 text-sm font-medium text-slate-300 tabular-nums">—</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  )
+}
+
+function capitalize(s: string): string {
+  if (!s) return s
+  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase()
+}
+
+function PrepItem({ label, tone }: { label: string; tone: "ok" | "warn" | "neutral" }) {
+  if (tone === "ok") {
+    return (
+      <li className="flex items-center gap-2 text-slate-700">
+        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-emerald-100 text-emerald-700">
+          <Check className="h-3 w-3" />
+        </span>
+        {label}
+      </li>
+    )
+  }
+  if (tone === "warn") {
+    return (
+      <li className="flex items-center gap-2 text-amber-700">
+        <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-amber-100 text-amber-700">
+          <AlertTriangle className="h-3 w-3" />
+        </span>
+        {label}
+      </li>
+    )
+  }
+  return (
+    <li className="flex items-center gap-2 text-slate-500">
+      <span className="inline-flex h-4 w-4 items-center justify-center rounded-full bg-slate-100 text-slate-500">
+        ·
+      </span>
+      {label}
+    </li>
+  )
+}
+
+function PendingWorkCard({
+  loading,
+  stats,
+  onOpenAttendance,
+  onOpenEvaluations,
+  onOpenNotices,
+}: {
+  loading: boolean
+  stats: ReturnType<typeof useTeacherStats>["data"]
+  onOpenAttendance: (b: { id: string; name: string }) => void
+  onOpenEvaluations: () => void
+  onOpenNotices: () => void
+}) {
+  const count =
+    (stats?.pending_attendance.batches?.length ?? 0) +
+    (stats && stats.pending_evaluations.submission_count > 0 ? 1 : 0) +
+    (stats && stats.unread_notices.count > 0 ? 1 : 0)
+
+  return (
+    <SectionCard
+      icon={<ClipboardCheck className="h-4 w-4" />}
+      iconTone="bg-amber-50 text-amber-600"
+      title="Pending work"
+      action={
+        count > 0 ? (
+          <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+            <span className="h-1.5 w-1.5 rounded-full bg-rose-500" /> {count}
+          </span>
+        ) : null
+      }
+    >
+      {loading ? (
+        <LoadingBlock rows={3} />
+      ) : (
+        <div className="space-y-2">
+          {stats?.pending_attendance.batches?.slice(0, 2).map((b) => (
+            <PendingRow
+              key={b.batch_id}
+              icon={<ClipboardCheck className="h-3.5 w-3.5" />}
+              tone="bg-rose-50 text-rose-600"
+              title={`Take attendance — ${b.batch_name}`}
+              detail="Window closes soon"
+              action="Open"
+              onClick={() => onOpenAttendance({ id: b.batch_id, name: b.batch_name })}
+            />
+          ))}
+
+          {stats && stats.pending_evaluations.submission_count > 0 && (
+            <PendingRow
+              icon={<FileText className="h-3.5 w-3.5" />}
+              tone="bg-amber-50 text-amber-600"
+              title={`Grade — ${stats.pending_evaluations.submission_count} submissions left`}
+              detail={`across ${stats.pending_evaluations.assessment_count} assessments`}
+              action="Open"
+              onClick={onOpenEvaluations}
+            />
+          )}
+
+          {stats && stats.unread_notices.count > 0 && (
+            <PendingRow
+              icon={<BellRing className="h-3.5 w-3.5" />}
+              tone="bg-violet-50 text-violet-600"
+              title={`Notice from admin`}
+              detail={
+                stats.unread_notices.from_admin_count > 0
+                  ? `${stats.unread_notices.from_admin_count} from admin`
+                  : `${stats.unread_notices.count} unread`
+              }
+              action="Open"
+              onClick={onOpenNotices}
+            />
+          )}
+
+          {stats &&
+            !stats.pending_attendance.batches?.length &&
+            stats.pending_evaluations.submission_count === 0 &&
+            stats.unread_notices.count === 0 && (
+              <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50/40 p-6 text-center text-sm text-slate-500">
+                All caught up — nothing pending right now.
+              </div>
+            )}
+        </div>
+      )}
+    </SectionCard>
+  )
+}
+
+function PendingRow({
+  icon,
+  tone,
+  title,
+  detail,
+  action,
+  onClick,
+}: {
+  icon: React.ReactNode
+  tone: string
+  title: string
+  detail: string
+  action: string
+  onClick: () => void
+}) {
+  return (
+    <div className="flex items-center gap-3 rounded-2xl border border-slate-100 bg-white p-3 hover:border-slate-200">
+      <span className={`inline-flex h-8 w-8 items-center justify-center rounded-full ${tone}`}>{icon}</span>
+      <div className="min-w-0 flex-1">
+        <div className="truncate text-sm font-medium text-slate-900">{title}</div>
+        <div className="truncate text-xs text-slate-500">{detail}</div>
+      </div>
+      <button
+        onClick={onClick}
+        className="inline-flex items-center gap-1 rounded-lg text-xs font-medium text-indigo-600 hover:underline"
+      >
+        {action} <ArrowRight className="h-3 w-3" />
+      </button>
+    </div>
+  )
+}
+
+function PerformanceInsightCard() {
+  return (
+    <SectionCard
+      icon={<UserSquare2 className="h-4 w-4" />}
+      iconTone="bg-violet-50 text-violet-600"
+      title="Student performance insight"
+      subtitle="Across your 6 assigned batches · last 14 days"
+    >
+      <div className="space-y-3">
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/40 p-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Weakest topic</div>
+            <div className="mt-1 truncate text-sm font-semibold text-slate-900">Quadratic equations — Class 9-B</div>
+            <div className="mt-0.5 text-xs text-slate-500">Average 58% across 3 recent quizzes (–9 pts vs last month)</div>
+          </div>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+            <TrendingDown className="h-3 w-3" /> –9
+          </span>
+        </div>
+
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/40 p-4">
+          <div className="min-w-0 flex-1">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Low performers (3)</div>
+            <div className="mt-1.5 flex items-center gap-2">
+              <div className="flex -space-x-2">
+                {["RA", "NJ", "TH"].map((initials, i) => (
+                  <span
+                    key={i}
+                    className="inline-flex h-7 w-7 items-center justify-center rounded-full border-2 border-white bg-violet-100 text-[10px] font-semibold text-violet-700"
+                  >
+                    {initials}
+                  </span>
+                ))}
+              </div>
+              <span className="text-xs text-slate-600">scored below 40% on Math Quiz 3</span>
+            </div>
+          </div>
+          <button className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50">
+            Review <ArrowRight className="h-3 w-3" />
+          </button>
+        </div>
+
+        <div className="flex items-start justify-between gap-3 rounded-2xl border border-slate-100 bg-slate-50/40 p-4">
+          <div className="min-w-0">
+            <div className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">Absence pattern</div>
+            <div className="mt-1 truncate text-sm font-semibold text-slate-900">Friday afternoon attendance ↓ 12%</div>
+            <div className="mt-0.5 text-xs text-slate-500">Affecting Physics 10-C the most. Consider rescheduling.</div>
+          </div>
+          <span className="inline-flex shrink-0 items-center rounded-full bg-violet-50 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+            Pattern
+          </span>
+        </div>
+      </div>
+    </SectionCard>
+  )
+}
+
+function TeacherAlertsCard() {
+  const items = [
+    {
+      icon: <CalendarDays className="h-3.5 w-3.5" />,
+      tone: "bg-rose-50 text-rose-600",
+      title: "Physics 10-C — room changed",
+      detail: "Moved from Room 308 to Room 311 by admin",
+      time: "08:21",
+    },
+    {
+      icon: <Video className="h-3.5 w-3.5" />,
+      tone: "bg-amber-50 text-amber-600",
+      title: "Live session — audio drops",
+      detail: "Math 9-A live yesterday — 6 students affected",
+      time: "13:02",
+    },
+    {
+      icon: <ClipboardCheck className="h-3.5 w-3.5" />,
+      tone: "bg-amber-50 text-amber-600",
+      title: "Evaluation deadline tonight",
+      detail: "Math Quiz 3 — finalize before 18:00",
+      time: "09:00",
+    },
+  ]
+  return (
+    <SectionCard
+      icon={<AlertTriangle className="h-4 w-4" />}
+      iconTone="bg-slate-100 text-slate-600"
+      title="Teacher alerts"
+      subtitle="Schedule changes, overrides, deadlines"
+      action={
+        <span className="inline-flex items-center gap-1 rounded-full bg-rose-50 px-2 py-0.5 text-[10px] font-semibold text-rose-700">
+          <span className="h-1.5 w-1.5 rounded-full bg-rose-500" /> {items.length}
+        </span>
+      }
+    >
+      <div>
+        {items.map((a, i) => (
+          <div
+            key={i}
+            className="flex items-center gap-3 border-t border-slate-100 p-3"
+          >
+            <span className={`inline-flex h-8 w-8 items-center justify-center rounded-lg ${a.tone}`}>{a.icon}</span>
+            <div className="min-w-0 flex-1">
+              <div className="truncate text-[13px] font-semibold text-slate-900">{a.title}</div>
+              <div className="truncate text-xs text-slate-500">{a.detail}</div>
+            </div>
+            <span className="text-[11px] font-medium text-slate-400 tabular-nums">{a.time}</span>
+          </div>
+        ))}
+      </div>
+    </SectionCard>
   )
 }

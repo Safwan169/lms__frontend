@@ -31,12 +31,12 @@ function pickName(user: AnyUser) {
 }
 
 const kpis = [
-  { label: "This Month Collection", value: "৳ 12.84L", hint: "514 invoices · +18% vs Apr", icon: Wallet, tone: "text-emerald-600 bg-emerald-50", badge: "+18%" },
-  { label: "Outstanding Dues", value: "৳ 1.84L", hint: "37 overdue 30d+", icon: AlertTriangle, tone: "text-rose-600 bg-rose-50" },
-  { label: "Pending Verify", value: "6", hint: "Manual MFS submissions", icon: Inbox, tone: "text-amber-600 bg-amber-50" },
-  { label: "Payroll Pending", value: "4", hint: "Teachers · May cycle", icon: Receipt, tone: "text-indigo-600 bg-indigo-50" },
-  { label: "Expenses This Month", value: "৳ 4.62L", hint: "32 entries · electricity ↑", icon: FileText, tone: "text-violet-600 bg-violet-50" },
-  { label: "Current Balance", value: "৳ 18.21L", hint: "Across 3 accounts", icon: Wallet, tone: "text-sky-600 bg-sky-50" },
+  { label: "This Month Collection", value: "৳ 12.84L", hint: "514 invoices · +18% vs Apr", icon: Wallet, tone: "text-emerald-600 bg-emerald-100", cornerTone: "bg-emerald-500", badge: "+18%" },
+  { label: "Outstanding Dues", value: "৳ 1.84L", hint: "37 overdue 30d+", icon: AlertTriangle, tone: "text-rose-600 bg-rose-100", cornerTone: "bg-rose-500" },
+  { label: "Pending Verify", value: "6", hint: "Manual MFS submissions", icon: Inbox, tone: "text-amber-600 bg-amber-100", cornerTone: "bg-amber-500" },
+  { label: "Payroll Pending", value: "4", hint: "Teachers · May cycle", icon: Receipt, tone: "text-indigo-600 bg-indigo-100", cornerTone: "bg-indigo-500" },
+  { label: "Expenses This Month", value: "৳ 4.62L", hint: "32 entries · electricity ↑", icon: FileText, tone: "text-violet-600 bg-violet-100", cornerTone: "bg-violet-500" },
+  { label: "Current Balance", value: "৳ 18.21L", hint: "Across 3 accounts", icon: Wallet, tone: "text-sky-600 bg-sky-100", cornerTone: "bg-sky-500" },
 ]
 
 const invoices = [
@@ -115,8 +115,9 @@ export default function AccountantDashboard({ user }: { user: AnyUser }) {
           {kpis.map((k) => {
             const Icon = k.icon
             return (
-              <div key={k.label} className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                <div className="flex items-start justify-between gap-2">
+              <div key={k.label} className="relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+                <span className={`pointer-events-none absolute -bottom-2.5 -right-2.5 h-[70px] w-[70px] rounded-full opacity-10 ${k.cornerTone}`} />
+                <div className="relative flex items-start justify-between gap-2">
                   <span className={`rounded-xl p-2 ${k.tone}`}>
                     <Icon className="h-5 w-5" />
                   </span>
@@ -127,7 +128,7 @@ export default function AccountantDashboard({ user }: { user: AnyUser }) {
                     </span>
                   )}
                 </div>
-                <div className="mt-3">
+                <div className="relative mt-3">
                   <div className="text-2xl font-semibold text-slate-900 tabular-nums">{k.value}</div>
                   <div className="mt-1 text-sm font-medium text-slate-700">{k.label}</div>
                   <div className="mt-0.5 text-xs text-slate-500">{k.hint}</div>

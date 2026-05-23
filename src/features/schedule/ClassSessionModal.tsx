@@ -64,6 +64,8 @@ type ClassSessionModalProps = {
   sessionDate: string
   tenantId: string | null
   role: "teacher" | "student" | "admin" | "other"
+  /** When true, scroll the modal to the Attachments section once it opens. */
+  focusAttachments?: boolean
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
@@ -132,6 +134,7 @@ export default function ClassSessionModal({
   sessionDate,
   tenantId,
   role,
+  focusAttachments = false,
 }: ClassSessionModalProps) {
   const router = useRouter()
   const qc = useQueryClient()
@@ -339,6 +342,18 @@ export default function ClassSessionModal({
     router.push(`/dashboard/assessments?focus=${assessmentId}`)
   }
 
+  // ── Scroll to the Attachments section when opened via the dashboard
+  //    "Attachments" button. Wait for materials to finish loading so the
+  //    section has its final height before scrolling.
+  const attachmentsRef = useRef<HTMLElement | null>(null)
+  useEffect(() => {
+    if (!open || !focusAttachments || materialsQuery.isLoading) return
+    const id = window.setTimeout(() => {
+      attachmentsRef.current?.scrollIntoView({ behavior: "smooth", block: "start" })
+    }, 80)
+    return () => window.clearTimeout(id)
+  }, [open, focusAttachments, materialsQuery.isLoading])
+
   if (!entry) return null
 
   const loading = materialsQuery.isLoading
@@ -473,7 +488,7 @@ export default function ClassSessionModal({
         ) : null}
 
         {/* Attachments */}
-        <section className="space-y-3 rounded-2xl border border-slate-200 p-4">
+        <section ref={attachmentsRef} className="scroll-mt-4 space-y-3 rounded-2xl border border-slate-200 p-4">
           <div className="flex items-center justify-between">
             <p className="text-sm font-semibold text-slate-900">
               <Paperclip className="mr-1 inline h-4 w-4" />

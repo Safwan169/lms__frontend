@@ -139,6 +139,34 @@ export interface TeacherStats {
   unread_notices: { count: number; from_admin_count: number }
 }
 
+export interface NextLiveClass {
+  schedule_entry_id: string
+  session_date: string
+  day_of_week: string
+  start_time: string
+  end_time: string
+  scheduled_start_at: string
+  scheduled_end_at: string
+  delivery_mode: string
+  meet_url: string | null
+  is_overridden: boolean
+  subject: { id: string; name: string } | null
+  room: { id: string; name: string } | null
+  batch: {
+    id: string
+    name: string
+    section: string | null
+    enrolled_students_count: number
+    class: { id: string; name: string } | null
+  } | null
+}
+
+export interface NextLiveClassResult {
+  server_time: string
+  upcoming_count: number
+  next_live_class: NextLiveClass | null
+}
+
 export interface PlannerEntry {
   entry_id: string
   date: string
@@ -157,6 +185,8 @@ export interface PlannerEntry {
   is_overridden: boolean
   is_now: boolean
   notes: string | null
+  /** True when a content attachment (teaching material) is linked to this class. */
+  has_material?: boolean
 }
 
 export interface TeachingPlannerResult {
@@ -206,6 +236,124 @@ export function useAdminNonNormalOccurrences() {
   })
 }
 
+export interface RevenueChartMonth {
+  month_key: string
+  month_label: string
+  total_amount: string
+}
+
+export interface RevenueChart {
+  period: { months: number; from: string; to: string }
+  total_amount: string
+  monthly: RevenueChartMonth[]
+}
+
+/** Accounting revenue chart — GET /api/v1/accounting/dashboard/revenue-chart */
+export function useAdminRevenueChart() {
+  return useQuery<RevenueChart>({
+    queryKey: ["admin-dashboard", "revenue-chart"],
+    queryFn: () => fetchJson(`/v1/accounting/dashboard/revenue-chart`),
+  })
+}
+
+// ── Admin billing cards ──────────────────────────────────────────────────────
+export interface BillingAmountCard {
+  count: number
+  amount: number
+  currency: string
+}
+
+export interface BillingCollectedCard {
+  amount: number
+  invoice_count: number
+  currency: string
+}
+
+export interface BillingPendingVerifyCard {
+  count: number
+  source: string
+}
+
+export function useAdminBillingDueThisWeek() {
+  const tenantId = useTenantId()
+  return useQuery<BillingAmountCard>({
+    queryKey: ["admin-dashboard", "billing", "due-this-week", tenantId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/admin-dashboard/billing/due-this-week`),
+    enabled: !!tenantId,
+  })
+}
+
+export function useAdminBillingOverdue30dPlus() {
+  const tenantId = useTenantId()
+  return useQuery<BillingAmountCard>({
+    queryKey: ["admin-dashboard", "billing", "overdue-30d-plus", tenantId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/admin-dashboard/billing/overdue-30d-plus`),
+    enabled: !!tenantId,
+  })
+}
+
+export function useAdminBillingTodaysCollected() {
+  const tenantId = useTenantId()
+  return useQuery<BillingCollectedCard>({
+    queryKey: ["admin-dashboard", "billing", "todays-collected", tenantId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/admin-dashboard/billing/todays-collected`),
+    enabled: !!tenantId,
+  })
+}
+
+export function useAdminBillingPendingVerify() {
+  const tenantId = useTenantId()
+  return useQuery<BillingPendingVerifyCard>({
+    queryKey: ["admin-dashboard", "billing", "pending-verify", tenantId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/admin-dashboard/billing/pending-verify`),
+    enabled: !!tenantId,
+  })
+}
+
+export type AdmissionQueueStatus = "PENDING" | "REVIEW" | "DOC_NEEDED"
+export type AdmissionQueueTag = "NEW" | "SIBLING" | null
+
+export interface AdmissionQueueItem {
+  application_id: string
+  applicant: { full_name: string; initials: string; phone: string }
+  tag: AdmissionQueueTag
+  class: { id: string; name: string; academic_year: string } | null
+  submitted_at: string
+  status: AdmissionQueueStatus
+}
+
+export interface AdmissionsQueue {
+  total_pending: number
+  last_submitted_at: string | null
+  items: AdmissionQueueItem[]
+}
+
+export function useAdminAdmissionsQueue() {
+  const tenantId = useTenantId()
+  return useQuery<AdmissionsQueue>({
+    queryKey: ["admin-dashboard", "admissions-queue", tenantId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/admin-dashboard/admissions-queue`),
+    enabled: !!tenantId,
+  })
+}
+
+export interface DeliveryHealth {
+  sms_sent_today: number
+  delivered: number
+  failed_numbers: number
+  push_opt_outs: number
+}
+
+export function useAdminDeliveryHealth() {
+  const tenantId = useTenantId()
+  return useQuery<DeliveryHealth>({
+    queryKey: ["admin-dashboard", "delivery-health", tenantId],
+    queryFn: () =>
+      fetchJson(`/tenants/${tenantId}/admin-dashboard/notifications/delivery-health`),
+    enabled: !!tenantId,
+  })
+}
+
 // ── Student ──────────────────────────────────────────────────────────────────
 export function useStudentStats() {
   const tenantId = useTenantId()
@@ -225,6 +373,45 @@ export function useStudentTodaysClasses() {
   })
 }
 
+export interface StudentAssessmentDetail {
+  id: string
+  title: string | null
+  description: string
+  assessment_type: string
+  batch_id: string
+  subject_id: string
+  subject_name: string
+  file: { id: string; url: string; mime_type: string | null } | null
+  link: string | null
+  marks: number | null
+  publish_status: string
+  published_at: string | null
+  deadline_at: string | null
+  is_submission_open: boolean
+  my_submission: {
+    submitted: boolean
+    submission: {
+      id: string
+      submitted_at: string
+      first_submitted_at: string
+      submission_count: number
+      is_late: boolean
+      deadline_at: string | null
+    } | null
+    obtained_marks: number | null
+    result_status: "NOT_SUBMITTED" | "NOT_MARKED" | "MARKED"
+  }
+}
+
+export function useStudentAssessmentDetail(assessmentId: string | null) {
+  const tenantId = useTenantId()
+  return useQuery<StudentAssessmentDetail>({
+    queryKey: ["student-dashboard", "assessment-detail", tenantId, assessmentId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/student/assessments/${assessmentId}`),
+    enabled: !!tenantId && !!assessmentId,
+  })
+}
+
 export function useStudentUpcomingAssessments() {
   const tenantId = useTenantId()
   return useQuery<UpcomingEventsList>({
@@ -240,6 +427,15 @@ export function useTeacherStats() {
   return useQuery<TeacherStats>({
     queryKey: ["teacher-dashboard", "stats", tenantId],
     queryFn: () => fetchJson(`/tenants/${tenantId}/teacher-dashboard/stats`),
+    enabled: !!tenantId,
+  })
+}
+
+export function useTeacherNextLiveClass() {
+  const tenantId = useTenantId()
+  return useQuery<NextLiveClassResult>({
+    queryKey: ["teacher-dashboard", "next-live-class", tenantId],
+    queryFn: () => fetchJson(`/tenants/${tenantId}/teacher-dashboard/next-live-class`),
     enabled: !!tenantId,
   })
 }
@@ -294,6 +490,23 @@ export function greetingFor(date: Date = new Date()): string {
   if (h < 17) return "Good afternoon"
   if (h < 21) return "Good evening"
   return "Good night"
+}
+
+/** Compact relative-past label — "12 minutes ago", "3h ago", "2d ago". */
+export function timeAgo(iso?: string | null): string {
+  if (!iso) return "—"
+  const then = new Date(iso).getTime()
+  if (Number.isNaN(then)) return "—"
+  const sec = Math.floor((Date.now() - then) / 1000)
+  if (sec < 60) return "just now"
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min} minute${min === 1 ? "" : "s"} ago`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h ago`
+  const day = Math.floor(hr / 24)
+  if (day < 30) return `${day}d ago`
+  const mo = Math.floor(day / 30)
+  return `${mo}mo ago`
 }
 
 export function daysUntil(iso: string): string {

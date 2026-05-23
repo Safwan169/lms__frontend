@@ -738,8 +738,8 @@ export default function ProfileManagementPage() {
 
             <div className="space-y-2 rounded-lg border p-4 text-sm">
               <div><span className="text-muted-foreground">Phone:</span> {displayPhone}</div>
-              <div><span className="text-muted-foreground">Tenant:</span> {tenantLabel}</div>
-              <div><span className="text-muted-foreground">User ID:</span> {userId ? String(userId) : "-"}</div>
+              {/* <div><span className="text-muted-foreground">Tenant:</span> {tenantLabel}</div> */}
+              {/* <div><span className="text-muted-foreground">User ID:</span> {userId ? String(userId) : "-"}</div> */}
             </div>
 
             <div className="space-y-2">

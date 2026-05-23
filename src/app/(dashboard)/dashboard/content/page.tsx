@@ -1,6 +1,7 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { Suspense, useEffect, useMemo, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BookOpen, CheckCircle2, Clock, Eye, FilePlus2, FileText, Globe,
@@ -218,7 +219,7 @@ function StatCard({
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-export default function ContentPage() {
+function ContentPageInner() {
   const { user } = useAuth()
   const tenantId = user?.tenant_id ?? user?.tenant?.id ?? null
   const role = String(user?.role ?? (Array.isArray(user?.roles) ? user?.roles[0] : user?.roles) ?? "").toLowerCase()
@@ -245,6 +246,19 @@ export default function ContentPage() {
   const [form, setForm] = useState<CreateForm>(EMPTY_FORM)
 
   const f = (k: keyof CreateForm, v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  // Open the create dialog automatically when arrived here from the teacher
+  // dashboard "Material" button (e.g. /dashboard/content?create=1&subject=…&batch=…).
+  const searchParams = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get("create") !== "1") return
+    setForm({
+      ...EMPTY_FORM,
+      subject_id: searchParams.get("subject") ?? "",
+      batch_id: searchParams.get("batch") ?? "",
+    })
+    setCreateOpen(true)
+  }, [searchParams])
 
   // ── queries ──
   const listKey = isStudent ? ["student-content", tenantId] : ["teacher-content", tenantId]
@@ -984,5 +998,13 @@ export default function ContentPage() {
         </AlertDialogContent>
       </AlertDialog>
     </div>
+  )
+}
+
+export default function ContentPage() {
+  return (
+    <Suspense fallback={null}>
+      <ContentPageInner />
+    </Suspense>
   )
 }
