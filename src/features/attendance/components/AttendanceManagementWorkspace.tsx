@@ -903,7 +903,8 @@ function SummaryPanel(props: SummaryPanelProps) {
         ))}
       </div>
 
-      {range === "single" ? (
+     <div>
+       {range === "single" ? (
         <div className="adm-card space-y-4">
           <div className="grid gap-3 md:grid-cols-[180px_1fr_180px_180px]">
             <Input
@@ -1136,6 +1137,7 @@ function SummaryPanel(props: SummaryPanelProps) {
           )}
         </div>
       ) : null}
+     </div>
     </div>
   )
 }

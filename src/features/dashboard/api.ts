@@ -118,6 +118,8 @@ export interface TodaysClassItem {
   is_live_now: boolean
   is_overridden: boolean
   notes: string | null
+  contents: any[]
+  assessments: any[]
 }
 
 export interface TodaysClassesResult {
@@ -185,6 +187,8 @@ export interface PlannerEntry {
   is_overridden: boolean
   is_now: boolean
   notes: string | null
+  contents: []
+  assessments: []
   /** True when a content attachment (teaching material) is linked to this class. */
   has_material?: boolean
 }

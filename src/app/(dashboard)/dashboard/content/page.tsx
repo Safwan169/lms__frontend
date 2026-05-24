@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation"
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
 import {
   BookOpen, CheckCircle2, Clock, Eye, FilePlus2, FileText, Globe,
-  Link2, Loader2, Monitor, Paperclip, Plus, RefreshCw, Search,
+  Link2, Loader2, Monitor, Paperclip, Pencil, Plus, RefreshCw, Save, Search,
   Trash2, Video, X, AlertCircle, Upload, ExternalLink,
 } from "lucide-react"
 import toast from "react-hot-toast"
@@ -239,6 +239,26 @@ function ContentPageInner() {
   const [createOpen, setCreateOpen] = useState(false)
   const [viewItem, setViewItem] = useState<ContentItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<ContentItem | null>(null)
+  const [editTarget, setEditTarget] = useState<ContentItem | null>(null)
+  const [editForm, setEditForm] = useState<{
+    title: string
+    description: string
+    visibility: Visibility
+    publish_status: PublishStatus
+    external_url: string
+    meet_link: string
+    start_at: string
+    end_at: string
+  }>({
+    title: "",
+    description: "",
+    visibility: "BATCH_ONLY",
+    publish_status: "DRAFT",
+    external_url: "",
+    meet_link: "",
+    start_at: "",
+    end_at: "",
+  })
   const [uploadedFileId, setUploadedFileId] = useState("")
   const [uploadedFileName, setUploadedFileName] = useState("")
   const [uploadedFileSize, setUploadedFileSize] = useState(0)
@@ -379,8 +399,62 @@ function ContentPageInner() {
       qc.invalidateQueries({ queryKey: listKey })
       setDeleteTarget(null)
     },
-    onError: () => toast.error("Failed to delete"),
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message
+      toast.error(Array.isArray(msg) ? msg.join(", ") : msg || "Failed to delete")
+    },
   })
+
+  const updateMut = useMutation({
+    mutationFn: async () => {
+      if (!tenantId || !editTarget) throw new Error("Missing context")
+      const isVideo = editTarget.content_type === "VIDEO_LINK"
+      const isOnline = editTarget.content_type === "ONLINE_CLASS"
+      const payload: Record<string, unknown> = {
+        title: editForm.title,
+        description: editForm.description,
+        visibility: editForm.visibility,
+        publish_status: editForm.publish_status,
+      }
+      if (isVideo) payload.external_url = editForm.external_url || null
+      if (isOnline) {
+        payload.meet_link = editForm.meet_link || null
+        payload.start_at = editForm.start_at ? new Date(editForm.start_at).toISOString() : null
+        payload.end_at = editForm.end_at ? new Date(editForm.end_at).toISOString() : null
+      }
+      return learningApi.updateContent(tenantId, editTarget.id, payload)
+    },
+    onSuccess: () => {
+      toast.success("Content updated")
+      qc.invalidateQueries({ queryKey: listKey })
+      setEditTarget(null)
+    },
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message
+      toast.error(Array.isArray(msg) ? msg.join(", ") : msg || "Failed to update")
+    },
+  })
+
+  function openEdit(item: ContentItem) {
+    const toLocalInput = (iso?: string | null) => {
+      if (!iso) return ""
+      const d = new Date(iso)
+      if (Number.isNaN(d.getTime())) return ""
+      const off = d.getTimezoneOffset() * 60000
+      return new Date(d.getTime() - off).toISOString().slice(0, 16)
+    }
+    setEditForm({
+      title: item.title ?? "",
+      description: item.description ?? "",
+      visibility: item.visibility ?? "BATCH_ONLY",
+      publish_status: item.publish_status ?? "DRAFT",
+      external_url: item.external_url ?? "",
+      meet_link: item.meet_link ?? "",
+      start_at: toLocalInput(item.start_at),
+      end_at: toLocalInput(item.end_at),
+    })
+    setEditTarget(item)
+  }
 
   // ── filtered list ──
   const allItems: ContentItem[] = useMemo(() => {
@@ -453,9 +527,9 @@ function ContentPageInner() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 adm-root">
       {/* ─── Header ─── */}
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between adm-topbar-left">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <BookOpen className="h-6 w-6 text-primary" />
@@ -638,6 +712,15 @@ function ContentPageInner() {
                             >
                               <ExternalLink className="h-3.5 w-3.5" />
                             </a>
+                          )}
+                          {isTeacherOrAdmin && (
+                            <button
+                              onClick={() => openEdit(item)}
+                              title="Edit"
+                              className="rounded-lg p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                            >
+                              <Pencil className="h-3.5 w-3.5" />
+                            </button>
                           )}
                           {isTeacherOrAdmin && (
                             <button
@@ -973,6 +1056,169 @@ function ContentPageInner() {
               </>
             )
           })()}
+        </DialogContent>
+      </Dialog>
+
+      {/* ─── Edit Dialog ─── */}
+      <Dialog open={Boolean(editTarget)} onOpenChange={open => { if (!open) setEditTarget(null) }}>
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          {editTarget && (
+            <>
+              <DialogHeader>
+                <DialogTitle className="flex items-center gap-2">
+                  <Pencil className="h-5 w-5 text-primary" />
+                  Edit Content
+                </DialogTitle>
+                <DialogDescription>
+                  Update the title, description, visibility and publishing status.
+                  Class / batch / subject and file cannot be changed — delete and recreate to move content.
+                </DialogDescription>
+              </DialogHeader>
+
+              <div className="grid gap-5 py-2">
+                {/* Title */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Title <span className="text-red-500">*</span></label>
+                  <Input
+                    value={editForm.title}
+                    onChange={e => setEditForm(p => ({ ...p, title: e.target.value }))}
+                  />
+                </div>
+
+                {/* Read-only assignment */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 text-xs text-slate-600 space-y-0.5">
+                  <div><span className="font-medium">Class:</span> {editTarget.class_name ?? editTarget.class_id}</div>
+                  <div><span className="font-medium">Batch:</span> {editTarget.batch_name ?? editTarget.batch_id}</div>
+                  <div><span className="font-medium">Subject:</span> {editTarget.subject_name ?? editTarget.subject_id}</div>
+                  <div><span className="font-medium">Type:</span> {CONTENT_TYPE_CONFIG[editTarget.content_type].label}</div>
+                </div>
+
+                {/* Visibility & Status */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Visibility</label>
+                    <div className="relative">
+                      <select
+                        value={editForm.visibility}
+                        onChange={e => setEditForm(p => ({ ...p, visibility: e.target.value as Visibility }))}
+                        className="w-full h-9 rounded-lg border border-input bg-background px-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
+                      >
+                        <option value="BATCH_ONLY">Batch Only</option>
+                        <option value="CLASS_ALL_BATCHES">All Batches</option>
+                      </select>
+                      <div className="pointer-events-none absolute right-2.5 top-2.5 text-muted-foreground">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Publish Status</label>
+                    <div className="relative">
+                      <select
+                        value={editForm.publish_status}
+                        onChange={e => setEditForm(p => ({ ...p, publish_status: e.target.value as PublishStatus }))}
+                        className="w-full h-9 rounded-lg border border-input bg-background px-3 pr-8 text-sm focus:outline-none focus:ring-2 focus:ring-ring appearance-none"
+                      >
+                        <option value="DRAFT">Draft</option>
+                        <option value="PUBLISHED">Published</option>
+                      </select>
+                      <div className="pointer-events-none absolute right-2.5 top-2.5 text-muted-foreground">
+                        <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" /></svg>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Video URL */}
+                {editTarget.content_type === "VIDEO_LINK" && (
+                  <div className="space-y-1.5">
+                    <label className="text-sm font-medium">Video URL <span className="text-red-500">*</span></label>
+                    <Input
+                      placeholder="https://youtube.com/watch?v=…"
+                      value={editForm.external_url}
+                      onChange={e => setEditForm(p => ({ ...p, external_url: e.target.value }))}
+                    />
+                  </div>
+                )}
+
+                {/* Online Class fields */}
+                {editTarget.content_type === "ONLINE_CLASS" && (
+                  <div className="space-y-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
+                    <div className="space-y-1.5">
+                      <label className="text-sm font-medium">Meet Link <span className="text-red-500">*</span></label>
+                      <Input
+                        placeholder="https://meet.google.com/…"
+                        value={editForm.meet_link}
+                        onChange={e => setEditForm(p => ({ ...p, meet_link: e.target.value }))}
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-600">Start Time</label>
+                        <Input
+                          type="datetime-local"
+                          value={editForm.start_at}
+                          onChange={e => setEditForm(p => ({ ...p, start_at: e.target.value }))}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-xs font-medium text-slate-600">End Time</label>
+                        <Input
+                          type="datetime-local"
+                          value={editForm.end_at}
+                          onChange={e => setEditForm(p => ({ ...p, end_at: e.target.value }))}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* PDF — no editable file. Show current attachment for context. */}
+                {editTarget.content_type === "PDF" && editTarget.file?.url && (
+                  <div className="rounded-xl border border-slate-200 bg-slate-50/60 p-3 flex items-center gap-2 text-xs">
+                    <FileText className="h-4 w-4 text-slate-500" />
+                    <span className="text-slate-700">Current file attached</span>
+                    <a
+                      href={editTarget.file.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="ml-auto text-indigo-600 hover:underline inline-flex items-center gap-1"
+                    >
+                      <ExternalLink className="h-3 w-3" /> Open
+                    </a>
+                  </div>
+                )}
+
+                {/* Description */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium">Description</label>
+                  <Textarea
+                    rows={3}
+                    value={editForm.description}
+                    onChange={e => setEditForm(p => ({ ...p, description: e.target.value }))}
+                  />
+                </div>
+              </div>
+
+              <DialogFooter>
+                <Button variant="outline" onClick={() => setEditTarget(null)}>Cancel</Button>
+                <Button
+                  onClick={() => updateMut.mutate()}
+                  disabled={
+                    !editForm.title.trim() ||
+                    (editTarget.content_type === "VIDEO_LINK" && !editForm.external_url.trim()) ||
+                    (editTarget.content_type === "ONLINE_CLASS" && !editForm.meet_link.trim()) ||
+                    updateMut.isPending
+                  }
+                  className="gap-2 min-w-[100px]"
+                >
+                  {updateMut.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+                  {updateMut.isPending ? "Saving…" : "Save"}
+                </Button>
+              </DialogFooter>
+            </>
+          )}
         </DialogContent>
       </Dialog>
 

@@ -177,6 +177,16 @@ export default function AssessmentsPage() {
   const qc = useQueryClient()
   const searchParams = useSearchParams()
   const focusId = searchParams?.get("focus") ?? null
+  // Deep-link from the class-session modal: open the create dialog with
+  // class/batch/subject pre-selected (and locked) so the teacher can finish
+  // creating the assessment without re-picking the scope they're already in.
+  const createIntent = searchParams?.get("create") === "1"
+  const prefillClassId = searchParams?.get("class_id") ?? ""
+  const prefillBatchId = searchParams?.get("batch_id") ?? ""
+  const prefillSubjectId = searchParams?.get("subject_id") ?? ""
+  const prefillScheduleEntryId = searchParams?.get("schedule_entry_id") ?? ""
+  const prefillSessionDate = searchParams?.get("session_date") ?? ""
+  const lockScope = createIntent && Boolean(prefillBatchId || prefillSubjectId || prefillClassId)
 
   // ── List state ──
   const [search, setSearch] = useState("")
@@ -376,6 +386,11 @@ export default function AssessmentsPage() {
         ...(form.marks && Number(form.marks) > 0 ? { marks: Number(form.marks) } : {}),
         ...(form.file_id.trim() ? { file_id: form.file_id.trim() } : {}),
         ...(form.link.trim() ? { link: form.link.trim() } : {}),
+        // When the create dialog was opened from a class-session modal,
+        // link the new assessment back to that exact session so it shows up
+        // in the modal's "Linked assessments" list afterwards.
+        ...(prefillScheduleEntryId ? { schedule_entry_id: prefillScheduleEntryId } : {}),
+        ...(prefillSessionDate ? { session_date: prefillSessionDate } : {}),
       }
       return learningApi.createAssessment(tenantId, payload)
     },
@@ -606,6 +621,37 @@ export default function AssessmentsPage() {
       setViewAssessment(target)
     }
   }, [focusId, allItems, isStudent, isTeacherOrAdmin])
+
+  // Deep-link from the class-session modal: when ?create=1 is present, open
+  // the create dialog with class/batch/subject prefilled. The lookup data may
+  // not be loaded on first render, so we only set the prefill once and let
+  // the user finish the rest of the form.
+  const prefilledRef = useMemo(() => ({ done: false }), [])
+  useEffect(() => {
+    if (!createIntent || !isTeacherOrAdmin || prefilledRef.done) return
+    setForm((p) => ({
+      ...p,
+      class_id: prefillClassId || p.class_id,
+      batch_id: prefillBatchId || p.batch_id,
+      subject_id: prefillSubjectId || p.subject_id,
+    }))
+    setCreateOpen(true)
+    prefilledRef.done = true
+  }, [createIntent, isTeacherOrAdmin, prefillClassId, prefillBatchId, prefillSubjectId, prefilledRef])
+
+  // The class-session modal can't always pass a `class_id` (the schedule
+  // entry only carries `batchId`). Once the batches list loads, resolve the
+  // class_id from the prefilled batch so the create form passes its
+  // class-required validation.
+  useEffect(() => {
+    if (!lockScope || form.class_id || !form.batch_id) return
+    const rawBatches = asList<Record<string, unknown>>(batchesQuery.data as ListPayload<Record<string, unknown>>)
+    const match = rawBatches.find((r) => String(r?.id ?? r?.batch_id ?? "") === form.batch_id)
+    const resolvedClassId = String((match as any)?.class_id ?? (match as any)?.class?.id ?? "").trim()
+    if (resolvedClassId) {
+      setForm((p) => ({ ...p, class_id: resolvedClassId }))
+    }
+  }, [lockScope, form.class_id, form.batch_id, batchesQuery.data])
   const allSubsList: Submission[] = (subsData as any)?.submissions ?? []
 
   const hasAttachment = Boolean(form.file_id.trim() || form.link.trim())
@@ -632,9 +678,9 @@ export default function AssessmentsPage() {
   }
 
   return (
-    <div className="space-y-6 p-6">
+    <div className="space-y-6 p-6 adm-root">
       {/* ─── Header ─── */}
-      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between adm-topbar-left">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
             <ClipboardList className="h-6 w-6 text-primary" />
@@ -970,7 +1016,7 @@ export default function AssessmentsPage() {
                 <select
                   value={form.class_id}
                   onChange={e => setForm(p => ({ ...p, class_id: e.target.value, batch_id: "" }))}
-                  disabled={classesQuery.isLoading}
+                  disabled={classesQuery.isLoading || lockScope}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
                   <option value="">Select class</option>
@@ -982,7 +1028,7 @@ export default function AssessmentsPage() {
                 <select
                   value={form.batch_id}
                   onChange={e => f("batch_id", e.target.value)}
-                  disabled={batchesQuery.isLoading || !form.class_id}
+                  disabled={batchesQuery.isLoading || !form.class_id || lockScope}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
                   <option value="">Select batch</option>
@@ -994,7 +1040,7 @@ export default function AssessmentsPage() {
                 <select
                   value={form.subject_id}
                   onChange={e => f("subject_id", e.target.value)}
-                  disabled={subjectsQuery.isLoading}
+                  disabled={subjectsQuery.isLoading || lockScope}
                   className="w-full h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring disabled:opacity-50"
                 >
                   <option value="">Select subject</option>

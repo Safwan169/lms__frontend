@@ -5,8 +5,10 @@ import {
   ArrowRight,
   BellRing,
   Bookmark,
+  BookOpen,
   CalendarDays,
   ClipboardCheck,
+  ClipboardList,
   Eye,
   Library,
   Paperclip,
@@ -190,7 +192,7 @@ export default function StudentDashboard({ user }: { user: AnyUser }) {
         <SectionCard
           icon={<CalendarDays className="h-4 w-4" />}
           iconTone="bg-indigo-50 text-indigo-600"
-          title="Today's classes"
+          title="Upcoming Classes"
           subtitle={
             todaysQ.data
               ? `${formatDateLong(todaysQ.data.date)} · ${todaysQ.data.scheduled_count} scheduled · ${todaysQ.data.live_now_count} live now`
@@ -198,7 +200,7 @@ export default function StudentDashboard({ user }: { user: AnyUser }) {
           }
           action={
             <button className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
-             <Link className="flex items-center gap-1" href="/dashboard/my-class">My classes <ArrowRight className="h-3.5 w-3.5" /></Link>
+              <Link className="flex items-center gap-1" href="/dashboard/my-class">My classes <ArrowRight className="h-3.5 w-3.5" /></Link>
             </button>
           }
         >
@@ -209,6 +211,7 @@ export default function StudentDashboard({ user }: { user: AnyUser }) {
           ) : (
             <div className="divide-y divide-slate-100">
               {todaysQ.data.data.map((c) => {
+                console.log(c, 'this is a student dashbord ')
                 const Icon = c.delivery_mode === "ONLINE" ? Video : Library
                 return (
                   <div key={c.entry_id} className="flex flex-col gap-3 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -220,12 +223,26 @@ export default function StudentDashboard({ user }: { user: AnyUser }) {
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-medium text-slate-900">{c.subject?.name ?? "Class"}</span>
                           <span
-                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${
-                              c.is_live_now ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"
-                            }`}
+                            className={`rounded-full px-2 py-0.5 text-[10px] font-medium ${c.is_live_now ? "bg-rose-100 text-rose-700" : "bg-slate-100 text-slate-600"
+                              }`}
                           >
                             {c.delivery_mode}
                           </span>
+                          <div className="flex flex-wrap gap-2">
+                            {c.contents.length > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+                                <BookOpen size={12} />
+                                {c.contents.length}
+                              </span>
+                            )}
+
+                            {c.assessments.length > 0 && (
+                              <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+                                <ClipboardList size={12} />
+                                {c.assessments.length}
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <div className="mt-0.5 text-xs text-slate-500">
                           {c.teacher?.name ?? "—"} ·{" "}
@@ -234,29 +251,24 @@ export default function StudentDashboard({ user }: { user: AnyUser }) {
                           </span>
                           {c.room?.name && ` · ${c.room.name}`}
                         </div>
+
                       </div>
                     </div>
                     <div className="flex gap-2">
-                      {c.is_live_now ? (
-                        <button className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">
-                          <Video className="h-3.5 w-3.5" /> Join live now
-                        </button>
-                      ) : (
-                        <>
-                          <button
-                            onClick={() => openClassSession(c, false)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                          >
-                            <Eye className="h-3.5 w-3.5" /> Details
-                          </button>
-                          <button
-                            onClick={() => openClassSession(c, true)}
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                          >
-                            <Paperclip className="h-3.5 w-3.5" /> Attachments
-                          </button>
-                        </>
+                      {c.live_session_ref && (
+                        <a href={c.live_session_ref} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1.5 rounded-lg bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-700">
+                          <Video className="h-3.5 w-3.5" />
+                          Join live now
+                        </a >
                       )}
+
+                      <button
+                        onClick={() => openClassSession(c, false)}
+                        className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
+                      >
+                        <Eye className="h-3.5 w-3.5" />
+                        Details
+                      </button>
                     </div>
                   </div>
                 )
@@ -356,7 +368,7 @@ export default function StudentDashboard({ user }: { user: AnyUser }) {
             title="Upcoming exams"
             action={
               <button className="inline-flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline">
-              <Link href="/dashboard/assessments">View all</Link> <ArrowRight className="h-3.5 w-3.5" />
+                <Link href="/dashboard/assessments">View all</Link> <ArrowRight className="h-3.5 w-3.5" />
               </button>
             }
           >
@@ -528,10 +540,10 @@ export default function StudentDashboard({ user }: { user: AnyUser }) {
                     assessmentDetail.my_submission.result_status === "MARKED"
                       ? `Marked · ${assessmentDetail.my_submission.obtained_marks ?? "—"}`
                       : assessmentDetail.my_submission.result_status === "NOT_MARKED"
-                      ? "Submitted · awaiting marks"
-                      : assessmentDetail.is_submission_open
-                      ? "Not submitted"
-                      : "Closed"
+                        ? "Submitted · awaiting marks"
+                        : assessmentDetail.is_submission_open
+                          ? "Not submitted"
+                          : "Closed"
                   }
                 />
               )}

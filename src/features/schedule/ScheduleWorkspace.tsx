@@ -1,6 +1,7 @@
 "use client"
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { useSearchParams } from "next/navigation"
 import { useMutation, useQuery } from "@tanstack/react-query"
 import {
   AlertCircle,
@@ -1268,6 +1269,7 @@ export default function ScheduleWorkspace({
   const [overrideMode, setOverrideMode] = useState<"DATE_ONLY" | "FUTURE" | null>(null)
   const [entryDetail, setEntryDetail] = useState<ScheduleEntry | null>(null)
   const [entryDetailDate, setEntryDetailDate] = useState<string>("")
+  const [entryDetailFocusAttachments, setEntryDetailFocusAttachments] = useState(false)
   const [entryActionTarget, setEntryActionTarget] = useState<ScheduleEntry | null>(null)
   const [currentWeekStart, setCurrentWeekStart] = useState(() => getWeekStart(new Date()))
   const [selectedDayIndex, setSelectedDayIndex] = useState(() => {
@@ -1584,7 +1586,6 @@ export default function ScheduleWorkspace({
         delivery_mode: payload.deliveryMode,
         ...(resolvedRoomId ? { room_id: resolvedRoomId } : {}),
         ...(payload.liveSessionRef ? { live_session_ref: payload.liveSessionRef } : {}),
-        ...(payload.notes ? { notes: payload.notes } : {}),
       }
 
       if (editingEntryId) {
@@ -1619,7 +1620,6 @@ export default function ScheduleWorkspace({
         delivery_mode: mapDeliveryModeToBatchRoutineApi(payload.deliveryMode),
         ...(resolvedRoomId ? { room_id: resolvedRoomId } : {}),
         ...(payload.liveSessionRef ? { live_session_ref: payload.liveSessionRef } : {}),
-        ...(payload.notes ? { notes: payload.notes } : {}),
       }
 
       const response = await api.post(
@@ -1783,10 +1783,43 @@ export default function ScheduleWorkspace({
     return toDateInput(addDays(currentWeekStart, dayIdx === -1 ? 0 : dayIdx))
   }
 
-  const openClassDetail = (entry: ScheduleEntry, contextualDate?: string) => {
+  const openClassDetail = (entry: ScheduleEntry, contextualDate?: string, focusAttachments = false) => {
     setEntryDetail(entry)
     setEntryDetailDate(resolveEntryDate(entry, contextualDate))
+    setEntryDetailFocusAttachments(focusAttachments)
   }
+
+  // Deep-link: when /dashboard/my-class?entryId=...&date=...&focus=material is
+  // navigated to (e.g. from the teacher dashboard "Material" button), auto-open
+  // the matching ClassSessionModal once routines have loaded. Consume the params
+  // by replacing the URL so a refresh doesn't reopen the modal forever.
+  const searchParams = useSearchParams()
+  const deepLinkConsumedRef = useRef(false)
+  useEffect(() => {
+    if (deepLinkConsumedRef.current) return
+    const entryIdParam = searchParams?.get("entryId")
+    if (!entryIdParam) return
+    if (!routines.length) return
+    const rawDateParam = searchParams?.get("date") ?? undefined
+    // Backend session-materials endpoint requires YYYY-MM-DD; trim any time/zone
+    // suffix in case a full ISO timestamp slipped through.
+    const dateParam = rawDateParam ? rawDateParam.slice(0, 10) : undefined
+    const focusParam = searchParams?.get("focus") === "material"
+    const allEntries = routines.flatMap((routine) => routine.entries)
+    const match =
+      allEntries.find((entry) => entry.id === entryIdParam) ??
+      allEntries.find((entry) => stripOverrideSuffix(entry.id) === entryIdParam)
+    if (!match) return
+    deepLinkConsumedRef.current = true
+    openClassDetail(match, dateParam, focusParam)
+    if (typeof window !== "undefined") {
+      const url = new URL(window.location.href)
+      url.searchParams.delete("entryId")
+      url.searchParams.delete("date")
+      url.searchParams.delete("focus")
+      window.history.replaceState({}, "", url.pathname + (url.search ? url.search : ""))
+    }
+  }, [routines, searchParams])
 
   const sessionModalRole: "teacher" | "student" | "admin" | "other" =
     normalizedRole === "student"
@@ -2615,7 +2648,6 @@ export default function ScheduleWorkspace({
               {entryDraft.deliveryMode === "ON_SITE" || entryDraft.deliveryMode === "HYBRID" ? <div><FieldLabel label="Room" required /><SearchableInput listId="room-options-list" value={entryDraft.roomId} onChange={(value) => setEntryDraft((current) => ({ ...current, roomId: value }))} options={rooms} placeholder="Search room by id" strictMatch /><FieldError message={entryErrors.roomId} /></div> : null}
               {entryDraft.deliveryMode === "LIVE_ONLINE" || entryDraft.deliveryMode === "HYBRID" ? <div><FieldLabel label="Live Session URL" required /><Input type="url" value={entryDraft.liveSessionRef} onChange={(event) => setEntryDraft((current) => ({ ...current, liveSessionRef: event.target.value }))} placeholder="https://" /><FieldError message={entryErrors.liveSessionRef} /></div> : null}
             </div>
-            <div><FieldLabel label="Notes" /><Textarea value={entryDraft.notes} onChange={(event) => setEntryDraft((current) => ({ ...current, notes: event.target.value }))} placeholder="Optional notes for the session" /></div>
             <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600"><div className="flex items-center gap-2 font-medium text-slate-800">{conflictChecking ? <Loader2 className="h-4 w-4 animate-spin" /> : <BellRing className="h-4 w-4" />}Instant conflict detection</div><p className="mt-2">The form checks batch overlaps, teacher double-booking, and room availability after each update.</p></div>
           </div>
           <SheetFooter>
@@ -2637,12 +2669,22 @@ export default function ScheduleWorkspace({
           if (!open) {
             setEntryDetail(null)
             setEntryDetailDate("")
+            setEntryDetailFocusAttachments(false)
           }
         }}
-        entry={entryDetail}
+        entry={
+          entryDetail
+            ? {
+                ...entryDetail,
+                classId:
+                  batches.find((b: BatchOption) => b.id === entryDetail.batchId)?.classId ?? "",
+              }
+            : null
+        }
         sessionDate={entryDetailDate}
         tenantId={tenantId}
         role={sessionModalRole}
+        focusAttachments={entryDetailFocusAttachments}
       />
     </div>
   )
