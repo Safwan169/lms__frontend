@@ -54,6 +54,7 @@ function pickName(user: AnyUser) {
   return "Teacher"
 }
 
+
 function statusTone(status: string, isNow: boolean) {
   if (isNow) return "bg-sky-100 text-sky-700"
   if (status === "COMPLETED") return "bg-emerald-100 text-emerald-700"
@@ -76,7 +77,6 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
   const statsQ = useTeacherStats()
   const plannerQ = useTeacherPlanner(range)
   const nextLiveQ = useTeacherNextLiveClass()
-
   const s = statsQ.data
 
   const [plannerEntry, setPlannerEntry] = useState<PlannerEntry | null>(null)
@@ -547,12 +547,12 @@ function PlannerRowActions({
       )}
 
       {/* Assessment — opens the assessment modal */}
-      <button
+      {/* <button
         onClick={onAssessment}
         className="inline-flex items-center gap-1 rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
       >
         <FileText className="h-3.5 w-3.5" /> Assessment
-      </button>
+      </button> */}
 
       {/* Material — opens the attachment popup. Hidden once an attachment exists. */}
       {!p.has_material && (
@@ -815,6 +815,8 @@ function PendingWorkCard({
     (stats && stats.pending_evaluations.submission_count > 0 ? 1 : 0) +
     (stats && stats.unread_notices.count > 0 ? 1 : 0)
 
+  const router = useRouter();
+
   return (
     <SectionCard
       icon={<ClipboardCheck className="h-4 w-4" />}
@@ -840,8 +842,7 @@ function PendingWorkCard({
               title={`Take attendance — ${b.batch_name}`}
               detail="Window closes soon"
               action="Open"
-              onClick={() => onOpenAttendance({ id: b.batch_id, name: b.batch_name })}
-            />
+              onClick={() => router.push("/dashboard/attendance")} />
           ))}
 
           {stats && stats.pending_evaluations.submission_count > 0 && (
@@ -851,8 +852,8 @@ function PendingWorkCard({
               title={`Grade — ${stats.pending_evaluations.submission_count} submissions left`}
               detail={`across ${stats.pending_evaluations.assessment_count} assessments`}
               action="Open"
-              onClick={onOpenEvaluations}
-            />
+              onClick={() => router.push("/dashboard/assessments")} />
+
           )}
 
           {stats && stats.unread_notices.count > 0 && (
