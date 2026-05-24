@@ -115,12 +115,12 @@ const navData: NavItem[] = [
     icon: Monitor,
     roles: ["admin", "rektor", "superadmin"],
   },
-  {
-    title: "Accountants",
-    url: "/dashboard/accountants",
-    icon: Calculator,
-    roles: ["admin", "rektor"],
-  },
+  // {
+  //   title: "Accountants",
+  //   url: "/dashboard/accountants",
+  //   icon: Calculator,
+  //   roles: ["admin", "rektor"],
+  // },
   {
     title: "Payments",
     url: "/dashboard/payments",
