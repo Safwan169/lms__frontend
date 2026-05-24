@@ -10,7 +10,7 @@ export default function NoticesPage() {
 
   if (!isAuthReady) {
     return (
-      <div className="p-6 space-y-3">
+      <div className="p-6 space-y-3 adm-root">
         <Skeleton className="h-10 w-64" />
         <Skeleton className="h-32 w-full" />
         <Skeleton className="h-32 w-full" />

@@ -126,8 +126,8 @@ export default function AccountingPage() {
   const bkash = findMethod(summary, "BKASH")
 
   return (
-    <div className="space-y-6 p-1 md:p-2">
-      <div>
+    <div className="space-y-6 p-1 md:p-2 adm-root">
+      <div className="adm-topbar-left">
         <h1 className="text-2xl font-semibold">Accounting</h1>
         <p className="text-sm text-muted-foreground">Payment summary and transaction history</p>
       </div>

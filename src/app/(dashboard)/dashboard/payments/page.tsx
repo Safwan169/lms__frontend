@@ -297,9 +297,9 @@ export default function PaymentsDashboardPage() {
   const cycleItems = useMemo(() => asList<BillingCycleRow>(cyclesQuery.data as ListPayload<BillingCycleRow>), [cyclesQuery.data])
 
   return (
-    <div className="space-y-6 p-1 md:p-2">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <div className="space-y-6 p-1 md:p-10 adm-root">
+      <div className="flex flex-wrap items-center justify-between gap-3 adm-topbar">
+        <div className="adm-topbar-left">
           <h1 className="text-2xl font-semibold">Payments & Billing</h1>
           <p className="text-sm text-muted-foreground">Run monthly billing, manage invoices, and issue receipts from one place.</p>
         </div>

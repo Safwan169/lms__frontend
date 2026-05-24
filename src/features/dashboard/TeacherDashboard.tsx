@@ -5,9 +5,11 @@ import {
   AlertTriangle,
   ArrowRight,
   BellRing,
+  BookOpen,
   CalendarDays,
   Check,
   ClipboardCheck,
+  ClipboardList,
   Eye,
   FileText,
   Library,
@@ -223,7 +225,7 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
           <SectionCard
             icon={<CalendarDays className="h-4 w-4" />}
             iconTone="bg-indigo-50 text-indigo-600"
-            title="Today's teaching planner"
+            title="Today's Planner"
             subtitle={
               plannerQ.data
                 ? `${formatDateLong(new Date().toISOString())} · ${plannerQ.data.total_count} classes assigned`
@@ -267,15 +269,14 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
                   return (
                     <div
                       key={p.entry_id + p.date}
-                      className={`flex flex-col gap-3 border-t border-l-[3px] p-3 sm:flex-row sm:items-center sm:gap-4 ${
-                        isOngoing
-                          ? "border-t-slate-200 border-l-emerald-500 bg-emerald-50/70"
-                          : isLiveUpcoming
+                      className={`flex flex-col gap-3 border-t border-l-[3px] p-3 sm:flex-row sm:items-center sm:gap-4 ${isOngoing
+                        ? "border-t-slate-200 border-l-emerald-500 bg-emerald-50/70"
+                        : isLiveUpcoming
                           ? "border-t-slate-200 border-l-violet-500 bg-violet-50/60"
                           : p.status === "COMPLETED"
-                          ? "border-t-slate-100 border-l-transparent bg-white opacity-90"
-                          : "border-t-slate-100 border-l-transparent bg-white"
-                      }`}
+                            ? "border-t-slate-100 border-l-transparent bg-white opacity-90"
+                            : "border-t-slate-100 border-l-transparent bg-white"
+                        }`}
                     >
                       <div className="flex w-20 shrink-0 flex-col items-start">
                         <span className="text-sm font-semibold text-slate-900 tabular-nums">{p.start_time}</span>
@@ -285,19 +286,23 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
                             <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" /> Now
                           </span>
                         )}
+
+
                       </div>
+
+
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
                           <span className="font-semibold text-slate-900">{p.subject?.name ?? "Class"}</span>
                           <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${modeBadgeClasses(p.delivery_mode)}`}>
                             {formatMode(p.delivery_mode)}
                           </span>
-                          <PlannerStatusPill status={p.status} minutesUntil={p.minutes_until_start} />
-                          {p.is_overridden && (
-                            <span className="inline-flex items-center gap-1 rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
-                              <span className="h-1.5 w-1.5 rounded-full bg-amber-500" /> Updated
-                            </span>
-                          )}
+                          <PlannerStatusPill
+                            status={p.status}
+                            minutesUntil={p.minutes_until_start}
+                            content={(p.contents?.length) ?? 0}
+                            assessments={(p.assessments?.length) ?? 0}
+                          />
                         </div>
                         <div className="mt-1 flex flex-wrap gap-3 text-xs text-slate-500">
                           {p.batch?.name && (
@@ -321,16 +326,37 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
                             </span>
                           )}
                         </div>
+
                       </div>
+
                       <PlannerRowActions
                         p={p}
                         onOpen={() => setPlannerEntry(p)}
                         onLive={() => setLiveOpen(true)}
                         onMaterial={() => {
-                          const qs = new URLSearchParams({ create: "1" })
-                          if (p.subject?.id) qs.set("subject", p.subject.id)
-                          if (p.batch?.id) qs.set("batch", p.batch.id)
-                          router.push(`/dashboard/content?${qs.toString()}`)
+                          // Backend validates that session_date's weekday matches
+                          // the schedule entry's day_of_week. p.date can drift by
+                          // a day because of UTC/local skew, so derive the date
+                          // from scheduled_start_at in the user's local timezone.
+                          const src = p.scheduled_start_at ?? p.date ?? ""
+                          let dateOnly = ""
+                          if (src) {
+                            const d = new Date(src)
+                            if (!Number.isNaN(d.getTime())) {
+                              const yyyy = d.getFullYear()
+                              const mm = String(d.getMonth() + 1).padStart(2, "0")
+                              const dd = String(d.getDate()).padStart(2, "0")
+                              dateOnly = `${yyyy}-${mm}-${dd}`
+                            } else {
+                              dateOnly = src.slice(0, 10)
+                            }
+                          }
+                          const qs = new URLSearchParams({
+                            entryId: p.entry_id,
+                            date: dateOnly,
+                            focus: "material",
+                          })
+                          router.push(`/dashboard/my-class?${qs.toString()}`)
                         }}
                         onAssessment={() => setEvalOpen(true)}
                       />
@@ -347,7 +373,19 @@ export default function TeacherDashboard({ user }: { user: AnyUser }) {
               data={nextLiveQ.data?.next_live_class ?? null}
               upcomingCount={nextLiveQ.data?.upcoming_count ?? 0}
               loading={nextLiveQ.isLoading}
-              onPrep={() => setLiveOpen(true)}
+              onPrep={() => {
+                const next = nextLiveQ.data?.next_live_class
+                if (!next?.schedule_entry_id) {
+                  router.push("/dashboard/my-class")
+                  return
+                }
+                const qs = new URLSearchParams({
+                  entryId: next.schedule_entry_id,
+                  date: (next.session_date ?? next.scheduled_start_at ?? "").slice(0, 10),
+                  focus: "material",
+                })
+                router.push(`/dashboard/my-class?${qs.toString()}`)
+              }}
               onStart={() => setLiveOpen(true)}
             />
 
@@ -408,10 +446,15 @@ function modeBadgeClasses(mode: string): string {
 function PlannerStatusPill({
   status,
   minutesUntil,
+  content,
+  assessments,
 }: {
   status: string
   minutesUntil: number
+  content: any
+  assessments: any
 }) {
+  console.log(content, 'this is for content ')
   if (status === "COMPLETED") {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
@@ -435,10 +478,29 @@ function PlannerStatusPill({
     )
   }
   return (
-    <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-      <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Upcoming
-    </span>
+    <>
+      {/* <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+        <span className="h-1.5 w-1.5 rounded-full bg-slate-400" /> Upcoming
+      </span> */}
+
+      <div className="flex flex-wrap gap-2">
+        {content > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-[10px] font-semibold text-blue-700">
+            <BookOpen size={12} />
+            {content}
+          </span>
+        )}
+
+        {assessments > 0 && (
+          <span className="inline-flex items-center gap-1 rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-semibold text-violet-700">
+            <ClipboardList size={12} />
+            {assessments}
+          </span>
+        )}
+      </div>
+    </>
   )
+
 }
 
 function PlannerRowActions({
@@ -540,8 +602,8 @@ function NextLiveClassCard({
   const className = data?.batch?.class?.name
   const batchLabel = data
     ? [className, data.batch?.name, data.batch?.section ? `Sec ${data.batch.section}` : null]
-        .filter(Boolean)
-        .join(" · ")
+      .filter(Boolean)
+      .join(" · ")
     : ""
   const windowLabel = data ? `${data.start_time} – ${data.end_time}` : "—"
 

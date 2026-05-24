@@ -162,9 +162,9 @@ export default function AdminNoticesView() {
   }
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 adm-root">
       {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 adm-topbar-left">
         <div className="flex items-center gap-3">
           <div className="h-11 w-11 rounded-xl bg-[#171717] flex items-center justify-center text-white shadow-md shadow-indigo-200">
             <Megaphone className="h-5 w-5" />

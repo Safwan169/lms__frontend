@@ -373,9 +373,9 @@ export default function PayrollDashboardPage() {
   }
 
   return (
-    <div className="space-y-6 p-1 md:p-2">
+    <div className="space-y-6 p-1 md:p-2 adm-root">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
+        <div className="adm-topbar-left">
           <h1 className="text-2xl font-semibold">Payroll Workspace</h1>
           <p className="text-sm text-muted-foreground">Manage salary configs, run payroll, finalize salary, and issue payslips.</p>
         </div>

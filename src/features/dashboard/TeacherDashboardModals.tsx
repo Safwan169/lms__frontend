@@ -128,11 +128,7 @@ export function PlannerEntryModal({
                 )
               }
             />
-            <Row
-              label="Entry ID"
-              value={<code className="block break-all text-xs text-slate-600">{entry.entry_id}</code>}
-            />
-            <Row label="Notes" value={entry.notes ?? "—"} />
+          
           </div>
         )}
 
